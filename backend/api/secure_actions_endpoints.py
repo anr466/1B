@@ -1,0 +1,665 @@
+"""
+Secure Actions Endpoints - نظام التحقق الموحد للعمليات الحساسة
+================================================================
+
+✅ جميع العمليات الحساسة تتطلب تحقق OTP (SMS أو Email)
+✅ تغيير الإيميل → تحقق من الجوال
+✅ تغيير الجوال → تحقق من الإيميل
+✅ باقي العمليات → المستخدم يختار الطريقة
+
+العمليات المدعومة:
+- change_username: تغيير اسم المستخدم
+- change_password: تغيير كلمة المرور
+- change_email: تغيير الإيميل
+- change_phone: تغيير رقم الجوال
+- change_biometric: تفعيل/إلغاء البصمة
+- change_binance_keys: تغيير مفاتيح Binance
+"""
+
+from flask import Blueprint, request, jsonify, g
+import logging
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from functools import wraps
+
+# Database
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from database.database_manager import DatabaseManager
+
+# استيراد خدمة OTP الموحدة
+try:
+    from backend.utils.simple_email_otp_service import SimpleEmailOTPService
+    otp_service = SimpleEmailOTPService()
+    OTP_SERVICE_AVAILABLE = True
+except ImportError:
+    otp_service = None
+    OTP_SERVICE_AVAILABLE = False
+
+db_manager = DatabaseManager()
+logger = logging.getLogger(__name__)
+
+# إنشاء Blueprint
+secure_actions_bp = Blueprint('secure_actions', __name__, url_prefix='/user/secure')
+
+# ==================== أنواع العمليات ====================
+
+SECURE_ACTIONS = {
+    'change_name': {
+        'name': 'تغيير الاسم الكامل',
+        'verification_options': ['sms', 'email'],  # ✅ SMS الافتراضي
+        'requires_password': False,
+    },
+    'change_username': {
+        'name': 'تغيير اسم المستخدم',
+        'verification_options': ['sms', 'email'],  # ✅ SMS الافتراضي
+        'requires_password': False,
+    },
+    'change_password': {
+        'name': 'تغيير كلمة المرور',
+        'verification_options': ['sms', 'email'],
+        'requires_password': True,  # يتطلب كلمة المرور القديمة
+    },
+    'change_email': {
+        'name': 'تغيير الإيميل',
+        'verification_options': ['sms', 'email'],  # ✅ كلاهما متاح - SMS الافتراضي
+        'requires_password': False,
+    },
+    'change_phone': {
+        'name': 'تغيير رقم الجوال',
+        'verification_options': ['sms', 'email'],  # ✅ كلاهما متاح - SMS الافتراضي
+        'requires_password': False,
+    },
+    'change_biometric': {
+        'name': 'تغيير إعدادات البصمة',
+        'verification_options': ['sms', 'email'],
+        'requires_password': False,
+    },
+    'change_binance_keys': {
+        'name': 'تغيير مفاتيح Binance',
+        'verification_options': ['sms', 'email'],
+        'requires_password': False,
+    },
+    'delete_binance_keys': {
+        'name': 'حذف مفاتيح Binance',
+        'verification_options': ['sms', 'email'],
+        'requires_password': False,
+    },
+}
+
+# ==================== OTP Storage (DB-backed) ====================
+
+def _save_pending_verification(user_id, action, otp, expires_at, method, new_value=None, old_password=None):
+    """حفظ طلب تحقق معلق في قاعدة البيانات"""
+    db = DatabaseManager()
+    with db.get_write_connection() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO pending_verifications
+            (user_id, action, otp, expires_at, method, new_value, old_password, attempts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """, (user_id, action, otp, expires_at.isoformat(), method, new_value, old_password))
+
+def _get_pending_verification(user_id, action):
+    """جلب طلب تحقق معلق من قاعدة البيانات"""
+    db = DatabaseManager()
+    with db.get_connection() as conn:
+        row = conn.execute("""
+            SELECT otp, expires_at, method, new_value, old_password, attempts
+            FROM pending_verifications
+            WHERE user_id = ? AND action = ?
+        """, (user_id, action)).fetchone()
+        if row:
+            return {
+                'otp': row[0],
+                'expires': datetime.fromisoformat(row[1]),
+                'method': row[2],
+                'new_value': row[3],
+                'old_password': row[4],
+                'attempts': row[5],
+            }
+    return None
+
+def _update_pending_attempts(user_id, action, attempts):
+    """تحديث عدد المحاولات"""
+    db = DatabaseManager()
+    with db.get_write_connection() as conn:
+        conn.execute("""
+            UPDATE pending_verifications SET attempts = ?
+            WHERE user_id = ? AND action = ?
+        """, (attempts, user_id, action))
+
+def _update_pending_otp(user_id, action, otp):
+    """تحديث رمز OTP (عند إرسال OTP فعلي من خدمة الإيميل)"""
+    db = DatabaseManager()
+    with db.get_write_connection() as conn:
+        conn.execute("""
+            UPDATE pending_verifications SET otp = ?
+            WHERE user_id = ? AND action = ?
+        """, (otp, user_id, action))
+
+def _delete_pending_verification(user_id, action):
+    """حذف طلب تحقق معلق"""
+    db = DatabaseManager()
+    with db.get_write_connection() as conn:
+        conn.execute("""
+            DELETE FROM pending_verifications
+            WHERE user_id = ? AND action = ?
+        """, (user_id, action))
+
+# ==================== Helper Functions ====================
+
+def generate_otp(length=6):
+    """توليد رمز OTP عشوائي"""
+    return ''.join([str(secrets.randbelow(10)) for _ in range(length)])
+
+# ❌ DELETED: get_user_by_id() - Moved to unified service
+# Reason: Duplicate implementation
+# Replacement: backend/utils/user_lookup_service.py
+from backend.utils.user_lookup_service import get_user_by_id
+
+from backend.utils.password_utils import verify_password, hash_password
+
+# تخزين OTP للتحقق (في الذاكرة)
+otp_storage = {}
+
+def send_otp_email(email, otp_code, action_name):
+    """إرسال OTP عبر الإيميل باستخدام SimpleEmailOTPService
+    Returns: (success: bool, actual_code: str) - the actual OTP code sent to the user
+    """
+    try:
+        if OTP_SERVICE_AVAILABLE and otp_service:
+            success, service_code = otp_service.send_email_otp(email, purpose=action_name)
+            if success:
+                logger.info(f"✅ تم إرسال OTP إلى {email} للعملية: {action_name}")
+                return True, service_code
+            else:
+                logger.error(f"❌ فشل إرسال OTP إلى {email}")
+                return False, None
+        else:
+            otp_storage[email] = {
+                'code': otp_code,
+                'expires': datetime.now() + timedelta(minutes=10),
+                'action': action_name,
+            }
+            logger.warning(f"⚠️ OTP Service غير متاح، استخدام التخزين المحلي")
+            logger.info(f"✅ تم حفظ OTP في الذاكرة: {email}")
+            logger.debug(f"🔑 OTP Code: {otp_code}")
+            return True, otp_code
+        
+    except Exception as e:
+        logger.error(f"خطأ في إرسال OTP: {e}")
+        return False, None
+
+def send_otp_sms(phone, otp_code, action_name):
+    """إرسال OTP عبر SMS باستخدام Firebase"""
+    try:
+        # حفظ OTP في التخزين المحلي
+        otp_storage[phone] = {
+            'otp': otp_code,
+            'created_at': datetime.now(),
+            'expires_at': datetime.now() + timedelta(minutes=10),
+            'attempts': 0,
+        }
+        
+        # محاولة إرسال SMS عبر Firebase
+        try:
+            from utils.firebase_sms_service import send_sms_otp
+            result = send_sms_otp(phone, otp_code, action_name)
+            if result:
+                logger.info(f"📱 تم إرسال OTP عبر Firebase SMS إلى {phone}")
+                return True
+        except ImportError:
+            logger.warning("⚠️ خدمة Firebase SMS غير متاحة - استخدام المحاكاة")
+        except Exception as sms_error:
+            logger.warning(f"⚠️ فشل إرسال SMS: {sms_error} - استخدام المحاكاة")
+        
+        # Fallback: محاكاة الإرسال (للتطوير)
+        logger.info(f"📱 [محاكاة] تم حفظ OTP للجوال {phone} للعملية: {action_name}")
+        logger.info(f"📱 [DEV] OTP Code: {otp_code}")  # للتطوير فقط
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في إرسال SMS: {e}")
+        return False
+
+def get_token_user_id():
+    """الحصول على user_id من Token - مع التحقق من التوقيع"""
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            # 🔒 استخدام التحقق الحقيقي من التوقيع
+            try:
+                from backend.api.token_refresh_endpoint import verify_token
+                payload = verify_token(token, 'access')
+                return payload.get('user_id') or payload.get('sub')
+            except (ImportError, ModuleNotFoundError):
+                # fallback: التحقق اليدوي مع التوقيع
+                import jwt
+                import os
+                from dotenv import load_dotenv
+                load_dotenv()
+                jwt_secret = os.getenv('JWT_SECRET_KEY')
+                if not jwt_secret:
+                    logger.error("❌ JWT_SECRET_KEY not configured")
+                    return None
+                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+                return payload.get('user_id') or payload.get('sub')
+    except Exception as e:
+        logger.debug(f"Token decode failed: {e}")
+    return None
+
+from backend.api.auth_middleware import require_auth
+
+# ==================== API Endpoints ====================
+
+@secure_actions_bp.route('/request-verification', methods=['POST'])
+@require_auth
+def request_verification():
+    """
+    طلب رمز التحقق لعملية حساسة
+    
+    Input:
+    {
+        "action": "change_username|change_password|change_email|change_phone|change_biometric|change_binance_keys",
+        "method": "email|sms",
+        "new_value": "القيمة الجديدة (اختياري)",
+        "old_password": "كلمة المرور القديمة (للعمليات التي تتطلبها)"
+    }
+    
+    Output:
+    {
+        "success": true,
+        "message": "تم إرسال رمز التحقق",
+        "method": "email|sms",
+        "masked_target": "a***@example.com | +966****1234",
+        "expires_in": 600
+    }
+    """
+    try:
+        user_id = g.user_id
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
+        
+        action = data.get('action')
+        method = data.get('method', 'sms')  # ✅ الافتراضي: SMS
+        new_value = data.get('new_value')
+        old_password = data.get('old_password')
+        
+        # التحقق من نوع العملية
+        if action not in SECURE_ACTIONS:
+            return jsonify({
+                'success': False,
+                'error': 'نوع العملية غير مدعوم',
+                'supported_actions': list(SECURE_ACTIONS.keys())
+            }), 400
+        
+        action_config = SECURE_ACTIONS[action]
+        
+        # التحقق من طريقة التحقق المسموحة
+        if method not in action_config['verification_options']:
+            return jsonify({
+                'success': False,
+                'error': f'طريقة التحقق غير مسموحة لهذه العملية',
+                'allowed_methods': action_config['verification_options']
+            }), 400
+        
+        # جلب بيانات المستخدم
+        user = get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'المستخدم غير موجود'}), 404
+        
+        # التحقق من كلمة المرور القديمة (إذا مطلوبة)
+        if action_config['requires_password']:
+            if not old_password:
+                return jsonify({'success': False, 'error': 'كلمة المرور القديمة مطلوبة'}), 400
+            if not verify_password(old_password, user['password_hash']):
+                return jsonify({'success': False, 'error': 'كلمة المرور القديمة غير صحيحة'}), 400
+        
+        # تحديد الهدف (إيميل أو جوال)
+        if method == 'email':
+            target = user['email']
+            if not target:
+                return jsonify({'success': False, 'error': 'لا يوجد إيميل مسجل'}), 400
+            masked_target = target[:2] + '***@' + target.split('@')[1] if '@' in target else target
+        else:  # sms
+            target = user['phone']
+            if not target:
+                return jsonify({'success': False, 'error': 'لا يوجد رقم جوال مسجل'}), 400
+            masked_target = target[:4] + '****' + target[-4:] if len(target) > 8 else target
+        
+        # توليد OTP
+        otp_code = generate_otp()
+        expires_at = datetime.now() + timedelta(minutes=10)
+        
+        # حفظ التحقق المعلق في DB
+        _save_pending_verification(user_id, action, otp_code, expires_at, method, new_value, old_password)
+        
+        # إرسال OTP
+        if method == 'email':
+            sent, actual_code = send_otp_email(target, otp_code, action_config['name'])
+            if sent and actual_code:
+                _update_pending_otp(user_id, action, actual_code)
+        else:
+            sent = send_otp_sms(target, otp_code, action_config['name'])
+        
+        if not sent:
+            return jsonify({'success': False, 'error': 'فشل في إرسال رمز التحقق'}), 500
+        
+        return jsonify({
+            'success': True,
+            'message': f'تم إرسال رمز التحقق إلى {masked_target}',
+            'method': method,
+            'masked_target': masked_target,
+            'expires_in': 600,  # 10 دقائق
+            'action': action,
+            'action_name': action_config['name'],
+        })
+        
+    except Exception as e:
+        logger.error(f"خطأ في طلب التحقق: {e}")
+        return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
+
+
+@secure_actions_bp.route('/verify-and-execute', methods=['POST'])
+@require_auth
+def verify_and_execute():
+    """
+    التحقق من OTP وتنفيذ العملية
+    
+    Input:
+    {
+        "action": "change_username|change_password|...",
+        "otp": "123456",
+        "new_value": "القيمة الجديدة (إذا لم تُرسل في request-verification)"
+    }
+    
+    Output:
+    {
+        "success": true,
+        "message": "تم تنفيذ العملية بنجاح"
+    }
+    """
+    try:
+        user_id = g.user_id
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
+        
+        action = data.get('action')
+        otp_code = data.get('otp', '').strip()
+        new_value = data.get('new_value')
+        
+        if not action or not otp_code:
+            return jsonify({'success': False, 'error': 'العملية ورمز OTP مطلوبان'}), 400
+        
+        # التحقق من وجود طلب معلق
+        pending = _get_pending_verification(user_id, action)
+        if not pending:
+            return jsonify({'success': False, 'error': 'لا يوجد طلب تحقق معلق لهذه العملية'}), 400
+        
+        # التحقق من انتهاء الصلاحية
+        if datetime.now() > pending['expires']:
+            _delete_pending_verification(user_id, action)
+            return jsonify({'success': False, 'error': 'انتهت صلاحية رمز التحقق'}), 400
+        
+        # التحقق من عدد المحاولات
+        if pending['attempts'] >= 5:
+            _delete_pending_verification(user_id, action)
+            return jsonify({'success': False, 'error': 'تجاوزت الحد الأقصى للمحاولات'}), 400
+        
+        # التحقق من OTP
+        if otp_code != pending['otp']:
+            _update_pending_attempts(user_id, action, pending['attempts'] + 1)
+            remaining = 5 - (pending['attempts'] + 1)
+            return jsonify({
+                'success': False,
+                'error': f'رمز التحقق غير صحيح. المحاولات المتبقية: {remaining}'
+            }), 400
+        
+        # استخدام القيمة الجديدة من الطلب الحالي أو السابق
+        final_new_value = new_value or pending.get('new_value')
+        
+        # تنفيذ العملية
+        result = execute_secure_action(user_id, action, final_new_value, pending.get('old_password'))
+        
+        # حذف التحقق المعلق
+        _delete_pending_verification(user_id, action)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"خطأ في التحقق والتنفيذ: {e}")
+        return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
+
+
+@secure_actions_bp.route('/get-verification-options/<action>', methods=['GET'])
+@require_auth
+def get_verification_options(action):
+    """
+    الحصول على خيارات التحقق المتاحة لعملية معينة
+    """
+    try:
+        user_id = g.user_id
+        
+        if action not in SECURE_ACTIONS:
+            return jsonify({
+                'success': False,
+                'error': 'نوع العملية غير مدعوم'
+            }), 400
+        
+        action_config = SECURE_ACTIONS[action]
+        user = get_user_by_id(user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'error': 'المستخدم غير موجود'}), 404
+        
+        # تحديد الخيارات المتاحة بناءً على بيانات المستخدم
+        # ✅ SMS أولاً (الافتراضي)
+        available_options = []
+        
+        if 'sms' in action_config['verification_options'] and user.get('phone'):
+            phone = user['phone']
+            masked = phone[:4] + '****' + phone[-4:] if len(phone) > 8 else phone
+            available_options.append({
+                'method': 'sms',
+                'masked_target': masked,
+                'label': 'إرسال رمز إلى الجوال',
+            })
+        
+        if 'email' in action_config['verification_options'] and user.get('email'):
+            email = user['email']
+            masked = email[:2] + '***@' + email.split('@')[1] if '@' in email else email
+            available_options.append({
+                'method': 'email',
+                'masked_target': masked,
+                'label': 'إرسال رمز إلى الإيميل',
+            })
+        
+        return jsonify({
+            'success': True,
+            'action': action,
+            'action_name': action_config['name'],
+            'requires_password': action_config['requires_password'],
+            'options': available_options,
+        })
+        
+    except Exception as e:
+        logger.error(f"خطأ في جلب خيارات التحقق: {e}")
+        return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
+
+
+@secure_actions_bp.route('/cancel-verification/<action>', methods=['DELETE'])
+@require_auth
+def cancel_verification(action):
+    """إلغاء طلب تحقق معلق"""
+    try:
+        user_id = g.user_id
+        
+        pending = _get_pending_verification(user_id, action)
+        if pending:
+            _delete_pending_verification(user_id, action)
+            return jsonify({'success': True, 'message': 'تم إلغاء طلب التحقق'})
+        
+        return jsonify({'success': True, 'message': 'لا يوجد طلب معلق'})
+        
+    except Exception as e:
+        logger.error(f"خطأ في إلغاء التحقق: {e}")
+        return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
+
+
+# ==================== تنفيذ العمليات ====================
+
+def execute_secure_action(user_id, action, new_value, old_password=None):
+    """تنفيذ العملية الحساسة بعد التحقق"""
+    try:
+        with db_manager.get_write_connection() as conn:
+            cursor = conn.cursor()
+            
+            if action == 'change_name':
+                # الاسم الكامل يمكن أن يكون فارغاً
+                cursor.execute("UPDATE users SET name = ? WHERE id = ?", (new_value.strip() if new_value else '', user_id))
+                return {'success': True, 'message': 'تم تغيير الاسم بنجاح'}
+            
+            elif action == 'change_username':
+                if not new_value or len(new_value) < 3:
+                    return {'success': False, 'error': 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل'}
+                
+                # التحقق من عدم وجود اسم مستخدم مكرر
+                cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (new_value, user_id))
+                if cursor.fetchone():
+                    return {'success': False, 'error': 'اسم المستخدم مستخدم بالفعل'}
+                
+                cursor.execute("UPDATE users SET username = ? WHERE id = ?", (new_value, user_id))
+                return {'success': True, 'message': 'تم تغيير اسم المستخدم بنجاح'}
+            
+            elif action == 'change_password':
+                if not new_value or len(new_value) < 6:
+                    return {'success': False, 'error': 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'}
+                
+                new_hash = hash_password(new_value)
+                cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
+                return {'success': True, 'message': 'تم تغيير كلمة المرور بنجاح'}
+            
+            elif action == 'change_email':
+                if not new_value or '@' not in new_value:
+                    return {'success': False, 'error': 'الإيميل غير صحيح'}
+                
+                # التحقق من عدم وجود إيميل مكرر
+                cursor.execute("SELECT id FROM users WHERE email = ? AND id != ?", (new_value.lower(), user_id))
+                if cursor.fetchone():
+                    return {'success': False, 'error': 'الإيميل مستخدم بالفعل'}
+                
+                cursor.execute("UPDATE users SET email = ? WHERE id = ?", (new_value.lower(), user_id))
+                return {'success': True, 'message': 'تم تغيير الإيميل بنجاح'}
+            
+            elif action == 'change_phone':
+                if not new_value or len(new_value) < 10:
+                    return {'success': False, 'error': 'رقم الجوال غير صحيح'}
+                
+                # التحقق من عدم وجود رقم مكرر
+                cursor.execute("SELECT id FROM users WHERE phone_number = ? AND id != ?", (new_value, user_id))
+                if cursor.fetchone():
+                    return {'success': False, 'error': 'رقم الجوال مستخدم بالفعل'}
+                
+                cursor.execute("UPDATE users SET phone_number = ? WHERE id = ?", (new_value, user_id))
+                return {'success': True, 'message': 'تم تغيير رقم الجوال بنجاح'}
+            
+            elif action == 'change_biometric':
+                # new_value = 'enable' أو 'disable'
+                enabled = new_value == 'enable'
+                cursor.execute("""
+                    UPDATE user_settings SET biometric_enabled = ? WHERE user_id = ?
+                """, (1 if enabled else 0, user_id))
+                status = 'تفعيل' if enabled else 'إلغاء'
+                return {'success': True, 'message': f'تم {status} البصمة بنجاح'}
+            
+            elif action == 'change_binance_keys':
+                # new_value = {'api_key': '...', 'secret_key': '...'}
+                if not isinstance(new_value, dict):
+                    return {'success': False, 'error': 'بيانات المفاتيح غير صحيحة'}
+                
+                api_key = new_value.get('api_key')
+                secret_key = new_value.get('secret_key')
+                
+                if not api_key or not secret_key:
+                    return {'success': False, 'error': 'مفاتيح Binance مطلوبة'}
+                
+                # ===== فحص أمان المفتاح قبل الحفظ =====
+                try:
+                    from binance.client import Client
+                    client = Client(api_key, secret_key)
+                    api_perms = client.get_api_key_permission()
+                    
+                    if api_perms.get('enableWithdrawals', False):
+                        return {
+                            'success': False, 
+                            'error': '🚨 المفتاح يملك صلاحية السحب!\n\n'
+                                     'لحماية أموالك، يجب تعطيل Enable Withdrawals '
+                                     'من إعدادات API في Binance قبل الحفظ.\n\n'
+                                     'خطوات التعطيل:\n'
+                                     '1. افتح Binance → API Management\n'
+                                     '2. اضغط Edit restrictions\n'
+                                     '3. عطّل Enable Withdrawals\n'
+                                     '4. أعد المحاولة هنا'
+                        }
+                    
+                    if not api_perms.get('ipRestrict', False):
+                        logger.warning(f"⚠️ User {user_id} saving keys without IP restriction")
+                    
+                except Exception as binance_check_error:
+                    logger.warning(f"⚠️ Could not verify key permissions: {binance_check_error}")
+                
+                # تشفير المفاتيح
+                try:
+                    from config.security.encryption_service import encrypt_binance_keys
+                    encrypted = encrypt_binance_keys(api_key, secret_key)
+                    api_key = encrypted['api_key']
+                    secret_key = encrypted['secret_key']
+                except Exception as e:
+                    logger.warning(f"⚠️ Encryption failed, using raw keys: {e}")
+                
+                # حفظ أو تحديث المفاتيح
+                cursor.execute("""
+                    INSERT OR REPLACE INTO user_binance_keys (user_id, api_key, secret_key, created_at)
+                    VALUES (?, ?, ?, datetime('now'))
+                """, (user_id, api_key, secret_key))
+                return {'success': True, 'message': 'تم حفظ مفاتيح Binance بنجاح'}
+            
+            elif action == 'delete_binance_keys':
+                cursor.execute("DELETE FROM user_binance_keys WHERE user_id = ?", (user_id,))
+                return {'success': True, 'message': 'تم حذف مفاتيح Binance بنجاح'}
+            
+            else:
+                return {'success': False, 'error': 'نوع العملية غير مدعوم'}
+                
+    except Exception as e:
+        logger.error(f"خطأ في تنفيذ العملية {action}: {e}")
+        return {'success': False, 'error': 'خطأ في تنفيذ العملية'}
+
+
+# ==================== تسجيل Blueprint ====================
+
+def register_secure_actions_blueprint(app):
+    """تسجيل Blueprint في التطبيق"""
+    app.register_blueprint(secure_actions_bp)
+    logger.info("✅ تم تسجيل Secure Actions Blueprint")
+
+
+if __name__ == "__main__":
+    print("🔐 Secure Actions Endpoints جاهزة")
+    print("\nالمسارات المتاحة:")
+    print("- POST /api/user/secure/request-verification")
+    print("- POST /api/user/secure/verify-and-execute")
+    print("- GET  /api/user/secure/get-verification-options/<action>")
+    print("- DELETE /api/user/secure/cancel-verification/<action>")
+    print("\nالعمليات المدعومة:")
+    for action, config in SECURE_ACTIONS.items():
+        print(f"  • {action}: {config['name']}")

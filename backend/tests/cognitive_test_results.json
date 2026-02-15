@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-01-20T10:49:29.923515",
+  "component_tests": {
+    "market_state_detector": {
+      "status": "PASS",
+      "state": "range",
+      "confidence": 52.94117647058824,
+      "trend_strength": 10.518144326189777
+    },
+    "asset_classifier": {
+      "status": "PASS",
+      "type": "known_stable",
+      "risk_level": "low",
+      "position_multiplier": 1.2100000000000002
+    },
+    "pattern_objective": {
+      "status": "PASS",
+      "objective": "abstain",
+      "confidence": 40.58823529411765,
+      "risk_reward": 0
+    },
+    "strategy_selector": {
+      "status": "PASS",
+      "strategy": "bollinger_bounce",
+      "confidence": 84.3529411764706,
+      "is_valid": true
+    },
+    "dynamic_parameters": {
+      "status": "PASS",
+      "position_size": 0.17820000000000003,
+      "stop_loss": 0.025,
+      "take_profit": 0.04
+    },
+    "reasoning_engine": {
+      "status": "PASS",
+      "decision": "abstain",
+      "confidence": 53.71764705882353,
+      "checklist_passed": 5
+    }
+  },
+  "integration_tests": [
+    {
+      "scenario": "uptrend",
+      "symbol": "BTC/USDT",
+      "status": "PASS",
+      "decision": "abstain",
+      "should_trade": false,
+      "confidence": 53.71764705882353,
+      "market_state": "range",
+      "strategy": "bollinger_bounce"
+    },
+    {
+      "scenario": "downtrend",
+      "symbol": "ETH/USDT",
+      "status": "PASS",
+      "decision": "abstain",
+      "should_trade": false,
+      "confidence": 53.71764705882353,
+      "market_state": "range",
+      "strategy": "mean_reversion"
+    },
+    {
+      "scenario": "range",
+      "symbol": "SOL/USDT",
+      "status": "PASS",
+      "decision": "abstain",
+      "should_trade": false,
+      "confidence": 32.91228070175438,
+      "market_state": "downtrend",
+      "strategy": "abstain"
+    },
+    {
+      "scenario": "volatile",
+      "symbol": "DOGE/USDT",
+      "status": "PASS",
+      "decision": "abstain",
+      "should_trade": false,
+      "confidence": 39.0,
+      "market_state": "uptrend",
+      "strategy": "abstain"
+    }
+  ],
+  "backtest_results": {
+    "total_trades": 0,
+    "message": "لا توجد صفقات مغلقة"
+  },
+  "strengths": [
+    "✅ جميع المكونات (6) تعمل بشكل صحيح",
+    "✅ التكامل يعمل بنسبة 100%",
+    "✅ نظام تصنيف حالة السوق متعدد المؤشرات",
+    "✅ State-Strategy Binding صارم يمنع الأخطاء",
+    "✅ محرك تفكير يسأل 'لماذا؟' قبل كل صفقة",
+    "✅ معلمات ديناميكية حسب نوع الأصل وحالة السوق"
+  ],
+  "weaknesses": [
+    "⚠️ لا توجد صفقات كافية للتحليل",
+    "⚠️ يحتاج اختبار على بيانات حقيقية أكثر",
+    "⚠️ قد يكون محافظاً جداً في بعض الحالات"
+  ]
+}

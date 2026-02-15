@@ -1,0 +1,40 @@
+{
+  "ports": {
+    "react": 3000,
+    "api": 8081
+  },
+  "timeouts": {
+    "startup": 60,
+    "health_check": 10,
+    "shutdown": 30
+  },
+  "monitoring": {
+    "enabled": true,
+    "health_check_interval": 60,
+    "max_memory_usage": 75,
+    "max_response_time": 3.0,
+    "save_stats_interval": 600,
+    "memory_optimization": true,
+    "gc_interval": 300,
+    "log_level": "INFO"
+  },
+  "auto_restart": {
+    "enabled": true,
+    "max_failures": 3,
+    "failure_window": 300
+  },
+  "environment": {
+    "NODE_ENV": "development",
+    "REACT_APP_VERSION": "1.0.0",
+    "REACT_APP_API_BASE_URL": "http://localhost:8081",
+    "REACT_APP_WS_URL": "ws://localhost:8081/ws",
+    "BROWSER": "none",
+    "CI": "false"
+  },
+  "features": {
+    "error_logging": true,
+    "performance_monitoring": true,
+    "health_checks": true,
+    "auto_recovery": true
+  }
+}

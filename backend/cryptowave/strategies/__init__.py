@@ -1,0 +1,1 @@
+# CryptoWave Strategies Module
