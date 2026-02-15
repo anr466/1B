@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>معاينة شاشات التطبيق - 1B Trading</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --gold: #D4AF37;
+            --gold-light: #FCD34D;
+            --purple: #8B5CF6;
+            --purple-light: #A78BFA;
+            --purple-dark: #7C3AED;
+            --cyan: #06B6D4;
+            --success: #10B981;
+            --error: #EF4444;
+            --warning: #F59E0B;
+            --bg-dark: #0D0D12;
+            --bg-card: #1A1A24;
+            --bg-card-light: #252532;
+            --text: #FFFFFF;
+            --text-secondary: #9CA3AF;
+            --text-muted: #6B7280;
+            --border: #2A2A3C;
+        }
+
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0d0d15 100%);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--gold) 0%, var(--purple) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .page-header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        /* Screens Container */
+        .screens-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 40px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Phone Frame */
+        .phone-frame {
+            width: 320px;
+            height: 680px;
+            background: var(--bg-dark);
+            border-radius: 40px;
+            padding: 12px;
+            box-shadow:
+                0 0 0 3px #333,
+                0 0 0 6px #1a1a1a,
+                0 25px 50px rgba(0, 0, 0, 0.5),
+                inset 0 0 20px rgba(139, 92, 246, 0.1);
+            position: relative;
+        }
+
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-dark);
+            border-radius: 32px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .phone-notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 28px;
+            background: #000;
+            border-radius: 0 0 20px 20px;
+            z-index: 100;
+        }
+
+        .phone-label {
+            text-align: center;
+            margin-top: 20px;
+            color: var(--gold);
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        /* Screen Content */
+        .screen-content {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding-top: 35px;
+        }
+
+        /* ========== SPLASH SCREEN ========== */
+        .splash-screen {
+            background: linear-gradient(180deg, #0D0D12 0%, #1A1A24 50%, #0D0D12 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .splash-logo {
+            width: 180px;
+            height: 180px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.05);
+                opacity: 0.9;
+            }
+        }
+
+        .splash-title {
+            font-size: 32px;
+            font-weight: 900;
+            margin-top: 20px;
+            letter-spacing: 3px;
+        }
+
+        .splash-title .gold {
+            color: var(--gold);
+        }
+
+        .splash-title .purple {
+            color: var(--purple);
+        }
+
+        .splash-title .white {
+            color: var(--text);
+            font-weight: 400;
+        }
+
+        .splash-tagline {
+            color: var(--text-secondary);
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .splash-loader {
+            margin-top: 40px;
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--gold);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ========== LOGIN SCREEN ========== */
+        .login-screen {
+            background: linear-gradient(180deg, #0D0D12 0%, #15151F 100%);
+            padding: 20px;
+        }
+
+        .login-logo-section {
+            text-align: center;
+            padding: 30px 0;
+        }
+
+        .login-logo {
+            width: 100px;
+            height: 100px;
+        }
+
+        .login-welcome {
+            color: var(--text);
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 15px;
+        }
+
+        .login-subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        .input-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .input-field {
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            color: var(--text);
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .input-field.focused {
+            border-color: var(--purple);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+        }
+
+        .input-icon {
+            color: var(--text-muted);
+        }
+
+        .login-btn {
+            width: 100%;
+            background: linear-gradient(135deg, var(--purple) 0%, var(--purple-dark) 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+
+        .login-divider {
+            display: flex;
+            align-items: center;
+            margin: 20px 0;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .login-divider::before,
+        .login-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .login-divider span {
+            padding: 0 15px;
+        }
+
+        .biometric-btn {
+            width: 60px;
+            height: 60px;
+            background: var(--bg-card);
+            border: 2px solid var(--purple);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+        }
+
+        /* ========== DASHBOARD SCREEN ========== */
+        .dashboard-screen {
+            background: var(--bg-dark);
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: linear-gradient(180deg, rgba(139, 92, 246, 0.1) 0%, transparent 100%);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+        }
+
+        .header-welcome {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-icon-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(139, 92, 246, 0.1);
+            position: relative;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 8px;
+            height: 8px;
+            background: var(--error);
+            border-radius: 50%;
+        }
+
+        .settings-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .dashboard-content {
+            padding: 0 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* Portfolio Card */
+        .portfolio-card {
+            background: linear-gradient(135deg, var(--purple) 0%, #6D28D9 100%);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .portfolio-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        }
+
+        .portfolio-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .portfolio-value {
+            font-size: 32px;
+            font-weight: 900;
+            color: white;
+            direction: ltr;
+            text-align: right;
+        }
+
+        .portfolio-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .quick-action {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 16px 8px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .quick-action-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 8px;
+            font-size: 18px;
+        }
+
+        .quick-action-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Stats Row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .stat-value.success {
+            color: var(--success);
+        }
+
+        .stat-value.gold {
+            color: var(--gold);
+        }
+
+        /* ========== PROFILE SCREEN ========== */
+        .profile-screen {
+            background: var(--bg-dark);
+        }
+
+        .profile-header {
+            text-align: center;
+            padding: 30px 20px;
+            background: linear-gradient(180deg, rgba(139, 92, 246, 0.15) 0%, transparent 100%);
+        }
+
+        .profile-avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--purple) 0%, var(--gold) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 15px;
+            font-size: 40px;
+            color: white;
+            position: relative;
+        }
+
+        .profile-logo-badge {
+            position: absolute;
+            bottom: -5px;
+            right: -5px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 3px solid var(--bg-dark);
+        }
+
+        .profile-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .profile-email {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .profile-content {
+            padding: 0 20px;
+        }
+
+        .profile-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .profile-section-title {
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 13px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .profile-item {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .profile-item:last-child {
+            border-bottom: none;
+        }
+
+        .profile-item-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 12px;
+        }
+
+        .profile-item-text {
+            flex: 1;
+        }
+
+        .profile-item-title {
+            color: var(--text);
+            font-size: 15px;
+        }
+
+        .profile-item-subtitle {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        /* ========== TRADE HISTORY SCREEN ========== */
+        .trades-screen {
+            background: var(--bg-dark);
+        }
+
+        .trades-header {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            gap: 15px;
+        }
+
+        .back-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: var(--bg-card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text);
+        }
+
+        .trades-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .trades-filters {
+            display: flex;
+            gap: 10px;
+            padding: 0 20px 15px;
+            overflow-x: auto;
+        }
+
+        .filter-chip {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 13px;
+            white-space: nowrap;
+            border: 1px solid var(--border);
+        }
+
+        .filter-chip.active {
+            background: var(--purple);
+            color: white;
+            border-color: var(--purple);
+        }
+
+        .trades-list {
+            padding: 0 20px;
+        }
+
+        .trade-item {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .trade-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .trade-symbol {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .trade-coin-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #F7931A 0%, #FFAB40 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .trade-coin-name {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .trade-type {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .trade-type.buy {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+        }
+
+        .trade-type.sell {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--error);
+        }
+
+        .trade-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .trade-detail-label {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .trade-detail-value {
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            display: flex;
+            justify-content: space-around;
+            padding: 12px 0;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .nav-item.active {
+            color: var(--purple);
+        }
+
+        .nav-icon {
+            font-size: 20px;
+        }
+
+        /* SVG Icons */
+        .svg-icon {
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="page-header">
+        <h1>🎨 معاينة شاشات التطبيق</h1>
+        <p>تصميم 1B Trading مع الشعار الجديد والأيقونات المخصصة</p>
+    </div>
+
+    <div class="screens-container">
+
+        <!-- ========== SPLASH SCREEN ========== -->
+        <div>
+            <div class="phone-frame">
+                <div class="phone-screen">
+                    <div class="phone-notch"></div>
+                    <div class="splash-screen">
+                        <img src="logo.png" class="splash-logo" alt="1B Trading Logo">
+                        <div class="splash-title">
+                            <span class="gold">1</span><span class="purple">B</span><span class="white"> Trading</span>
+                        </div>
+                        <div class="splash-tagline">تداول ذكي • نتائج مثبتة</div>
+                        <div class="splash-loader"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="phone-label">شاشة البداية</div>
+        </div>
+
+        <!-- ========== LOGIN SCREEN ========== -->
+        <div>
+            <div class="phone-frame">
+                <div class="phone-screen">
+                    <div class="phone-notch"></div>
+                    <div class="screen-content login-screen">
+                        <div class="login-logo-section">
+                            <img src="logo.png" class="login-logo" alt="Logo">
+                            <div class="login-welcome">مرحباً بعودتك</div>
+                            <div class="login-subtitle">سجل دخولك للمتابعة</div>
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label">البريد الإلكتروني</label>
+                            <div class="input-field">
+                                <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                    <rect x="3" y="5" width="18" height="14" rx="2" stroke="#6B7280"
+                                        stroke-width="1.5" />
+                                    <path d="M3 7L12 13L21 7" stroke="#6B7280" stroke-width="1.5" />
+                                </svg>
+                                <span style="color: var(--text-muted)">example@email.com</span>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label">كلمة المرور</label>
+                            <div class="input-field focused">
+                                <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                    <rect x="5" y="10" width="14" height="11" rx="2" fill="#8B5CF6" />
+                                    <path d="M8 10V7C8 4.79 9.79 3 12 3C14.21 3 16 4.79 16 7V10" stroke="#8B5CF6"
+                                        stroke-width="2" />
+                                </svg>
+                                <span>••••••••</span>
+                            </div>
+                        </div>
+
+                        <button class="login-btn">تسجيل الدخول</button>
+
+                        <div class="login-divider">
+                            <span>أو</span>
+                        </div>
+
+                        <div class="biometric-btn">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="12" r="10" stroke="#8B5CF6" stroke-width="1.5"
+                                    stroke-dasharray="4 2" />
+                                <circle cx="12" cy="12" r="6" stroke="#8B5CF6" stroke-width="1.5"
+                                    stroke-dasharray="3 2" />
+                                <circle cx="12" cy="12" r="2" fill="#8B5CF6" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="phone-label">شاشة تسجيل الدخول</div>
+        </div>
+
+        <!-- ========== DASHBOARD SCREEN ========== -->
+        <div>
+            <div class="phone-frame">
+                <div class="phone-screen">
+                    <div class="phone-notch"></div>
+                    <div class="screen-content dashboard-screen">
+                        <div class="dashboard-header">
+                            <div class="header-left">
+                                <img src="logo.png" class="header-logo" alt="Logo">
+                                <span class="header-welcome">مرحباً، أحمد</span>
+                            </div>
+                            <div class="header-right">
+                                <div class="header-icon-btn">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                                        <path
+                                            d="M12 2C10.9 2 10 2.9 10 4V4.29C7.03 5.17 5 7.9 5 11V17L3 19V20H21V19L19 17V11C19 7.9 16.97 5.17 14 4.29V4C14 2.9 13.1 2 12 2ZM12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.9 22 12 22Z"
+                                            fill="white" />
+                                    </svg>
+                                    <div class="notification-badge"></div>
+                                </div>
+                                <div class="header-icon-btn settings-btn">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                        <circle cx="12" cy="12" r="3" fill="#9CA3AF" />
+                                        <path
+                                            d="M19.43 12.98C19.47 12.66 19.5 12.34 19.5 12C19.5 11.66 19.47 11.34 19.43 11.02L21.54 9.37C21.73 9.22 21.78 8.95 21.66 8.73L19.66 5.27C19.54 5.05 19.27 4.97 19.05 5.05L16.56 6.05C16.04 5.65 15.48 5.32 14.87 5.07L14.49 2.42C14.46 2.18 14.25 2 14 2H10C9.75 2 9.54 2.18 9.51 2.42L9.13 5.07C8.52 5.32 7.96 5.66 7.44 6.05L4.95 5.05C4.72 4.96 4.46 5.05 4.34 5.27L2.34 8.73C2.21 8.95 2.27 9.22 2.46 9.37L4.57 11.02C4.53 11.34 4.5 11.67 4.5 12C4.5 12.33 4.53 12.66 4.57 12.98L2.46 14.63C2.27 14.78 2.21 15.05 2.34 15.27L4.34 18.73C4.46 18.95 4.73 19.03 4.95 18.95L7.44 17.95C7.96 18.35 8.52 18.68 9.13 18.93L9.51 21.58C9.54 21.82 9.75 22 10 22H14C14.25 22 14.46 21.82 14.49 21.58L14.87 18.93C15.48 18.68 16.04 18.34 16.56 17.95L19.05 18.95C19.28 19.04 19.54 18.95 19.66 18.73L21.66 15.27C21.78 15.05 21.73 14.78 21.54 14.63L19.43 12.98Z"
+                                            stroke="#9CA3AF" stroke-width="1.5" fill="none" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-content">
+                            <div class="portfolio-card">
+                                <div class="portfolio-label">إجمالي المحفظة</div>
+                                <div class="portfolio-value">$12,458.32</div>
+                                <div class="portfolio-change">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                        <path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" />
+                                    </svg>
+                                    +8.24%
+                                </div>
+                            </div>
+
+                            <div class="quick-actions">
+                                <div class="quick-action">
+                                    <div class="quick-action-icon" style="background: rgba(16, 185, 129, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <path
+                                                d="M16 6L18.29 8.29L13.41 13.17L9.41 9.17L2 16.59L3.41 18L9.41 12L13.41 16L19.71 9.71L22 12V6H16Z"
+                                                fill="#10B981" />
+                                        </svg>
+                                    </div>
+                                    <div class="quick-action-label">التداول</div>
+                                </div>
+                                <div class="quick-action">
+                                    <div class="quick-action-icon" style="background: rgba(212, 175, 55, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <rect x="3" y="12" width="4" height="9" rx="1" fill="#D4AF37"
+                                                opacity="0.5" />
+                                            <rect x="10" y="8" width="4" height="13" rx="1" fill="#D4AF37"
+                                                opacity="0.7" />
+                                            <rect x="17" y="4" width="4" height="17" rx="1" fill="#D4AF37" />
+                                        </svg>
+                                    </div>
+                                    <div class="quick-action-label">الرسوم</div>
+                                </div>
+                                <div class="quick-action">
+                                    <div class="quick-action-icon" style="background: rgba(139, 92, 246, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <path
+                                                d="M21 7H3C2.45 7 2 7.45 2 8V19C2 19.55 2.45 20 3 20H21C21.55 20 22 19.55 22 19V8C22 7.45 21.55 7 21 7Z"
+                                                fill="#8B5CF6" opacity="0.3" />
+                                            <path d="M21 7V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V7" stroke="#8B5CF6"
+                                                stroke-width="2" />
+                                            <circle cx="17" cy="13" r="2" fill="#D4AF37" />
+                                        </svg>
+                                    </div>
+                                    <div class="quick-action-label">المحفظة</div>
+                                </div>
+                                <div class="quick-action">
+                                    <div class="quick-action-icon" style="background: rgba(6, 182, 212, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <rect x="4" y="6" width="16" height="14" rx="3" fill="#06B6D4"
+                                                opacity="0.2" />
+                                            <rect x="4" y="6" width="16" height="14" rx="3" stroke="#06B6D4"
+                                                stroke-width="1.5" />
+                                            <circle cx="9" cy="12" r="2" fill="#06B6D4" />
+                                            <circle cx="15" cy="12" r="2" fill="#06B6D4" />
+                                        </svg>
+                                    </div>
+                                    <div class="quick-action-label">الروبوت</div>
+                                </div>
+                            </div>
+
+                            <div class="stats-row">
+                                <div class="stat-card">
+                                    <div class="stat-label">الأرباح اليوم</div>
+                                    <div class="stat-value success">+$234.56</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">الصفقات النشطة</div>
+                                    <div class="stat-value gold">5</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bottom-nav">
+                            <div class="nav-item active">
+                                <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                    <path
+                                        d="M3 12L12 3L21 12M5 10V19C5 19.55 5.45 20 6 20H9V14H15V20H18C18.55 20 19 19.55 19 19V10" />
+                                </svg>
+                                <span>الرئيسية</span>
+                            </div>
+                            <div class="nav-item">
+                                <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="1.5">
+                                    <rect x="3" y="12" width="4" height="9" rx="1" />
+                                    <rect x="10" y="8" width="4" height="13" rx="1" />
+                                    <rect x="17" y="4" width="4" height="17" rx="1" />
+                                </svg>
+                                <span>التداول</span>
+                            </div>
+                            <div class="nav-item">
+                                <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="1.5">
+                                    <path d="M21 7H3C2.45 7 2 7.45 2 8V19C2 19.55 2.45 20 3 20H21" />
+                                    <path d="M21 7V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V7" />
+                                </svg>
+                                <span>المحفظة</span>
+                            </div>
+                            <div class="nav-item">
+                                <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="1.5">
+                                    <circle cx="12" cy="8" r="4" />
+                                    <path d="M4 20C4 16.69 7.58 14 12 14C16.42 14 20 16.69 20 20" />
+                                </svg>
+                                <span>الملف</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="phone-label">الشاشة الرئيسية</div>
+        </div>
+
+        <!-- ========== PROFILE SCREEN ========== -->
+        <div>
+            <div class="phone-frame">
+                <div class="phone-screen">
+                    <div class="phone-notch"></div>
+                    <div class="screen-content profile-screen">
+                        <div class="profile-header">
+                            <div class="profile-avatar">
+                                أ
+                                <img src="logo.png" class="profile-logo-badge" alt="Logo">
+                            </div>
+                            <div class="profile-name">أحمد محمد</div>
+                            <div class="profile-email">ahmed@example.com</div>
+                        </div>
+
+                        <div class="profile-content">
+                            <div class="profile-section">
+                                <div class="profile-section-title">الحساب</div>
+                                <div class="profile-item">
+                                    <div class="profile-item-icon" style="background: rgba(139, 92, 246, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="12" cy="8" r="4" stroke="#8B5CF6" stroke-width="2" />
+                                            <path d="M4 20C4 16.69 7.58 14 12 14C16.42 14 20 16.69 20 20"
+                                                stroke="#8B5CF6" stroke-width="2" />
+                                        </svg>
+                                    </div>
+                                    <div class="profile-item-text">
+                                        <div class="profile-item-title">معلومات الحساب</div>
+                                        <div class="profile-item-subtitle">تعديل البيانات الشخصية</div>
+                                    </div>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                        <path d="M15 18L9 12L15 6" stroke="#6B7280" stroke-width="2"
+                                            stroke-linecap="round" />
+                                    </svg>
+                                </div>
+                                <div class="profile-item">
+                                    <div class="profile-item-icon" style="background: rgba(212, 175, 55, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <path
+                                                d="M12 2L4 5V11C4 16.55 7.84 21.74 12 23C16.16 21.74 20 16.55 20 11V5L12 2Z"
+                                                stroke="#D4AF37" stroke-width="2" />
+                                            <path d="M9 12L11 14L15 10" stroke="#D4AF37" stroke-width="2"
+                                                stroke-linecap="round" />
+                                        </svg>
+                                    </div>
+                                    <div class="profile-item-text">
+                                        <div class="profile-item-title">الأمان</div>
+                                        <div class="profile-item-subtitle">كلمة المرور والبصمة</div>
+                                    </div>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                        <path d="M15 18L9 12L15 6" stroke="#6B7280" stroke-width="2"
+                                            stroke-linecap="round" />
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <div class="profile-section">
+                                <div class="profile-section-title">التداول</div>
+                                <div class="profile-item">
+                                    <div class="profile-item-icon" style="background: rgba(6, 182, 212, 0.15);">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="8" cy="10" r="5" stroke="#06B6D4" stroke-width="2" />
+                                            <path d="M12 10H21M21 10V14M17 10V13" stroke="#06B6D4" stroke-width="2"
+                                                stroke-linecap="round" />
+                                        </svg>
+                                    </div>
+                                    <div class="profile-item-text">
+                                        <div class="profile-item-title">مفاتيح Binance</div>
+                                        <div class="profile-item-subtitle">إدارة API Keys</div>
+                                    </div>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                        <path d="M15 18L9 12L15 6" stroke="#6B7280" stroke-width="2"
+                                            stroke-linecap="round" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="phone-label">الملف الشخصي</div>
+        </div>
+
+        <!-- ========== TRADE HISTORY SCREEN ========== -->
+        <div>
+            <div class="phone-frame">
+                <div class="phone-screen">
+                    <div class="phone-notch"></div>
+                    <div class="screen-content trades-screen">
+                        <div class="trades-header">
+                            <div class="back-btn">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                    <path d="M4 12H20M4 12L10 6M4 12L10 18" stroke="white" stroke-width="2"
+                                        stroke-linecap="round" />
+                                </svg>
+                            </div>
+                            <div class="trades-title">سجل الصفقات</div>
+                        </div>
+
+                        <div class="trades-filters">
+                            <div class="filter-chip active">الكل</div>
+                            <div class="filter-chip">شراء</div>
+                            <div class="filter-chip">بيع</div>
+                            <div class="filter-chip">مكتملة</div>
+                        </div>
+
+                        <div class="trades-list">
+                            <div class="trade-item">
+                                <div class="trade-header">
+                                    <div class="trade-symbol">
+                                        <div class="trade-coin-icon"
+                                            style="background: linear-gradient(135deg, #F7931A, #FFAB40);">₿</div>
+                                        <span class="trade-coin-name">BTC/USDT</span>
+                                    </div>
+                                    <div class="trade-type buy">شراء</div>
+                                </div>
+                                <div class="trade-details">
+                                    <div>
+                                        <div class="trade-detail-label">السعر</div>
+                                        <div class="trade-detail-value">$67,234.50</div>
+                                    </div>
+                                    <div>
+                                        <div class="trade-detail-label">الكمية</div>
+                                        <div class="trade-detail-value">0.0234 BTC</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="trade-item">
+                                <div class="trade-header">
+                                    <div class="trade-symbol">
+                                        <div class="trade-coin-icon"
+                                            style="background: linear-gradient(135deg, #627EEA, #8B9FFF);">Ξ</div>
+                                        <span class="trade-coin-name">ETH/USDT</span>
+                                    </div>
+                                    <div class="trade-type sell">بيع</div>
+                                </div>
+                                <div class="trade-details">
+                                    <div>
+                                        <div class="trade-detail-label">السعر</div>
+                                        <div class="trade-detail-value">$3,456.78</div>
+                                    </div>
+                                    <div>
+                                        <div class="trade-detail-label">الربح</div>
+                                        <div class="trade-detail-value" style="color: var(--success);">+$45.23</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="trade-item">
+                                <div class="trade-header">
+                                    <div class="trade-symbol">
+                                        <div class="trade-coin-icon"
+                                            style="background: linear-gradient(135deg, #F3BA2F, #FFD54F);">B</div>
+                                        <span class="trade-coin-name">BNB/USDT</span>
+                                    </div>
+                                    <div class="trade-type buy">شراء</div>
+                                </div>
+                                <div class="trade-details">
+                                    <div>
+                                        <div class="trade-detail-label">السعر</div>
+                                        <div class="trade-detail-value">$612.45</div>
+                                    </div>
+                                    <div>
+                                        <div class="trade-detail-label">الكمية</div>
+                                        <div class="trade-detail-value">2.5 BNB</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="phone-label">سجل الصفقات</div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>

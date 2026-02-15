@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فحص الشعار - 1B Trading</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --gold: #D4AF37;
+            --purple: #8B5CF6;
+            --cyan: #06B6D4;
+            --bg: #0D0D12;
+            --card: #1A1A24;
+            --text: #FFFFFF;
+            --text-secondary: #9CA3AF;
+        }
+
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 30px;
+            min-height: 100vh;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--gold);
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+        }
+
+        .check-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .check-card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid #2A2A3C;
+        }
+
+        .check-card h3 {
+            color: var(--purple);
+            margin-bottom: 5px;
+            font-size: 18px;
+        }
+
+        .check-card .info {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+
+        .preview-area {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 150px;
+            border: 1px dashed #333;
+        }
+
+        .logo-img {
+            object-fit: contain;
+        }
+
+        /* Splash Preview */
+        .splash-preview {
+            flex-direction: column;
+            gap: 15px;
+            background: radial-gradient(circle at 50% 30%, #1a1033 0%, var(--bg) 70%);
+        }
+
+        .splash-preview .logo-img {
+            width: 180px;
+            height: 180px;
+        }
+
+        .splash-preview .app-name {
+            font-size: 32px;
+            font-weight: 900;
+            color: var(--gold);
+            text-shadow: 0 2px 10px rgba(212, 175, 55, 0.5);
+        }
+
+        .splash-preview .tagline {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+        }
+
+        /* Auth Preview */
+        .auth-preview .logo-img {
+            width: 120px;
+            height: 120px;
+        }
+
+        /* Header Preview */
+        .header-preview {
+            background: var(--card);
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-radius: 0;
+        }
+
+        .header-preview .logo-img {
+            width: 36px;
+            height: 36px;
+        }
+
+        .header-preview .welcome {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* Profile Preview */
+        .profile-preview .logo-img {
+            width: 45px;
+            height: 45px;
+        }
+
+        /* Icon Preview */
+        .icon-preview {
+            gap: 20px;
+        }
+
+        .icon-preview .icon-box {
+            text-align: center;
+        }
+
+        .icon-preview .icon-box img {
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .icon-preview .icon-label {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-top: 8px;
+        }
+
+        /* Status */
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status.ok {
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .status .icon {
+            font-size: 18px;
+        }
+
+        .status .text {
+            color: #10B981;
+            font-size: 13px;
+        }
+
+        /* Summary */
+        .summary {
+            max-width: 800px;
+            margin: 50px auto 0;
+            background: var(--card);
+            border-radius: 16px;
+            padding: 30px;
+        }
+
+        .summary h2 {
+            color: var(--gold);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .summary table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .summary th,
+        .summary td {
+            padding: 12px;
+            text-align: right;
+            border-bottom: 1px solid #333;
+        }
+
+        .summary th {
+            color: var(--purple);
+            font-weight: 700;
+        }
+
+        .summary td {
+            color: var(--text-secondary);
+        }
+
+        .summary .size {
+            color: var(--cyan);
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🐪 فحص الشعار الرسمي</h1>
+    <p class="subtitle">التحقق من توافق الشعار مع جميع مكونات التطبيق</p>
+
+    <div class="check-grid">
+
+        <!-- 1. Splash Screen -->
+        <div class="check-card">
+            <h3>شاشة البداية (Splash)</h3>
+            <p class="info">variant="splash" | size: 180px</p>
+            <div class="preview-area splash-preview">
+                <img src="logo_transparent.png" class="logo-img" alt="Logo">
+                <div class="app-name">1B Trading</div>
+                <div class="tagline">تداول ذكي • نتائج مثبتة</div>
+            </div>
+            <div class="status ok">
+                <span class="icon">✅</span>
+                <span class="text">الشعار يظهر بشكل صحيح - حجم كبير ومناسب</span>
+            </div>
+        </div>
+
+        <!-- 2. Auth Screens -->
+        <div class="check-card">
+            <h3>شاشات المصادقة (Login/Register)</h3>
+            <p class="info">variant="auth" | size: 120px</p>
+            <div class="preview-area auth-preview">
+                <img src="logo_transparent.png" class="logo-img" alt="Logo">
+            </div>
+            <div class="status ok">
+                <span class="icon">✅</span>
+                <span class="text">حجم متوسط مناسب لشاشات تسجيل الدخول</span>
+            </div>
+        </div>
+
+        <!-- 3. Header -->
+        <div class="check-card">
+            <h3>الهيدر (Dashboard)</h3>
+            <p class="info">variant="header" | size: 36px</p>
+            <div class="preview-area header-preview">
+                <img src="logo_transparent.png" class="logo-img" alt="Logo">
+                <span class="welcome">مرحباً، أحمد</span>
+            </div>
+            <div class="status ok">
+                <span class="icon">✅</span>
+                <span class="text">حجم صغير مناسب للهيدر</span>
+            </div>
+        </div>
+
+        <!-- 4. Profile -->
+        <div class="check-card">
+            <h3>صفحة الملف الشخصي</h3>
+            <p class="info">variant="profile" | size: 45px</p>
+            <div class="preview-area profile-preview">
+                <img src="logo_transparent.png" class="logo-img" alt="Logo">
+            </div>
+            <div class="status ok">
+                <span class="icon">✅</span>
+                <span class="text">حجم مناسب لصفحة البروفايل</span>
+            </div>
+        </div>
+
+        <!-- 5. App Icons -->
+        <div class="check-card" style="grid-column: span 2;">
+            <h3>أيقونات التطبيق</h3>
+            <p class="info">icon.png | adaptive-icon.png | splash.png</p>
+            <div class="preview-area icon-preview">
+                <div class="icon-box">
+                    <img src="../assets/icon.png" width="80" height="80" alt="Icon">
+                    <div class="icon-label">icon.png</div>
+                </div>
+                <div class="icon-box">
+                    <img src="../assets/adaptive-icon.png" width="80" height="80" alt="Adaptive">
+                    <div class="icon-label">adaptive-icon.png</div>
+                </div>
+                <div class="icon-box">
+                    <img src="../assets/splash.png" width="80" height="80" alt="Splash">
+                    <div class="icon-label">splash.png</div>
+                </div>
+            </div>
+            <div class="status ok">
+                <span class="icon">✅</span>
+                <span class="text">جميع أيقونات التطبيق محدثة</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Summary Table -->
+    <div class="summary">
+        <h2>📋 ملخص التوافق</h2>
+        <table>
+            <tr>
+                <th>المكون</th>
+                <th>الملف</th>
+                <th>الحجم</th>
+                <th>الحالة</th>
+            </tr>
+            <tr>
+                <td>SplashScreen.js</td>
+                <td>UnifiedBrandLogo</td>
+                <td class="size">180px</td>
+                <td>✅ متوافق</td>
+            </tr>
+            <tr>
+                <td>LoginScreen.js</td>
+                <td>UnifiedBrandLogo</td>
+                <td class="size">120px</td>
+                <td>✅ متوافق</td>
+            </tr>
+            <tr>
+                <td>RegisterScreen.js</td>
+                <td>UnifiedBrandLogo</td>
+                <td class="size">120px</td>
+                <td>✅ متوافق</td>
+            </tr>
+            <tr>
+                <td>DashboardScreen.js</td>
+                <td>UnifiedBrandLogo</td>
+                <td class="size">36px</td>
+                <td>✅ متوافق</td>
+            </tr>
+            <tr>
+                <td>ProfileScreen.js</td>
+                <td>UnifiedBrandLogo</td>
+                <td class="size">45px</td>
+                <td>✅ متوافق</td>
+            </tr>
+            <tr>
+                <td>app.json</td>
+                <td>assets/icon.png</td>
+                <td class="size">1024x1024</td>
+                <td>✅ متوافق</td>
+            </tr>
+        </table>
+    </div>
+
+</body>
+
+</html>
