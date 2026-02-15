@@ -1,0 +1,206 @@
+# ==========================================
+# TRADING AI BOT - COMPREHENSIVE .gitignore
+# ==========================================
+
+# 🔒 CRITICAL SECURITY - NEVER COMMIT THESE!
+# ==========================================
+# Firebase Service Account Keys
+config/security/firebase-service-account.json
+tradingai-bot-firebase-adminsdk-*.json
+
+# Environment Variables (Binance API Keys, DB passwords, etc.)
+.env
+.env.*
+!.env.example
+
+# Binance API Keys (backup locations)
+config/binance_keys.json
+binance_credentials*
+api_keys*
+
+# Database Files (contain trading data & user accounts)
+*.db
+*.sqlite
+*.sqlite3
+database/*.db*
+trading.db*
+
+# Encryption Keys
+config/security/encryption_key*
+secret_key*
+encryption/*
+
+# 📁 PYTHON & BACKEND
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.conda/
+pyvenv.cfg
+
+# PyTorch/ML Models (large files)
+*.pth
+*.pkl
+*.h5
+*.model
+models/trained/*
+.cache/
+
+# 📱 REACT NATIVE & MOBILE
+# ==========================================
+mobile_app/TradingApp/node_modules/
+mobile_app/TradingApp/npm-debug.log*
+mobile_app/TradingApp/yarn-debug.log*
+mobile_app/TradingApp/yarn-error.log*
+
+# Metro bundler cache
+mobile_app/TradingApp/.metro-health-check*
+mobile_app/TradingApp/metro.config.js.bak
+
+# React Native builds
+mobile_app/TradingApp/android/app/build/
+mobile_app/TradingApp/ios/build/
+mobile_app/TradingApp/android/.gradle/
+mobile_app/TradingApp/android/app/release/
+
+# Android specific
+mobile_app/TradingApp/android/app/src/main/assets/
+mobile_app/TradingApp/android/keystores/
+*.keystore
+*.jks
+
+# iOS specific
+mobile_app/TradingApp/ios/Pods/
+mobile_app/TradingApp/ios/build/
+mobile_app/TradingApp/ios/*.xcworkspace/xcuserdata/
+
+# 💾 DATABASES & STORAGE
+# ==========================================
+# SQLite files
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Backup files
+backups/*.sql
+backups/*.db
+*.backup
+
+# Temporary data storage
+data/temp/
+data/cache/
+tmp/
+temp/
+
+# 📊 LOGS & MONITORING
+# ==========================================
+logs/
+*.log
+*.log.*
+audit_*.log
+trading_*.log
+system_*.log
+
+# System state files
+tmp/system_state.json
+tmp/system.lock
+.pids/
+
+# 🔧 DEVELOPMENT & TOOLS
+# ==========================================
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+coverage/
+htmlcov/
+.nyc_output/
+
+# Documentation builds
+docs/_build/
+site/
+
+# 💻 OPERATING SYSTEM
+# ==========================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+*~
+
+# 🗃️ ARCHIVES & BACKUPS
+# ==========================================
+_archive/
+archive/
+old_backups/
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Legacy/dead code (we want to keep _archive/ in repo but not individual backups)
+_archive/old_backups/
+_archive/dead_code/temp/
+
+# 🎯 PROJECT SPECIFIC
+# ==========================================
+# Machine Learning cache
+.cache/
+ml_models/*.pkl
+learning_cache/
+
+# Trading data exports
+exports/
+reports/*.csv
+reports/*.xlsx
+
+# Configuration overrides
+config/local_*
+local_config*
+
+# Process locks
+*.pid
+*.lock
+system.lock
