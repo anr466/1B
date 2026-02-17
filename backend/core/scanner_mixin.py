@@ -8,7 +8,7 @@ Methods:
 """
 
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 import pandas as pd
 
 # Cognitive imports (optional)
@@ -17,6 +17,13 @@ try:
     COGNITIVE_IMPORT_OK = True
 except ImportError:
     COGNITIVE_IMPORT_OK = False
+
+# Smart Money imports (optional)
+try:
+    from backend.analysis.smart_money_orchestrator import SmartMoneyOrchestrator, SmartMoneySignal
+    SMART_MONEY_AVAILABLE = True
+except ImportError:
+    SMART_MONEY_AVAILABLE = False
 
 
 class ScannerMixin:
@@ -73,7 +80,8 @@ class ScannerMixin:
         # ========== Strategy Entry Detection (via BaseStrategy interface) ==========
         # ✅ النظام يستدعي self.strategy فقط — لا يعرف أي استراتيجية يشغّل
         if self.strategy:
-            qualified_signals = []  # [(symbol, signal, predicted_wr, score)]
+            # NOTE: نحفظ أيضاً DataFrame المعالج لكل رمز لاستخدامه لاحقاً في فلتر السيولة
+            qualified_signals = []  # [(symbol, signal, predicted_wr, score, df_prepared)]
             timeframe = self.config.get('execution_timeframe', '1h')
             
             for symbol in symbols_to_scan:
@@ -95,6 +103,17 @@ class ScannerMixin:
                     
                     # كشف إشارة الدخول (عبر الواجهة الموحدة)
                     signal = self.strategy.detect_entry(df, {'trend': trend})
+                    
+                    # ===== Smart Money Enhancement =====
+                    # تحسين الإشارة بتحليل Smart Money إذا كان متاحاً
+                    if signal and SMART_MONEY_AVAILABLE:
+                        try:
+                            smart_money_enhancement = self._analyze_smart_money_confluence(symbol, df, signal)
+                            if smart_money_enhancement:
+                                # تحسين نقاط الإشارة بناءً على تحليل Smart Money
+                                signal = self._enhance_signal_with_smart_money(signal, smart_money_enhancement)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Smart Money analysis error for {symbol}: {e}")
                     
                     if signal:
                         # ===== Phase 1: Capital Stress — فحص تكدس الاتجاه =====
@@ -126,7 +145,8 @@ class ScannerMixin:
                         
                         # ✅ إضافة للمرشحين بدلاً من الدخول فوراً
                         sig_score_val = signal.get('score', 0)
-                        qualified_signals.append((symbol, signal, predicted_wr, sig_score_val))
+                        # نحتفظ بـ df المعالج لهذا الرمز لاستخدامه في فلتر السيولة لاحقاً
+                        qualified_signals.append((symbol, signal, predicted_wr, sig_score_val, df))
                         self.logger.info(
                             f"   🎯 [{symbol}] {signal['side']} QUALIFIED: "
                             f"{signal.get('strategy', strategy_name)} | Score={sig_score_val} | "
@@ -148,18 +168,50 @@ class ScannerMixin:
                     f"   📊 {len(qualified_signals)} qualified signals — "
                     f"picking best (max 2):"
                 )
-                for i, (sym, sig, wr, sc) in enumerate(qualified_signals):
+                for i, (sym, sig, wr, sc, _df_prepared) in enumerate(qualified_signals):
                     marker = "→ ✅" if i < 2 else "  ⏭️"
                     self.logger.info(
                         f"   {marker} #{i+1} {sym}: WR={wr:.0%} Score={sc} "
                         f"{sig['side']} {sig.get('strategy', strategy_name)}"
                     )
                 
-                # فتح أفضل 1-2 إشارات
-                for sym, sig, wr, sc in qualified_signals:
+                # فتح أفضل 1-2 إشارات مع فلتر السيولة/المعرفة (إن وجد)
+                for sym, sig, wr, sc, df_prepared in qualified_signals:
                     if len(entries) >= 2:
                         break
-                    entry = self._open_position(sym, sig)
+
+                    filtered_signal = sig
+
+                    # فلتر السيولة/المعرفة — يعمل فقط إذا كان موجوداً على النظام
+                    if hasattr(self, 'liquidity_filter') and getattr(self, 'liquidity_filter') is not None:
+                        try:
+                            lf_result = self.liquidity_filter.evaluate_entry(sym, df_prepared, sig)
+                            decision = lf_result.get('decision', 'ACCEPT')
+                            size_factor = float(lf_result.get('size_factor', 1.0) or 1.0)
+
+                            if decision == 'REJECT' or size_factor <= 0:
+                                self.logger.info(
+                                    f"   💧 [{sym}] Entry REJECTED by LiquidityFilter "
+                                    f"(sig={lf_result.get('signal_score', 0):.1f} "
+                                    f"liq={lf_result.get('liquidity_score', 0):.1f})"
+                                )
+                                continue
+                            elif decision == 'DOWNGRADE' and size_factor < 1.0:
+                                # نعمل نسخة من الإشارة ولا نعدل الأصل مباشرة
+                                filtered_signal = dict(sig)
+                                filtered_signal['_size_factor'] = max(0.0, min(size_factor, 1.0))
+                                self.logger.info(
+                                    f"   💧 [{sym}] Entry DOWNGRADED by LiquidityFilter "
+                                    f"(size_factor={size_factor:.2f})"
+                                )
+                            else:
+                                filtered_signal = sig
+                        except Exception as e:
+                            # أي خطأ في الفلتر لا يجب أن يكسر دورة التداول
+                            self.logger.warning(f"⚠️ LiquidityFilter error for {sym}: {e}")
+                            filtered_signal = sig
+
+                    entry = self._open_position(sym, filtered_signal)
                     if entry:
                         entries.append(entry)
                         open_positions = self._get_open_positions()
@@ -282,3 +334,136 @@ class ScannerMixin:
         df['macd_hist'] = df['macd'] - df['macd_signal']
         
         return df
+
+    def _analyze_smart_money_confluence(self, symbol: str, df: pd.DataFrame, signal: Dict) -> Optional[Dict]:
+        """
+        تحليل التوافق مع Smart Money للإشارة الحالية
+        
+        Args:
+            symbol: رمز العملة
+            df: بيانات السعر والحجم  
+            signal: الإشارة الأصلية
+            
+        Returns:
+            نتائج تحليل Smart Money أو None
+        """
+        if not SMART_MONEY_AVAILABLE:
+            return None
+            
+        try:
+            # إنشاء Smart Money Orchestrator
+            if not hasattr(self, '_smart_money_orchestrator'):
+                self._smart_money_orchestrator = SmartMoneyOrchestrator()
+            
+            # تحضير البيانات - نحتاج إطارين زمنيين
+            df_15m = self.data_provider.get_historical_data(symbol, '15m', limit=200)
+            df_5m = self.data_provider.get_historical_data(symbol, '5m', limit=200)
+            
+            if df_15m is None or df_5m is None:
+                return None
+                
+            # التحليل الشامل لنشاط Smart Money
+            analysis = self._smart_money_orchestrator.analyze_smart_money_activity(
+                symbol=symbol,
+                df_15m=df_15m,
+                df_5m=df_5m
+            )
+            
+            if analysis.get('error'):
+                self.logger.debug(f"Smart Money analysis error for {symbol}: {analysis.get('error_message')}")
+                return None
+                
+            # استخراج المعلومات المهمة
+            confluence_score = analysis.get('confluence_score', 0)
+            smart_signal = analysis.get('smart_money_signal')
+            
+            if confluence_score < 40:  # عتبة التوافق الأدنى
+                return None
+                
+            return {
+                'confluence_score': confluence_score,
+                'smart_money_signal': smart_signal,
+                'analysis_data': analysis.get('analysis_data', {}),
+                'risk_assessment': analysis.get('risk_assessment', {})
+            }
+            
+        except Exception as e:
+            self.logger.debug(f"Smart Money confluence analysis error: {e}")
+            return None
+    
+    def _enhance_signal_with_smart_money(self, original_signal: Dict, smart_money_data: Dict) -> Dict:
+        """
+        تحسين الإشارة الأصلية بناءً على تحليل Smart Money
+        
+        Args:
+            original_signal: الإشارة الأصلية من الاستراتيجية
+            smart_money_data: بيانات تحليل Smart Money
+            
+        Returns:
+            الإشارة المحسنة
+        """
+        enhanced_signal = original_signal.copy()
+        
+        try:
+            confluence_score = smart_money_data.get('confluence_score', 0)
+            smart_signal = smart_money_data.get('smart_money_signal')
+            analysis_data = smart_money_data.get('analysis_data', {})
+            
+            # تحسين نقاط الإشارة
+            score_boost = min(20, confluence_score * 0.2)  # مكافأة تصل إلى 20 نقطة
+            enhanced_signal['score'] = enhanced_signal.get('score', 0) + score_boost
+            
+            # إضافة معلومات Smart Money
+            enhanced_signal['smart_money'] = {
+                'confluence_score': confluence_score,
+                'enhancement_applied': True,
+                'score_boost': score_boost
+            }
+            
+            # تحسين مستوى الثقة إذا كانت إشارة Smart Money متوافقة
+            if smart_signal and smart_signal.signal_type in ['BUY', 'SELL']:
+                signal_alignment = (
+                    (enhanced_signal.get('side') == 'LONG' and smart_signal.signal_type == 'BUY') or
+                    (enhanced_signal.get('side') == 'SHORT' and smart_signal.signal_type == 'SELL')
+                )
+                
+                if signal_alignment:
+                    enhanced_signal['smart_money']['aligned'] = True
+                    enhanced_signal['smart_money']['smart_confidence'] = smart_signal.confidence
+                    enhanced_signal['smart_money']['reasons'] = smart_signal.reasons
+                    
+                    # مكافأة إضافية للتوافق
+                    enhanced_signal['score'] += 10
+                    enhanced_signal['smart_money']['alignment_boost'] = 10
+                    
+                    self.logger.info(
+                        f"   🧠 Smart Money ALIGNED: {enhanced_signal.get('side')} signal "
+                        f"supported by {smart_signal.signal_type} (confidence: {smart_signal.confidence:.1f}%)"
+                    )
+                else:
+                    enhanced_signal['smart_money']['aligned'] = False
+                    self.logger.debug(
+                        f"   🧠 Smart Money conflict: {enhanced_signal.get('side')} vs {smart_signal.signal_type}"
+                    )
+            
+            # إضافة معلومات مناطق السيولة المهمة
+            zones_data = analysis_data.get('liquidity_zones', {})
+            if zones_data:
+                all_zones = zones_data.get('all_zones', [])
+                if all_zones:
+                    strong_zones = [z for z in all_zones if z.strength > 70]
+                    enhanced_signal['smart_money']['liquidity_zones_count'] = len(strong_zones)
+            
+            # إضافة معلومات VWAP
+            vwap_data = analysis_data.get('vwap_analysis', {})
+            if vwap_data:
+                vwap_strength = vwap_data.get('vwap_strength', {}).get('overall_strength', 0)
+                if vwap_strength > 60:
+                    enhanced_signal['smart_money']['vwap_support'] = True
+                    enhanced_signal['smart_money']['vwap_strength'] = vwap_strength
+            
+            return enhanced_signal
+            
+        except Exception as e:
+            self.logger.debug(f"Smart Money signal enhancement error: {e}")
+            return original_signal

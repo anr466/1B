@@ -11,6 +11,7 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.database_manager import DatabaseManager
+from backend.core.trading_state_machine import get_trading_state_machine
 
 health_bp = Blueprint('health', __name__)
 # ✅ Alias للتوافق مع الاستيرادات المختلفة
@@ -18,22 +19,30 @@ system_health_bp = health_bp
 db = DatabaseManager()
 
 def check_trading_system():
-    """التحقق من حالة نظام التداول"""
+    """التحقق من حالة نظام التداول عبر TradingStateMachine"""
     try:
-        # ✅ إزالة Group A - فقط Group B يعمل
-        trading_files = [
-            os.path.exists('run_group_b.py')
-        ]
-        
-        if any(trading_files):
-            return {
-                'status': 'running',
-                'message': 'نظام التداول يعمل',
-                'timestamp': datetime.now().isoformat()
-            }
+        tsm = get_trading_state_machine()
+        state = tsm.get_state() or {}
+        trading_state = state.get('trading_state', 'STOPPED')
+        message = state.get('message', '')
+
+        if trading_state == 'RUNNING':
+            status = 'running'
+            message = message or 'نظام التداول يعمل'
+        elif trading_state in ('STARTING', 'STOPPING'):
+            status = 'warning'
+            message = message or f'نظام التداول في حالة {trading_state}'
+        elif trading_state == 'ERROR':
+            status = 'error'
+            message = message or 'نظام التداول في حالة خطأ'
+        else:
+            status = 'stopped'
+            message = message or 'نظام التداول متوقف'
+
         return {
-            'status': 'stopped',
-            'message': 'نظام التداول متوقف',
+            'status': status,
+            'message': message,
+            'trading_state': trading_state,
             'timestamp': datetime.now().isoformat()
         }
     except Exception as e:

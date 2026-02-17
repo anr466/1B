@@ -471,16 +471,17 @@ class DbPortfolioMixin:
             self.logger.error(f"خطأ في جلب الرصيد الابتدائي: {e}")
             return 0
 
-    def _get_admin_portfolio(self, user_id: int, is_demo: int = 1) -> Dict[str, Any]:
-        """جلب محفظة الأدمن من DB حسب الوضع مع حساب الأرباح من الصفقات"""
+    def _get_admin_portfolio(self, user_id: int, is_demo: int) -> Dict[str, Any]:
+        """جلب بيانات المحفظة للأدمن من جدول portfolio الموحد"""
         try:
-            # ✅ FIX: استخدام get_connection (قراءة فقط) بدلاً من get_write_connection
-            # هذا يمنع حظر الكتابات المتزامنة أثناء كل قراءة محفظة
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
-                
-                portfolio_row = conn.execute("""
-                    SELECT * FROM portfolio 
+                # جلب بيانات المحفظة من الجدول الموحد فقط
+                portfolio_result = conn.execute("""
+                    SELECT 
+                        total_balance, available_balance, invested_balance,
+                        total_profit_loss, total_profit_loss_percentage,
+                        updated_at
+                    FROM portfolio
                     WHERE user_id = ? AND is_demo = ?
                 """, (user_id, is_demo)).fetchone()
                 
@@ -505,67 +506,55 @@ class DbPortfolioMixin:
                 daily_pnl = daily_result[0] if daily_result else 0
                 win_rate = (winning_trades / trades_count * 100) if trades_count > 0 else 0
             
-            if portfolio_row:
-                portfolio = dict(portfolio_row)
+            if portfolio_result:
+                portfolio = dict(portfolio_result)
                 total_balance = float(portfolio.get('total_balance', 1000.0))
-                initial_balance = float(portfolio.get('initial_balance', 1000.0)) or 1000.0
                 available_balance = float(portfolio.get('available_balance', total_balance))
-                
-                total_pnl_pct = (total_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
-                daily_pnl_pct = (daily_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
-                
-                invested_balance = total_balance - available_balance
+                invested_balance = float(portfolio.get('invested_balance', 0.0))
+                total_profit_loss = float(portfolio.get('total_profit_loss', 0.0))
+                total_profit_loss_percentage = float(portfolio.get('total_profit_loss_percentage', 0.0))
                 
                 return {
-                    # ✅ FIX: النظام التداولي (GroupB) يستخدم 'balance' للخصم والحساب
                     'balance': available_balance,
                     'totalBalance': self._format_currency(total_balance),
                     'availableBalance': self._format_currency(available_balance),
                     'investedBalance': self._format_currency(invested_balance),
-                    'initialBalance': self._format_currency(initial_balance),
+                    'totalProfitLoss': f"{total_profit_loss:+,.2f}",
+                    'totalProfitLossPercentage': f"{total_profit_loss_percentage:+.2f}%",
                     'dailyPnL': f"{daily_pnl:+,.2f}",
-                    'dailyPnLPercentage': f"{daily_pnl_pct:+.2f}",
-                    'totalPnL': f"{total_pnl:+,.2f}",
-                    'totalPnLPercentage': f"{total_pnl_pct:+.2f}",
-                    'totalProfitLoss': f"{total_pnl:+,.2f}",
-                    'totalProfitLossPercentage': f"{total_pnl_pct:+.2f}",
+                    'dailyPnLPercentage': f"{(daily_pnl / invested_balance * 100) if invested_balance > 0 else 0.0:+.2f}%",
                     'investedAmount': self._format_currency(invested_balance),
                     'tradesCount': trades_count,
                     'winRate': f"{win_rate:.1f}%",
                     'currency': 'USD',
-                    'source': 'demo_admin' if is_demo else 'real_admin',
+                    'mode': 'demo' if is_demo else 'real',
+                    'source': 'portfolio_unified',
                     'lastUpdate': portfolio.get('updated_at', datetime.now().isoformat())
                 }
             else:
                 # ✅ فقط هنا نستخدم write connection — عند الحاجة لإدراج صف جديد
-                default_balance = 1000.0 if is_demo == 1 else 0.0
-                with self.get_write_connection() as wconn:
-                    wconn.execute("""
+                if not portfolio_result:
+                    # إنشاء محفظة جديدة في الجدول الموحد إذا لم تكن موجودة
+                    initial_balance = 10000.0 if is_demo else 1000.0
+                    conn.execute("""
                         INSERT INTO portfolio 
                         (user_id, total_balance, available_balance, invested_balance,
-                         total_profit_loss, initial_balance, is_demo, updated_at)
-                        VALUES (?, ?, ?, 0.0, 0.0, ?, ?, CURRENT_TIMESTAMP)
-                    """, (user_id, default_balance, default_balance, default_balance, is_demo))
-                
-                return {
-                    'balance': default_balance,
-                    'totalBalance': self._format_currency(default_balance),
-                    'availableBalance': self._format_currency(default_balance),
-                    'investedBalance': '0.00',
-                    'initialBalance': self._format_currency(default_balance),
-                    'dailyPnL': '+0.00',
-                    'dailyPnLPercentage': '+0.00',
-                    'totalPnL': '+0.00',
-                    'totalPnLPercentage': '+0.00',
-                    'totalProfitLoss': '+0.00',
-                    'totalProfitLossPercentage': '+0.00',
-                    'investedAmount': '0.00',
-                    'tradesCount': 0,
-                    'winRate': '0.0%',
-                    'currency': 'USD',
-                    'source': 'demo_admin' if is_demo else 'real_admin',
-                    'lastUpdate': datetime.now().isoformat()
-                }
+                         total_profit_loss, total_profit_loss_percentage, is_demo)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, ?)
+                    """, (user_id, initial_balance, initial_balance, is_demo))
+                    
+                    return {
+                        'totalBalance': self._format_currency(initial_balance),
+                        'balance': initial_balance,
+                        'availableBalance': self._format_currency(initial_balance),
+                        'investedBalance': self._format_currency(0.0),
+                        'totalProfitLoss': '+0.00',
+                        'totalProfitLossPercentage': '+0.00%',
+                        'currency': 'USD',
+                        'mode': 'demo' if is_demo else 'real',
+                        'source': 'portfolio_unified',
+                        'lastUpdate': datetime.now().isoformat()
+                    }
         except Exception as e:
             self.logger.error(f"خطأ في جلب محفظة الأدمن: {e}")
             return {'error': True, 'message': str(e)}

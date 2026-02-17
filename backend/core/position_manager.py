@@ -103,9 +103,27 @@ class PositionManagerMixin:
                 if exit_result['should_exit']:
                     exit_price = exit_result['exit_price']
                     strategy_name = self.strategy.name if self.strategy else 'unknown'
-                    reason = f"{strategy_name}_{exit_result['reason']}"
-                    
-                    # حساب ساعات الاحتفاظ للـ log
+                    reason_code = str(exit_result.get('reason', ''))
+                    reason = f"{strategy_name}_{reason_code}"
+
+                    use_exit_confirmation = False
+                    if hasattr(self, 'liquidity_filter') and getattr(self, 'liquidity_filter') is not None:
+                        rc_upper = reason_code.upper()
+                        if not any(tag in rc_upper for tag in ['SL', 'STOP_LOSS', 'EMERGENCY']):
+                            use_exit_confirmation = True
+
+                    if use_exit_confirmation:
+                        try:
+                            conf = self.liquidity_filter.evaluate_exit_confirmation(symbol, df, position, exit_result)
+                            if conf.get('decision') == 'HOLD':
+                                self.logger.info(
+                                    f"   💧 [{symbol}] ExitConfirmation HOLD: exit_score={conf.get('exit_score', 0):.1f} "
+                                    f"hold_score={conf.get('hold_score', 0):.1f}"
+                                )
+                                return None
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ ExitConfirmation error for {symbol}: {e}")
+
                     entry_time = position.get('created_at')
                     hold_hours = 0
                     if entry_time:
@@ -115,21 +133,40 @@ class PositionManagerMixin:
                             except Exception:
                                 entry_time = datetime.now()
                         hold_hours = (datetime.now() - entry_time).total_seconds() / 3600
-                    
+
                     self.logger.info(
                         f"   🚪 [{symbol}] Exit: {exit_result['reason']} | "
                         f"Price: ${exit_price:.4f} | Hold: {hold_hours:.1f}h"
                     )
-                    
+
                     return self._close_position(position, exit_price, reason, 1.0)
                 else:
-                    # عرض حالة الاحتفاظ
+                    # عرض حالة الاحتفاظ من منظور الاستراتيجية
                     trail_level = exit_result.get('trail_level', 0)
                     if trail_level > 0:
                         self.logger.debug(
                             f"   📊 {symbol}: HOLD | Trail: ${trail_level:.4f} | "
                             f"Peak: ${exit_result.get('peak', 0):.4f}"
                         )
+
+                    # ===== Liquidity-Cognitive Early Exit (إضافة سريعة فوق منطق الاستراتيجية) =====
+                    # لا نمنع أي خروج تقرره الاستراتيجية؛ فقط نضيف خروجاً مبكراً إذا:
+                    # - PnL سلبي/قريب من الصفر في سياق سيولة سيء، أو
+                    # - ربح صغير جداً مع سياق سيولة ضعيف جداً.
+                    if hasattr(self, 'liquidity_filter') and getattr(self, 'liquidity_filter') is not None:
+                        try:
+                            early = self.liquidity_filter.evaluate_early_exit(symbol, df, position)
+                            if early.get('should_exit'):
+                                early_price = float(early.get('exit_price', current_price) or current_price)
+                                early_reason = early.get('reason', 'LIQ_EARLY_EXIT')
+                                self.logger.info(
+                                    f"   💧 [{symbol}] Early exit by LiquidityFilter: {early_reason} | "
+                                    f"Price: ${early_price:.4f}"
+                                )
+                                return self._close_position(position, early_price, early_reason, 1.0)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ LiquidityFilter early-exit error for {symbol}: {e}")
+
                     return None
                     
             except Exception as e:

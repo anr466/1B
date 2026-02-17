@@ -30,6 +30,7 @@ from backend.risk.portfolio_heat_manager import PortfolioHeatManager
 from backend.ml.training_manager import MLTrainingManager
 from backend.selection.dynamic_blacklist import get_dynamic_blacklist
 from backend.utils.trading_notification_service import get_trading_notification_service
+from backend.analysis.liquidity_cognitive_filter import LiquidityCognitiveFilter
 
 # ===== مدير Binance للتداول الحقيقي =====
 try:
@@ -121,6 +122,14 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.heat_manager = PortfolioHeatManager(max_heat_pct=6.0)
         self.notification_service = get_trading_notification_service()
         self.ml_training_manager = MLTrainingManager()
+        # فلتر السيولة/المعرفة فوق الاستراتيجية الأساسية (V7)
+        self.liquidity_filter = None
+        try:
+            mode = self.user_settings.get('liquidity_filter_mode', 'balanced')
+            self.liquidity_filter = LiquidityCognitiveFilter(self.data_provider, mode=mode)
+            self.logger.info(f"💧 LiquidityCognitiveFilter initialized (mode={mode})")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize LiquidityCognitiveFilter: {e}")
         
         # ===== مدير Binance للتداول الحقيقي =====
         self.binance_manager = None
@@ -235,13 +244,20 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             return {'trading_enabled': False, 'trading_mode': 'real'}
     
     def _load_user_portfolio(self) -> Dict:
-        """جلب محفظة المستخدم"""
+        """جلب محفظة المستخدم من الجدول الموحد portfolio"""
         try:
             portfolio = self.db.get_user_portfolio(self.user_id)
-            return portfolio or {'balance': 1000.0, 'total_value': 1000.0}
+            if portfolio and not portfolio.get('error'):
+                return {
+                    'balance': portfolio.get('balance', 1000.0),
+                    'total_value': portfolio.get('balance', 1000.0),
+                    'available_balance': portfolio.get('balance', 1000.0),
+                    'source': 'portfolio_unified'
+                }
+            return {'balance': 1000.0, 'total_value': 1000.0, 'available_balance': 1000.0, 'source': 'default'}
         except Exception as e:
-            self.logger.error(f"Error loading portfolio: {e}")
-            return {'balance': 1000.0, 'total_value': 1000.0}
+            self.logger.error(f"Error loading unified portfolio: {e}")
+            return {'balance': 1000.0, 'total_value': 1000.0, 'available_balance': 1000.0, 'source': 'error_fallback'}
     
     def _determine_trading_mode(self) -> bool:
         """

@@ -17,13 +17,13 @@ class RiskManagerMixin:
     """Mixin for risk management, position sizing, and daily state tracking"""
 
     def _calculate_position_size(self, balance: float, signal: Dict = None) -> float:
-        """
-        حساب حجم الصفقة — Phase 0: Kelly مفعّل
-        
+        """حساب حجم الصفقة — مع دعم Kelly + معامل الفلتر المعرفي/السيولة.
+
         المنطق:
-        1. Kelly Criterion يحدد النسبة المثلى
-        2. لا نتجاوز max_position_pct
-        3. لا نقل عن $10 (Binance minimum)
+        1. Kelly Criterion يحدد النسبة المثلى (أو fallback إلى نسبة ثابتة من إعدادات المستخدم).
+        2. تطبيق معامل `_size_factor` (0–1) إن تم تمريره من فلتر السيولة.
+        3. لا نقل عن $10 (Binance minimum).
+        4. لا نتجاوز 15% من الرصيد.
         """
         # الحد الأقصى لحجم الصفقة (نسبة من الرصيد)
         max_pct = self.config.get('max_position_pct', 0.10)
@@ -46,7 +46,7 @@ class RiskManagerMixin:
             except Exception as e:
                 self.logger.warning(f"⚠️ Kelly calculation failed: {e}")
         
-        # الحجم النهائي (Kelly أو الإعدادات)
+        # الحجم النهائي الأساسي (قبل معامل الفلتر)
         if kelly_pct != max_pct:
             position_pct = min(kelly_pct, max_pct)
             position_size = balance * position_pct
@@ -55,6 +55,21 @@ class RiskManagerMixin:
             position_pct = self.user_settings.get('position_size_percentage', 12.0) / 100.0
             position_size = balance * position_pct
             self.logger.info(f"📊 Fixed Position: ${position_size:.2f} (balance=${balance:.2f}, pct={position_pct*100:.1f}%)")
+
+        # تطبيق معامل حجم إضافي من فلتر السيولة/المعرفة (إن وجد)
+        size_factor = 1.0
+        if signal is not None:
+            try:
+                size_factor = float(signal.get('_size_factor', 1.0) or 1.0)
+            except Exception:
+                size_factor = 1.0
+
+        if size_factor != 1.0:
+            original_size = position_size
+            position_size = max(0.0, position_size * size_factor)
+            self.logger.info(
+                f"💧 Liquidity-adjusted size: ${original_size:.2f} × {size_factor:.2f} = ${position_size:.2f}"
+            )
         
         # ✅ الحد الأدنى $10 (متطلبات Binance)
         if position_size < 10:

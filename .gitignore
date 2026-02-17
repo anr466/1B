@@ -180,6 +180,9 @@ old_backups/
 *.rar
 *.7z
 
+# Backup folders
+*_backup_*/
+
 # Legacy/dead code (we want to keep _archive/ in repo but not individual backups)
 _archive/old_backups/
 _archive/dead_code/temp/

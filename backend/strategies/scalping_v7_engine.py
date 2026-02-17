@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 Scalping V7 Engine - Live Trading Integration
-==================================================
-Direct port of backtest_scalping_v7.py logic for live trading.
+🚀 Scalping V7.1 Engine - Live Trading Integration
+====================================================
+V7 + Cognitive Entry + ATR-based Adaptive SL
 
-Performance (6-month backtest):
-- PF: 1.35 | WR: 51.3% | PnL: +$3,086 (+30.86%)
-- Trades: 2,298 (13/day) | Max DD: 5.11% | Avg Hold: 1.6h
+Performance (45-day backtest, $1000, 10% position, 19 coins):
+- V7 EXP10:  PF=1.49 | WR=50.8% | PnL=+15.6%
+- V7.1 F5:   PF=1.87 | WR=78.3% | PnL=+66.3%  ← CURRENT
+- Validated: 35 experiments across 3 rounds, split-sample stable
 
-Key features:
-1. LONG + SHORT support (LONG in UP/NEUTRAL trend, SHORT in DOWN trend)
-2. Entry quality filter (breakout/breakdown OR 2+ timing signals)
-3. Trailing-only exit (0.6% activation, 0.4% distance, 1.0% SL)
-4. Reversal exit, max hold 12h, stagnant 6h exit
-5. Manual indicators (no pandas_ta dependency)
+Key features (V7.1):
+1. Cognitive entry: 5 strategies (trend_cont, breakout, reversal,
+   trend_cont_short) + V7 fallback — blocked: pullback, vol_expand
+2. ATR-based adaptive SL (2.5x ATR via VolatilityAnalyzer)
+3. Trailing-only exit (0.4% activation, 0.3% distance)
+4. Reversal exit, max hold 12h, stagnant 4h exit
+5. Breakeven trigger at +0.5%, early cut at 3h/-0.5%
+6. Blocked losing patterns: st_flip_bear, rsi_reject, macd_x_bear
+7. Manual indicators (no pandas_ta dependency)
 """
 
 import logging
@@ -25,8 +29,20 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Lazy import for VolatilityAnalyzer (avoid circular imports)
+_vol_analyzer = None
+def _get_vol_analyzer():
+    global _vol_analyzer
+    if _vol_analyzer is None:
+        try:
+            from backend.analysis.volatility_analyzer import VolatilityAnalyzer
+            _vol_analyzer = VolatilityAnalyzer()
+        except Exception as e:
+            logger.warning(f"VolatilityAnalyzer unavailable, using fixed SL: {e}")
+    return _vol_analyzer
+
 # ============================================================
-# V7 CONFIGURATION - DO NOT CHANGE (proven optimal)
+# V7.1 CONFIGURATION - F5 optimized (35 experiments, 3 rounds, 19 coins, split-sample stable)
 # ============================================================
 V7_CONFIG = {
     # Position sizing
@@ -34,15 +50,33 @@ V7_CONFIG = {
     'max_positions': 5,              # Max concurrent positions
     'max_hold_hours': 12,            # Max hold time
 
-    # Entry thresholds
+    # Entry thresholds (V7 fallback)
     'min_confluence': 4,             # Minimum confluence score
     'min_timing': 1,                 # Minimum timing signals
     'require_quality': True,         # Require breakout OR 2+ timing
 
-    # Exit - trailing only (proven best)
-    'sl_pct': 0.010,                 # 1.0% stop loss
-    'trailing_activation': 0.006,    # Activate trailing at +0.6%
-    'trailing_distance': 0.004,      # 0.4% trailing distance
+    # V7.1: Cognitive entry (5 strategies + V7 fallback)
+    'use_cognitive_entry': True,     # Enable cognitive entry strategies
+    'blocked_cognitive': ['pullback', 'vol_expand'],  # Losing strategies blocked
+
+    # V7.1: ATR-based adaptive SL (replaces fixed 0.8%)
+    'use_atr_sl': True,              # Enable ATR-based stop loss
+    'atr_sl_multiplier': 2.5,        # ATR multiplier for SL distance
+    'sl_pct': 0.008,                 # Fallback fixed SL if ATR unavailable
+
+    # Exit - trailing only (EXP10 optimized)
+    'trailing_activation': 0.004,    # Activate trailing at +0.4%
+    'trailing_distance': 0.003,      # 0.3% trailing distance
+    'breakeven_trigger': 0.005,      # Move SL to breakeven at +0.5% profit
+
+    # Early exit
+    'early_cut_hours': 3,            # Cut losing trades after 3 hours
+    'early_cut_loss': 0.005,         # if loss exceeds 0.5%
+    'stagnant_hours': 4,             # Stagnant exit after 4h
+    'stagnant_threshold': 0.002,     # Less than 0.2% movement
+
+    # Blocked SHORT patterns (verified net negative PnL)
+    'blocked_short': ['st_flip_bear', 'rsi_reject', 'macd_x_bear'],
 
     # Costs (for demo mode)
     'commission_pct': 0.001,         # 0.1% commission
@@ -298,68 +332,200 @@ class ScalpingV7Engine:
     def detect_entry(self, df: pd.DataFrame, trend: str,
                      idx: int = -1) -> Optional[Dict]:
         """
-        Detect entry signal based on v7 logic.
-        LONG only in UP trend, SHORT only in DOWN trend.
-        NEUTRAL trend is blocked (A1: verified -$233 loss eliminated).
+        Detect entry signal — V7.1 cognitive + V7 fallback.
 
-        Additional filters (verified by backtest):
-        - C2: SuperTrend must align with entry direction
-        - C4: ADX direction (+DI/-DI) must align with entry
+        V7.1 flow:
+        1. Try cognitive strategies first (if enabled)
+        2. Fall back to V7 signal detection
+        3. Apply ATR-based adaptive SL (if enabled)
 
         Args:
             df: DataFrame with indicators (from prepare_data)
-            trend: '4H trend direction (UP/DOWN/NEUTRAL)
+            trend: 4H trend direction (UP/DOWN/NEUTRAL)
             idx: Bar index to check (default: last completed bar = -2 for live)
 
         Returns:
             Entry signal dict or None
         """
         if idx == -1:
-            # In live: check the LAST COMPLETED bar (not current forming bar)
             idx = len(df) - 2
 
         if idx < 55:
             return None
 
-        # A1: Block NEUTRAL trend entirely (backtest verified: WR=34% → net loss)
         if trend == 'NEUTRAL':
             return None
 
+        # V7.1: Try cognitive entry first
+        if self.config.get('use_cognitive_entry', False):
+            cog_signal = self._detect_cognitive(df, idx, trend)
+            if cog_signal:
+                cog_signal = self._apply_atr_sl(df, idx, cog_signal)
+                return cog_signal
+
+        # V7 fallback
         row = df.iloc[idx]
 
-        # Try LONG if trend is UP
         if trend == 'UP':
-            # C2: SuperTrend must be bullish
             st_dir = row.get('st_dir')
             if not pd.isna(st_dir) and st_dir != 1:
                 return None
-            # C4: ADX direction must be bullish (+DI > -DI)
             pdi = row.get('pdi', 0)
             mdi = row.get('mdi', 0)
             if not pd.isna(pdi) and not pd.isna(mdi) and pdi <= mdi:
                 return None
-
             result = self._detect_long(df, idx)
             if result:
+                result = self._apply_atr_sl(df, idx, result)
                 return result
 
-        # Try SHORT if trend is DOWN
         if trend == 'DOWN':
-            # C2: SuperTrend must be bearish
             st_dir = row.get('st_dir')
             if not pd.isna(st_dir) and st_dir != -1:
                 return None
-            # C4: ADX direction must be bearish (-DI > +DI)
             pdi = row.get('pdi', 0)
             mdi = row.get('mdi', 0)
             if not pd.isna(pdi) and not pd.isna(mdi) and mdi <= pdi:
                 return None
-
             result = self._detect_short(df, idx)
             if result:
+                result = self._apply_atr_sl(df, idx, result)
                 return result
 
         return None
+
+    # ============================================================
+    # V7.1 COGNITIVE ENTRY STRATEGIES
+    # ============================================================
+    def _detect_cognitive(self, df: pd.DataFrame, idx: int, trend: str) -> Optional[Dict]:
+        """
+        Cognitive entry: 5 strategies verified across 35 experiments.
+        Winning strategies: trend_cont, trend_cont_short, breakout, reversal
+        Blocked strategies: pullback (-$11), vol_expand (-$7)
+        """
+        blocked = self.config.get('blocked_cognitive', [])
+        ds = df.iloc[max(0, idx - 60):idx + 1]
+        if len(ds) < 20:
+            return None
+
+        cur = ds['close'].iloc[-1]
+        cl = ds['close']
+        row = df.iloc[idx]
+
+        e8 = cl.ewm(span=8, adjust=False).mean()
+        e21 = cl.ewm(span=21, adjust=False).mean()
+        e55 = cl.ewm(span=55, adjust=False).mean() if len(cl) >= 55 else e21
+
+        rsi_val = row.get('rsi', 50)
+        if pd.isna(rsi_val):
+            rsi_val = 50
+        adx_val = row.get('adx', 20)
+        if pd.isna(adx_val):
+            adx_val = 20
+        vol = ds['volume']
+        vol_avg = vol.rolling(20).mean().iloc[-1] if len(vol) >= 20 else vol.mean()
+        vr = vol.iloc[-1] / vol_avg if vol_avg > 0 else 1
+
+        # Strategy 1: Trend Continuation LONG
+        if (trend == 'UP' and e8.iloc[-1] > e21.iloc[-1] and
+                adx_val > 25 and cur > e8.iloc[-1] and vr > 0.8):
+            dist = (cur - e8.iloc[-1]) / e8.iloc[-1]
+            if dist < 0.015:
+                sl = min(e21.iloc[-1], cur * 0.992)
+                return self._cog_signal('LONG', cur, sl, 'trend_cont', 8,
+                                        min(85, 50 + adx_val * 0.8))
+
+        # Strategy 2: Pullback LONG (blocked by default — net negative)
+        if 'pullback' not in blocked and trend == 'UP':
+            dist21 = (cur - e21.iloc[-1]) / e21.iloc[-1]
+            bull = cl.iloc[-1] > ds['open'].iloc[-1]
+            if -0.005 <= dist21 <= 0.012 and cur > e55.iloc[-1] and 40 <= rsi_val <= 55 and bull:
+                sl = min(e55.iloc[-1] * 0.998, cur * 0.985)
+                return self._cog_signal('LONG', cur, sl, 'pullback', 7, 65)
+
+        # Strategy 3: Breakout LONG
+        if len(ds) >= 20:
+            resistance = ds['high'].tail(20).quantile(0.9)
+            if cur > resistance and vr > 1.5:
+                sl = resistance * 0.985
+                return self._cog_signal('LONG', cur, sl, 'breakout', 8, 70)
+
+        # Strategy 4: Volatility Expansion LONG (blocked by default — net negative)
+        if 'vol_expand' not in blocked and len(cl) >= 20:
+            sma20 = cl.rolling(20).mean()
+            std20 = cl.rolling(20).std()
+            bb_w = 2 * std20 / sma20
+            min_w = bb_w.tail(10).min()
+            cur_w = bb_w.iloc[-1]
+            if cur_w > min_w * 1.8 and cur > sma20.iloc[-1] and vr > 1.1:
+                sl = sma20.iloc[-1] * 0.98
+                return self._cog_signal('LONG', cur, sl, 'vol_expand', 7, 60)
+
+        # Strategy 5: Reversal LONG (from DOWN trend, high confidence only)
+        if trend == 'DOWN' and rsi_val < 35:
+            bull = cl.iloc[-1] > ds['open'].iloc[-1]
+            body = abs(cl.iloc[-1] - ds['open'].iloc[-1])
+            lwick = min(cl.iloc[-1], ds['open'].iloc[-1]) - ds['low'].iloc[-1]
+            hammer = lwick > body * 2 if body > 0 else False
+            if bull and (hammer or vr > 1.5):
+                sl = ds['low'].tail(10).min() * 0.995
+                return self._cog_signal('LONG', cur, sl, 'reversal', 6, 55)
+
+        # Strategy 6: Trend Continuation SHORT
+        if (trend == 'DOWN' and e8.iloc[-1] < e21.iloc[-1] and
+                adx_val > 25 and cur < e8.iloc[-1] and vr > 0.8):
+            dist = (e8.iloc[-1] - cur) / e8.iloc[-1]
+            if dist < 0.015:
+                sl = max(e21.iloc[-1], cur * 1.008)
+                return self._cog_signal('SHORT', cur, sl, 'trend_cont_short', 7,
+                                        min(80, 50 + adx_val * 0.7))
+
+        return None
+
+    def _cog_signal(self, side, price, sl, strategy, score, confidence):
+        """Build cognitive entry signal dict"""
+        return {
+            'side': side,
+            'entry_price': price,
+            'stop_loss': sl,
+            'score': score,
+            'timing_count': 1,
+            'signals': [strategy],
+            'strategy': strategy,
+            'signal_type': f'SCALP_V71_COG_{strategy.upper()}',
+            'confidence': min(95, confidence),
+        }
+
+    # ============================================================
+    # V7.1 ATR-BASED ADAPTIVE SL
+    # ============================================================
+    def _apply_atr_sl(self, df: pd.DataFrame, idx: int, signal: Dict) -> Dict:
+        """Replace fixed SL with ATR-based adaptive SL if enabled"""
+        if not self.config.get('use_atr_sl', False):
+            return signal
+
+        va = _get_vol_analyzer()
+        if va is None:
+            return signal
+
+        try:
+            df_slice = df.iloc[max(0, idx - 50):idx + 1]
+            vol_result = va.analyze(df_slice)
+            atr = vol_result.get('atr', 0)
+            if atr <= 0:
+                return signal
+
+            mult = self.config.get('atr_sl_multiplier', 2.5)
+            entry = signal['entry_price']
+
+            if signal['side'] == 'LONG':
+                signal['stop_loss'] = entry - atr * mult
+            else:
+                signal['stop_loss'] = entry + atr * mult
+        except Exception as e:
+            self.logger.debug(f"ATR SL fallback to fixed: {e}")
+
+        return signal
 
     def _detect_long(self, df: pd.DataFrame, idx: int) -> Optional[Dict]:
         """Detect LONG entry signals - exact v7 logic"""
@@ -632,6 +798,11 @@ class ScalpingV7Engine:
                 strategy = s
                 break
 
+        # Block losing SHORT patterns (EXP10: verified net negative PnL)
+        blocked_short = self.config.get('blocked_short', [])
+        if strategy in blocked_short:
+            return None
+
         entry_price = current
         sl_price = entry_price * (1 + self.config['sl_pct'])
 
@@ -727,6 +898,12 @@ class ScalpingV7Engine:
                         'updated': updated,
                     }
 
+            # Breakeven trigger: move SL to entry when profit reaches threshold
+            be_trigger = self.config.get('breakeven_trigger', 0)
+            if be_trigger > 0 and profit_pct >= be_trigger and sl < entry:
+                sl = entry * 1.0001
+                updated['sl'] = sl
+
         else:  # SHORT
             # Update peak (lowest point)
             if lo < peak:
@@ -763,6 +940,12 @@ class ScalpingV7Engine:
                         'exit_price': trail,
                         'updated': updated,
                     }
+
+            # Breakeven trigger: move SL to entry when profit reaches threshold
+            be_trigger = self.config.get('breakeven_trigger', 0)
+            if be_trigger > 0 and profit_pct >= be_trigger and sl > entry:
+                sl = entry * 0.9999
+                updated['sl'] = sl
 
         # ---- REVERSAL EXIT (only if in profit > 0.3%) ----
         if idx >= 2:
@@ -820,15 +1003,29 @@ class ScalpingV7Engine:
                 'updated': updated,
             }
 
-        # Stagnant position (6+ hours, less than 0.2% movement)
+        # Stagnant position (configurable hours, less than threshold movement)
         pnl_now = ((cl - entry) / entry if side == 'LONG' else (entry - cl) / entry)
-        if hold_hours >= 6 and abs(pnl_now) < 0.002:
+        stagnant_hours = self.config.get('stagnant_hours', 4)
+        stagnant_threshold = self.config.get('stagnant_threshold', 0.002)
+        if hold_hours >= stagnant_hours and abs(pnl_now) < stagnant_threshold:
             return {
                 'should_exit': True,
                 'reason': 'STAGNANT',
                 'exit_price': cl,
                 'updated': updated,
             }
+
+        # Early cut: exit losing trades after N hours if loss exceeds threshold
+        early_cut_hours = self.config.get('early_cut_hours', 0)
+        early_cut_loss = self.config.get('early_cut_loss', 0)
+        if early_cut_hours > 0 and early_cut_loss > 0:
+            if hold_hours >= early_cut_hours and pnl_now < -early_cut_loss:
+                return {
+                    'should_exit': True,
+                    'reason': 'EARLY_CUT',
+                    'exit_price': cl,
+                    'updated': updated,
+                }
 
         # ---- HOLD ----
         return {
