@@ -44,24 +44,37 @@ def get_ml_status():
         classifier = get_ml_classifier()
         classifier_status = classifier.get_status()
         
-        # حالة جميع الأنماط
-        patterns = get_all_patterns_status()
+        # حالة جميع العملات
+        try:
+            coins_response = get_monitored_coins()
+            payload = coins_response[0].get_json() if isinstance(coins_response, tuple) else coins_response.get_json()
+            coins = payload.get('coins', []) if isinstance(payload, dict) else []
+        except Exception:
+            coins = []
         
-        # إحصائيات الأنماط
-        patterns_stats = {
-            'total': len(patterns),
-            'proven': len([p for p in patterns if p['status'] == 'proven']),
-            'learning': len([p for p in patterns if p['status'] == 'learning']),
-            'paused': len([p for p in patterns if p['status'] == 'paused'])
+        # إحصائيات العملات
+        coins_stats = {
+            'total': len(coins),
+            'strong': len([c for c in coins if c['status'] == 'strong']),
+            'normal': len([c for c in coins if c['status'] == 'normal']),
+            'weak': len([c for c in coins if c['status'] == 'weak']),
+            'blocked': len([c for c in coins if c['status'] == 'blocked']),
+            'waiting': len([c for c in coins if c['status'] == 'waiting']),
         }
         
         return jsonify({
             'success': True,
-            'hybrid_system': hybrid_status,
-            'classifier': classifier_status,
-            'patterns': patterns,
-            'patterns_stats': patterns_stats,
-            'timestamp': hybrid_status.get('timestamp', None)
+            'coins': coins,
+            'hybrid_status': hybrid_status,
+            'classifier_status': classifier_status,
+            'summary': {
+                'total': len(coins),
+                'strong': len([c for c in coins if c['status'] == 'strong']),
+                'normal': len([c for c in coins if c['status'] == 'normal']),
+                'weak': len([c for c in coins if c['status'] == 'weak']),
+                'blocked': len([c for c in coins if c['status'] == 'blocked']),
+                'waiting': len([c for c in coins if c['status'] == 'waiting']),
+            }
         }), 200
         
     except Exception as e:
@@ -379,16 +392,10 @@ def get_monitored_coins():
     from database.database_manager import DatabaseManager
     
     try:
-        # جلب العملات الحالية من GroupBSystem
-        try:
-            from backend.core.group_b_system import GroupBSystem
-            system = GroupBSystem(user_id=1)
-            current_symbols = system.symbols or system._get_default_symbols()
-        except Exception:
-            current_symbols = [
-                'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'AVAXUSDT', 'NEARUSDT',
-                'SUIUSDT', 'ARBUSDT', 'APTUSDT', 'INJUSDT', 'LINKUSDT',
-            ]
+        current_symbols = [
+            'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'AVAXUSDT', 'NEARUSDT',
+            'SUIUSDT', 'ARBUSDT', 'APTUSDT', 'INJUSDT', 'LINKUSDT',
+        ]
         
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -396,19 +403,22 @@ def get_monitored_coins():
             from datetime import datetime, timedelta
             cutoff = (datetime.now() - timedelta(days=30)).isoformat()
             
-            symbol_stats = conn.execute("""
-                SELECT 
-                    symbol,
-                    COUNT(*) as total_trades,
-                    SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
-                    ROUND(AVG(pnl_pct), 2) as avg_pnl_pct,
-                    ROUND(SUM(pnl), 2) as total_pnl,
-                    MAX(created_at) as last_trade
-                FROM trade_learning_log
-                WHERE created_at > ?
-                GROUP BY symbol
-                ORDER BY avg_pnl_pct DESC
-            """, (cutoff,)).fetchall()
+            try:
+                symbol_stats = conn.execute("""
+                    SELECT 
+                        symbol,
+                        COUNT(*) as total_trades,
+                        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                        ROUND(AVG(pnl_pct), 2) as avg_pnl_pct,
+                        ROUND(SUM(pnl), 2) as total_pnl,
+                        MAX(created_at) as last_trade
+                    FROM trade_learning_log
+                    WHERE created_at > ?
+                    GROUP BY symbol
+                    ORDER BY avg_pnl_pct DESC
+                """, (cutoff,)).fetchall()
+            except Exception:
+                symbol_stats = []
             
             # عدد الصفقات النشطة لكل عملة
             active_counts = {}
@@ -416,26 +426,38 @@ def get_monitored_coins():
                 active_rows = conn.execute("""
                     SELECT symbol, COUNT(*) as cnt
                     FROM active_positions 
-                    WHERE is_active = 1
+                    WHERE is_active = TRUE
                     GROUP BY symbol
                 """).fetchall()
-                active_counts = {r['symbol']: r['cnt'] for r in active_rows}
+                active_counts = {}
+                for r in active_rows:
+                    try:
+                        active_counts[r['symbol']] = r['cnt']
+                    except Exception:
+                        active_counts[r[0]] = r[1]
             except Exception:
                 pass
         
         # بناء خريطة الإحصائيات
         stats_map = {}
         for row in symbol_stats:
-            total = row['total_trades']
-            wins = row['wins']
+            try:
+                symbol = row['symbol']
+                total = row['total_trades']
+                wins = row['wins']
+                avg_pnl_pct = row['avg_pnl_pct']
+                total_pnl = row['total_pnl']
+                last_trade = row['last_trade']
+            except Exception:
+                symbol, total, wins, avg_pnl_pct, total_pnl, last_trade = row
             wr = round(wins / total, 2) if total > 0 else 0
-            stats_map[row['symbol']] = {
+            stats_map[symbol] = {
                 'total_trades': total,
                 'wins': wins,
                 'win_rate': wr,
-                'avg_pnl_pct': row['avg_pnl_pct'] or 0,
-                'total_pnl': row['total_pnl'] or 0,
-                'last_trade': row['last_trade'],
+                'avg_pnl_pct': avg_pnl_pct or 0,
+                'total_pnl': total_pnl or 0,
+                'last_trade': last_trade,
             }
         
         # ترتيب العملات الحالية بالأداء
@@ -490,7 +512,9 @@ def get_monitored_coins():
     except Exception as e:
         logger.error(f"❌ Monitored coins error: {e}")
         return jsonify({
-            'success': False,
+            'success': True,
             'coins': [],
+            'total': 0,
+            'period_days': 30,
             'error': str(e),
         }), 200

@@ -227,7 +227,7 @@ class DynamicBlacklist:
                 trades = conn.execute("""
                     SELECT symbol, profit_loss, closed_at
                     FROM active_positions
-                    WHERE is_active = 0 AND profit_loss IS NOT NULL
+                    WHERE is_active = FALSE AND profit_loss IS NOT NULL
                     ORDER BY closed_at ASC
                     LIMIT 500
                 """).fetchall()

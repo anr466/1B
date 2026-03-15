@@ -7,6 +7,7 @@ import random
 import string
 import smtplib
 import os
+import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -107,10 +108,12 @@ class SimpleEmailOTPService:
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 ))
             
-            # إرسال البريد الإلكتروني
-            email_sent = self._send_email(email, otp_code, purpose)
+            threading.Thread(
+                target=self._send_email_async,
+                args=(email, otp_code, purpose),
+                daemon=True,
+            ).start()
             
-            # طباعة الرمز في Logs (للتطوير)
             print(f"""
 ╔════════════════════════════════════════╗
 ║        OTP Code for {email[:20]}       
@@ -118,7 +121,7 @@ class SimpleEmailOTPService:
 ║        Code: {otp_code}                
 ║        Purpose: {purpose}              
 ║        Valid for: 10 minutes           
-║        Email Sent: {'✅' if email_sent else '❌'}
+║        Email Sent: queued              
 ╚════════════════════════════════════════╝
             """)
             
@@ -191,8 +194,8 @@ class SimpleEmailOTPService:
             print(f"❌ خطأ في إلغاء OTP: {e}")
             return False
     
-    def verify_email_otp(self, email, code):
-        """التحقق من صحة رمز OTP"""
+    def verify_email_otp(self, email, code, purpose='password_reset'):
+        """التحقق من صحة رمز OTP حسب الغرض (registration/password_reset)"""
         try:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
@@ -201,10 +204,10 @@ class SimpleEmailOTPService:
                 cursor.execute("""
                     SELECT otp_code, expires_at, attempts, verified
                     FROM verification_codes
-                    WHERE email = ?
+                    WHERE email = ? AND purpose = ?
                     ORDER BY created_at DESC
                     LIMIT 1
-                """, (email.lower(),))
+                """, (email.lower(), purpose))
                 
                 result = cursor.fetchone()
                 
@@ -230,8 +233,8 @@ class SimpleEmailOTPService:
                     cursor.execute("""
                         UPDATE verification_codes
                         SET attempts = attempts + 1
-                        WHERE email = ? AND otp_code = ?
-                    """, (email.lower(), stored_code))
+                        WHERE email = ? AND otp_code = ? AND purpose = ?
+                    """, (email.lower(), stored_code, purpose))
                     
                     # التحقق من تجاوز الحد بعد الزيادة
                     if current_attempts + 1 >= 5:
@@ -244,8 +247,8 @@ class SimpleEmailOTPService:
                 cursor.execute("""
                     UPDATE verification_codes
                     SET verified = TRUE, verified_at = ?
-                    WHERE email = ? AND otp_code = ?
-                """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), email.lower(), code))
+                    WHERE email = ? AND otp_code = ? AND purpose = ?
+                """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), email.lower(), code, purpose))
                 
                 return True, {'message': 'تم التحقق بنجاح'}
                 
@@ -253,6 +256,12 @@ class SimpleEmailOTPService:
             print(f"❌ خطأ في التحقق من OTP: {e}")
             return False, {'error': 'خطأ في التحقق'}
     
+    def _send_email_async(self, email: str, otp_code: str, purpose: str) -> None:
+        try:
+            self._send_email(email, otp_code, purpose)
+        except Exception as e:
+            print(f"❌ فشل الإرسال الخلفي لـ OTP: {e}")
+
     def _send_email(self, email: str, otp_code: str, purpose: str) -> bool:
         """إرسال البريد الإلكتروني عبر SMTP"""
         try:

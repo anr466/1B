@@ -5,7 +5,7 @@ Routes: /notifications, /notification-settings, /onboarding, /cache, /integratio
 """
 
 from flask import request, jsonify, g
-from datetime import datetime
+from datetime import datetime, timedelta
 from pydantic import ValidationError
 import json
 import logging
@@ -43,12 +43,12 @@ def register_mobile_notifications_routes(bp, shared):
             limit = min(request.args.get('limit', 20, type=int), 100)
             offset = (page - 1) * limit
 
-            # ✅ جلب الإشعارات مع Pagination
-            notif_query = "SELECT id, title, message, COALESCE(notification_type, type, 'general') as type, status, created_at FROM notification_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            # ✅ جلب الإشعارات من جدول notifications (الجدول الصحيح)
+            notif_query = "SELECT id, user_id, title, message, COALESCE(type, 'general') as type, is_read, created_at, data FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
             result = db.execute_query(notif_query, (user_id, limit, offset))
 
             # ✅ جلب العدد الإجمالي
-            count_query = "SELECT COUNT(*) as total FROM notification_history WHERE user_id = ?"
+            count_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ?"
             count_result = db.execute_query(count_query, (user_id,))
             total = count_result[0]['total'] if count_result else 0
 
@@ -56,13 +56,19 @@ def register_mobile_notifications_routes(bp, shared):
             if result:
                 for notif in result:
                     notifications.append({
-                        'id': notif['id'], 'title': notif['title'], 'message': notif['message'],
-                        'type': notif['type'], 'isRead': notif.get('status') == 'read', 'createdAt': notif['created_at']
+                        'id': notif['id'],
+                        'user_id': notif['user_id'],
+                        'title': notif['title'],
+                        'message': notif['message'],
+                        'type': notif['type'],
+                        'is_read': bool(notif.get('is_read', False)),
+                        'created_at': notif['created_at'],
+                        'data': notif.get('data')
                     })
 
             return jsonify({'success': True, 'data': {
                 'notifications': notifications, 'total': total,
-                'unread': sum(1 for n in notifications if not n['isRead']),
+                'unread': sum(1 for n in notifications if not n['is_read']),
                 'page': page, 'limit': limit
             }})
         except Exception as e:
@@ -82,11 +88,11 @@ def register_mobile_notifications_routes(bp, shared):
             from database.database_manager import DatabaseManager
             db = DatabaseManager()
 
-            # تحديث جميع الإشعارات غير المقروءة إلى مقروءة
+            # تحديث جميع الإشعارات غير المقروءة إلى مقروءة في جدول notifications
             update_query = """
-                UPDATE notification_history 
-                SET status = 'read' 
-                WHERE user_id = ? AND status != 'read'
+                UPDATE notifications 
+                SET is_read = TRUE 
+                WHERE user_id = ? AND is_read = FALSE
             """
             db.execute_query(update_query, (user_id,))
             
@@ -101,74 +107,7 @@ def register_mobile_notifications_routes(bp, shared):
             logger.error(f"❌ خطأ mark all read {user_id}: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
-
-    @bp.route('/notifications/stats/<int:user_id>', methods=['GET'])
-    @require_auth
-    @rate_limit_general
-    def get_notification_stats(user_id):
-        """إحصائيات الإشعارات لليوم الحالي"""
-        if not verify_user_access(user_id):
-            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
-
-        try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-
-                # إجمالي الإشعارات اليوم
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM notification_history
-                    WHERE user_id = ? AND DATE(created_at) = DATE('now')
-                """, (user_id,))
-                total = cursor.fetchone()[0] or 0
-
-                # إشعارات الصفقات
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM notification_history
-                    WHERE user_id = ? 
-                    AND DATE(created_at) = DATE('now')
-                    AND notification_type IN ('trade_opened', 'trade_closed', 'stop_loss_triggered', 'take_profit_reached')
-                """, (user_id,))
-                trades = cursor.fetchone()[0] or 0
-
-                # التنبيهات
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM notification_history
-                    WHERE user_id = ? 
-                    AND DATE(created_at) = DATE('now')
-                    AND notification_type IN ('price_alert', 'margin_call', 'low_balance', 'strategy_signal')
-                """, (user_id,))
-                alerts = cursor.fetchone()[0] or 0
-
-                # الملخص اليومي
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM notification_history
-                    WHERE user_id = ? 
-                    AND DATE(created_at) = DATE('now')
-                    AND notification_type = 'daily_summary'
-                """, (user_id,))
-                summary = cursor.fetchone()[0] or 0
-
-            logger.info(f"✅ Notification Stats {user_id}: total={total}, trades={trades}, alerts={alerts}")
-            return jsonify({
-                'success': True,
-                'stats': {
-                    'total': total,
-                    'trades': trades,
-                    'alerts': alerts,
-                    'summary': summary
-                }
-            })
-
-        except Exception as e:
-            logger.error(f"❌ خطأ Notification Stats {user_id}: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+    # ==================== NOTIFICATION STATS (moved to unified endpoint below) ====================
 
 
     @bp.route('/notifications/<int:notification_id>/read', methods=['PUT'])
@@ -185,7 +124,7 @@ def register_mobile_notifications_routes(bp, shared):
                 cursor = conn.cursor()
                 # ✅ SECURITY FIX: التحقق من أن الإشعار يخص المستخدم الحالي
                 cursor.execute(
-                    "UPDATE notification_history SET status = 'read' WHERE id = ? AND user_id = ?",
+                    "UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?",
                     (notification_id, user_id)
                 )
                 if cursor.rowcount == 0:
@@ -200,7 +139,7 @@ def register_mobile_notifications_routes(bp, shared):
 
     @bp.route('/notifications/<int:user_id>/read-all', methods=['PUT'])
     @require_auth
-    def mark_all_notifications_read(user_id):
+    def mark_all_notifications_read_put(user_id):
         """تحديد جميع الإشعارات كمقروءة"""
         if not verify_user_access(user_id):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
@@ -212,7 +151,7 @@ def register_mobile_notifications_routes(bp, shared):
             with db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE notification_history SET status = 'read' WHERE user_id = ? AND status != 'read'",
+                    "UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE",
                     (user_id,)
                 )
                 affected = cursor.rowcount
@@ -223,111 +162,6 @@ def register_mobile_notifications_routes(bp, shared):
         except Exception as e:
             logger.error(f"❌ خطأ mark all notifications read {user_id}: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
-
-
-    def _get_notification_settings_impl(user_id):
-        """جلب إعدادات الإشعارات (Implementation)"""
-        if not verify_user_access(user_id):
-            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
-
-        try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-
-                # ✅ جلب من settings_data JSON (يتوافق مع schema الفعلي)
-                import json as _json
-                cursor.execute("SELECT settings_data FROM user_notification_settings WHERE user_id = ?", (user_id,))
-                row = cursor.fetchone()
-
-                # القيم الافتراضية
-                defaults = {
-                    'tradeNotifications': True,
-                    'priceAlerts': True,
-                    'systemNotifications': True,
-                    'marketingNotifications': False,
-                    'pushEnabled': True,
-                    'emailEnabled': True,
-                    'smsEnabled': True,
-                    'notifyNewDeal': True,
-                    'notifyDealProfit': True,
-                    'notifyDealLoss': True,
-                    'notifyDailyProfit': True,
-                    'notifyDailyLoss': True,
-                    'notifyLowBalance': True
-                }
-
-                if row:
-                    row_dict = dict(row)
-                    sd = row_dict.get('settings_data')
-                    if sd:
-                        try:
-                            saved = _json.loads(sd)
-                            defaults.update(saved)
-                        except (ValueError, TypeError):
-                            pass
-
-                return jsonify({'success': True, 'data': defaults})
-
-        except Exception as e:
-            logger.error(f"❌ خطأ في جلب إعدادات الإشعارات {user_id}: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-
-    def _update_notification_settings_impl(user_id):
-        """تحديث إعدادات الإشعارات (Implementation) - يستخدم settings_data JSON"""
-        if not verify_user_access(user_id):
-            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
-
-        try:
-            from database.database_manager import DatabaseManager
-            import json as _json
-            db = DatabaseManager()
-
-            data = request.get_json()
-
-            if not data:
-                return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
-
-            # ✅ تخزين كـ JSON في settings_data (يتوافق مع schema الفعلي)
-            settings_json = _json.dumps(data)
-
-            with db.get_write_connection() as conn:
-                existing = conn.execute(
-                    "SELECT id FROM user_notification_settings WHERE user_id = ?", (user_id,)
-                ).fetchone()
-
-                if existing:
-                    conn.execute(
-                        "UPDATE user_notification_settings SET settings_data = ?, updated_at = datetime('now') WHERE user_id = ?",
-                        (settings_json, user_id)
-                    )
-                else:
-                    conn.execute(
-                        "INSERT INTO user_notification_settings (user_id, settings_data, created_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now'))",
-                        (user_id, settings_json)
-                    )
-
-                conn.commit()
-
-            logger.info(f"✅ تحديث إعدادات الإشعارات للمستخدم {user_id}")
-            return jsonify({'success': True, 'message': 'تم تحديث الإعدادات بنجاح'})
-
-        except Exception as e:
-            logger.error(f"❌ خطأ في تحديث إعدادات الإشعارات {user_id}: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-
-    @bp.route('/notification-settings/<int:user_id>', methods=['GET', 'PUT'])
-    @require_auth
-    def handle_notification_settings(user_id):
-        """إدارة إعدادات الإشعارات (GET/PUT)"""
-        if request.method == 'GET':
-            return _get_notification_settings_impl(user_id)
-        elif request.method == 'PUT':
-            return _update_notification_settings_impl(user_id)
 
 
     # ═══════════════════════════════════════════════════════════════
@@ -379,38 +213,31 @@ def register_mobile_notifications_routes(bp, shared):
                 'lossThreshold': 25,
                 'weeklySummary': True,
                 'monthlyReport': True,
+                # تحكم المستخدم بالخسائر التراكمية اليومية + تقرير نهاية اليوم
+                'cumulativeLossAlertEnabled': True,
+                'cumulativeLossThresholdUsd': 100,
+                'endOfDayReportEnabled': True,
+                'endOfDayReportTime': '23:00',
             }
 
             # محاولة جلب الإعدادات من قاعدة البيانات
             try:
                 with db_manager.get_connection() as conn:
-                    cursor = conn.execute("""
-                        SELECT settings_data, updated_at
-                        FROM user_notification_settings
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT settings_data FROM user_notification_settings 
                         WHERE user_id = ?
-                        ORDER BY updated_at DESC
-                        LIMIT 1
                     """, (user_id,))
-
                     row = cursor.fetchone()
-                    if row:
-                        settings_data, updated_at = row
-                        try:
-                            import json as _json
-                            saved_settings = _json.loads(settings_data) if isinstance(settings_data, str) else settings_data
-                            # دمج الإعدادات المحفوظة مع الافتراضية
-                            default_settings.update(saved_settings)
-                        except Exception as parse_error:
-                            logger.warning(f"فشل في تحليل إعدادات المستخدم {user_id}: {parse_error}")
-                            # نستمر مع الإعدادات الافتراضية
+                    
+                    if row and row[0]:
+                        import json as _json
+                        saved_settings = _json.loads(row[0])
+                        default_settings.update(saved_settings)
             except Exception as db_error:
-                logger.warning(f"فشل في جلب إعدادات الإشعارات من قاعدة البيانات للمستخدم {user_id}: {db_error}")
-                # نستمر مع الإعدادات الافتراضية
+                logger.warning(f"فشل في جلب إعدادات الإشعارات من DB: {db_error}")
 
-            return success_response({
-                'settings': default_settings,
-                'lastUpdated': datetime.now().isoformat()
-            })
+            return success_response(default_settings)
 
         except Exception as e:
             logger.error(f"❌ خطأ في جلب إعدادات الإشعارات: {e}")
@@ -418,24 +245,24 @@ def register_mobile_notifications_routes(bp, shared):
 
     @bp.route('/notifications/settings', methods=['PUT'])
     @require_auth
-    @rate_limit_data
-    @require_idempotency('update_notification_settings')
+    @rate_limit_general
     def update_user_notification_settings():
-        """تحديث إعدادات الإشعارات للمستخدم الحالي"""
+        """
+        تحديث إعدادات الإشعارات للمستخدم الحالي
+        """
         try:
             user_id = g.user_id
-            data = request.get_json()
+            body = request.get_json()
 
-            if not data or 'settings' not in data:
+            if not body:
                 return error_response('بيانات الإعدادات مطلوبة', 400)
 
-            settings = data['settings']
+            # Flutter wraps payload as {'settings': {...}} — unwrap if present
+            settings = body.get('settings', body) if isinstance(body.get('settings'), dict) else body
 
-            # التحقق من صحة البيانات الأساسية
-            required_fields = ['pushEnabled', 'tradeNotifications', 'priceAlerts']
-            for field in required_fields:
-                if field not in settings:
-                    return error_response(f'الحقل {field} مطلوب', 400)
+            # الحقول المطلوبة — اختيارية عند وجود أي حقل واحد على الأقل
+            if not any(k in settings for k in ['pushEnabled', 'tradeNotifications', 'priceAlerts']):
+                return error_response('يجب تقديم حقل واحد على الأقل من إعدادات الإشعارات', 400)
 
             # التحقق من صحة الحدود المالية
             if 'profitThreshold' in settings and (settings['profitThreshold'] < 0 or settings['profitThreshold'] > 10000):
@@ -444,10 +271,24 @@ def register_mobile_notifications_routes(bp, shared):
             if 'lossThreshold' in settings and (settings['lossThreshold'] < 0 or settings['lossThreshold'] > 10000):
                 return error_response('حد الخسارة يجب أن يكون بين 0 و 10000 دولار', 400)
 
+            if (
+                'cumulativeLossThresholdUsd' in settings
+                and (
+                    settings['cumulativeLossThresholdUsd'] < 0
+                    or settings['cumulativeLossThresholdUsd'] > 100000
+                )
+            ):
+                return error_response('حد الخسائر التراكمية يجب أن يكون بين 0 و 100000 دولار', 400)
+
             # التحقق من صحة أوقات الهدوء
             if settings.get('quietHoursEnabled'):
                 if 'quietHoursStart' not in settings or 'quietHoursEnd' not in settings:
                     return error_response('أوقات الهدوء مطلوبة عند تفعيل الميزة', 400)
+
+            if settings.get('endOfDayReportEnabled') and 'endOfDayReportTime' in settings:
+                report_time = str(settings['endOfDayReportTime'])
+                if len(report_time) != 5 or report_time[2] != ':':
+                    return error_response('صيغة وقت تقرير نهاية اليوم يجب أن تكون HH:MM', 400)
 
             # حفظ الإعدادات في قاعدة البيانات
             try:
@@ -466,43 +307,113 @@ def register_mobile_notifications_routes(bp, shared):
                     conn.execute("""
                         INSERT INTO user_notification_settings (
                             user_id, settings_data, updated_at
-                        ) VALUES (?, ?, datetime('now'))
+                        ) VALUES (?, ?, CURRENT_TIMESTAMP)
                     """, (user_id, settings_json))
 
-                    # تسجيل في audit log
-                    if audit_logger:
-                        audit_logger.log(
-                            action='update_notification_settings',
-                            user_id=user_id,
-                            details={
-                                'settings_count': len(settings),
-                                'has_quiet_hours': settings.get('quietHoursEnabled', False),
-                                'has_thresholds': 'profitThreshold' in settings
-                            }
-                        )
+                    conn.commit()
+
+                logger.info(f"✅ تم تحديث إعدادات الإشعارات للمستخدم {user_id}")
+                return success_response(settings, 'تم تحديث الإعدادات بنجاح')
 
             except Exception as db_error:
-                logger.error(f"فشل في حفظ إعدادات الإشعارات للمستخدم {user_id}: {db_error}")
-                return error_response('فشل في حفظ الإعدادات', 500)
+                logger.error(f"❌ خطأ في حفظ الإعدادات: {db_error}")
+                return error_response('خطأ في حفظ الإعدادات', 500)
 
-            # إبطال الـ cache
-            try:
-                if hasattr(g, 'cache_invalidator'):
-                    g.cache_invalidator.invalidate_cache(f'user_notifications_{user_id}')
-            except Exception as cache_error:
-                logger.warning(f"فشل في إبطال الـ cache: {cache_error}")
-
-            return success_response({
-                'message': 'تم حفظ إعدادات الإشعارات بنجاح',
-                'settings': settings,
-                'updatedAt': datetime.now().isoformat()
-            })
-
-        except ValidationError as e:
-            return error_response(str(e), 400)
         except Exception as e:
             logger.error(f"❌ خطأ في تحديث إعدادات الإشعارات: {e}")
             return error_response('خطأ في تحديث الإعدادات', 500)
+
+    # ==================== NOTIFICATION STATS ====================
+
+    @bp.route('/notifications/<int:user_id>/stats', methods=['GET'])
+    @require_auth
+    @rate_limit_data
+    def get_notification_stats_endpoint(user_id):
+        """جلب إحصائيات الإشعارات للمستخدم"""
+        if not verify_user_access(user_id):
+            response_data, status_code = error_response('Unauthorized access', 'UNAUTHORIZED', 403)
+            return jsonify(response_data), status_code
+
+        try:
+            now = datetime.utcnow()
+            notifications = db_manager.execute_query(
+                """
+                    SELECT COALESCE(type, 'general') as type, is_read, created_at, title
+                    FROM notifications
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ) or []
+
+            total = len(notifications)
+            unread = sum(1 for row in notifications if not bool(row.get('is_read')))
+            read = total - unread
+
+            last_7_days = 0
+            last_24_hours = 0
+            for row in notifications:
+                created_at_raw = row.get('created_at')
+                created_at = None
+                if isinstance(created_at_raw, datetime):
+                    created_at = created_at_raw
+                elif created_at_raw:
+                    created_at_str = str(created_at_raw).replace(' GMT', '')
+                    for fmt in ('%a, %d %b %Y %H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S'):
+                        try:
+                            created_at = datetime.strptime(created_at_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                if created_at is None:
+                    continue
+                if created_at.tzinfo is not None:
+                    created_at = created_at.astimezone().replace(tzinfo=None)
+                if created_at >= now - timedelta(days=7):
+                    last_7_days += 1
+                if created_at >= now - timedelta(days=1):
+                    last_24_hours += 1
+
+            by_type = db_manager.execute_query(
+                """
+                    SELECT 
+                        COALESCE(type, 'general') as type,
+                        COUNT(*) as count
+                    FROM notifications 
+                    WHERE user_id = ?
+                    GROUP BY type
+                    ORDER BY count DESC
+                """,
+                (user_id,),
+            ) or []
+
+            last_result = db_manager.execute_query(
+                """
+                    SELECT title, created_at 
+                    FROM notifications 
+                    WHERE user_id = ? 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                """,
+                (user_id,),
+            )
+            last_notification = last_result[0] if last_result else None
+
+            response_data, status_code = success_response({
+                'total': total,
+                'unread': unread,
+                'read': read,
+                'last_7_days': last_7_days,
+                'last_24_hours': last_24_hours,
+                'by_type': by_type,
+                'last_notification': last_notification
+            })
+            return jsonify(response_data), status_code
+
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب إحصائيات الإشعارات {user_id}: {e}")
+            response_data, status_code = error_response('خطأ في جلب الإحصائيات', 'NOTIFICATION_STATS_ERROR', 500)
+            return jsonify(response_data), status_code
 
     # ============================================================================
     # 📊 CACHE & OFFLINE SUPPORT APIs
@@ -610,7 +521,7 @@ def register_mobile_notifications_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.execute("""
-                        SELECT COUNT(*) FROM user_trades
+                        SELECT COUNT(*) FROM active_positions
                         WHERE user_id = ? AND created_at >= datetime('now', '-7 days')
                     """, (user_id,))
                     recent_trades = cursor.fetchone()[0]
@@ -623,6 +534,100 @@ def register_mobile_notifications_routes(bp, shared):
         except Exception as e:
             logger.error(f"❌ خطأ في جلب حالة التكامل: {e}")
             return error_response('خطأ في جلب حالة التكامل', 500)
+
+    # ==================== NOTIFICATION CLEANUP ====================
+
+    @bp.route('/notifications/cleanup', methods=['POST'])
+    @require_auth
+    @rate_limit_general
+    def cleanup_notifications():
+        """تنظيف الإشعارات القديمة بناءً على السياسة"""
+        try:
+            user_id = g.user_id
+            
+            # استدعاء خدمة التنظيف
+            from backend.services.notification_cleanup_service import get_notification_cleanup_service
+            cleanup_service = get_notification_cleanup_service()
+            
+            results = cleanup_service.cleanup_notifications(user_id)
+            
+            if 'error' in results:
+                return error_response(results['error'], 500)
+            
+            logger.info(f"✅ تم تنظيف إشعارات المستخدم {user_id}: {results}")
+            return success_response({
+                'message': 'تم تنظيف الإشعارات بنجاح',
+                'results': results
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تنظيف الإشعارات: {e}")
+            return error_response('خطأ في تنظيف الإشعارات', 500)
+
+    @bp.route('/notifications/cleanup/stats', methods=['GET'])
+    @require_auth
+    @rate_limit_data
+    def get_cleanup_stats():
+        """الحصول على إحصائيات التنظيف"""
+        try:
+            user_id = g.user_id
+            
+            from backend.services.notification_cleanup_service import get_notification_cleanup_service
+            cleanup_service = get_notification_cleanup_service()
+            
+            stats = cleanup_service.get_cleanup_stats()
+            
+            # فلترة الإحصائيات للمستخدم الحالي
+            user_stats = {
+                'total_notifications': stats.get('total_notifications', 0),
+                'read_notifications': stats.get('read_notifications', 0),
+                'unread_notifications': stats.get('unread_notifications', 0),
+                'old_read_notifications': stats.get('old_read_notifications', 0),
+                'old_unread_notifications': stats.get('old_unread_notifications', 0),
+                'cleanup_policy': {
+                    'read_retention_days': 7,
+                    'unread_retention_days': 30,
+                    'system_retention_days': 3,
+                    'max_notifications': 1000
+                }
+            }
+            
+            return success_response(user_stats)
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب إحصائيات التنظيف: {e}")
+            return error_response('خطأ في جلب إحصائيات التنظيف', 500)
+
+    @bp.route('/notifications/cleanup/admin', methods=['POST'])
+    @require_auth
+    @rate_limit_general
+    def admin_cleanup_all_notifications():
+        """تنظيف جميع الإشعارات (للأدمن فقط)"""
+        try:
+            # التحقق من صلاحيات الأدمن
+            user_id = g.user_id
+            user_data = db_manager.get_user_by_id(user_id)
+            
+            if not user_data or user_data.get('user_type') != 'admin':
+                return error_response('غير مصرح بالوصول', 403)
+            
+            from backend.services.notification_cleanup_service import get_notification_cleanup_service
+            cleanup_service = get_notification_cleanup_service()
+            
+            results = cleanup_service.cleanup_notifications()  # جميع المستخدمين
+            
+            if 'error' in results:
+                return error_response(results['error'], 500)
+            
+            logger.info(f"✅ الأدمن {user_id} قام بتنظيف جميع الإشعارات: {results}")
+            return success_response({
+                'message': 'تم تنظيف جميع الإشعارات بنجاح',
+                'results': results
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تنظيف جميع الإشعارات: {e}")
+            return error_response('خطأ في تنظيف جميع الإشعارات', 500)
 
 
     # ═══════════════════════════════════════════════════════════════
@@ -694,9 +699,11 @@ def register_mobile_notifications_routes(bp, shared):
             from backend.services.user_onboarding_service import get_onboarding_service
             onboarding = get_onboarding_service()
 
-            onboarding.dismiss_step(user_id, step)
+            success = onboarding.dismiss_step(user_id, step)
+            if not success:
+                return jsonify({'success': False, 'error': 'dismiss_step_failed'}), 500
 
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'data': {'step': step, 'dismissed': True}})
         except Exception as e:
             logger.error(f"خطأ في تجاهل الخطوة: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -721,20 +728,35 @@ def register_mobile_notifications_routes(bp, shared):
             with db_manager.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # جلب الإشعارات
-                cursor.execute("""
-                    SELECT id, COALESCE(notification_type, type, 'general') as type, title, message, data, priority, status, created_at, delivered_at
-                    FROM notification_history
-                    WHERE user_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                """, (user_id, per_page, offset))
+                try:
+                    cursor.execute("""
+                        SELECT id, COALESCE(type, 'general') as type, title, message, data, priority,
+                               CASE WHEN is_read THEN 'read' ELSE 'unread' END as status,
+                               created_at, NULL as delivered_at
+                        FROM notifications
+                        WHERE user_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ? OFFSET ?
+                    """, (user_id, per_page, offset))
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    cursor.execute("""
+                        SELECT id, COALESCE(type, 'general') as type, title, message, data, NULL as priority,
+                               CASE WHEN is_read THEN 'read' ELSE 'unread' END as status,
+                               created_at, NULL as delivered_at
+                        FROM notifications
+                        WHERE user_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ? OFFSET ?
+                    """, (user_id, per_page, offset))
 
                 notifications = cursor.fetchall()
 
-                # جلب العدد الإجمالي
                 cursor.execute("""
-                    SELECT COUNT(*) FROM notification_history WHERE user_id = ?
+                    SELECT COUNT(*) FROM notifications WHERE user_id = ?
                 """, (user_id,))
 
                 total_count = cursor.fetchone()[0]

@@ -4,11 +4,11 @@
 يستخدم من قبل النظام الخلفي وواجهة المستخدم
 """
 
-import sqlite3
 import json
 import logging
 import time
 import queue
+import re
 import os
 import sys
 from datetime import datetime, timedelta
@@ -17,13 +17,17 @@ from pathlib import Path
 from contextlib import contextmanager
 from threading import Lock
 import threading
+from urllib.parse import urlparse
 
-# استيراد Foreign Keys helper
 try:
-    from database.ensure_foreign_keys import get_db_connection
-    FK_HELPER_AVAILABLE = True
+    import psycopg2
+    import psycopg2.extras
+    from psycopg2 import IntegrityError as PostgresIntegrityError
+    PSYCOPG2_AVAILABLE = True
 except ImportError:
-    FK_HELPER_AVAILABLE = False
+    psycopg2 = None
+    PostgresIntegrityError = Exception
+    PSYCOPG2_AVAILABLE = False
 
 # استيراد مدير التشفير
 try:
@@ -36,7 +40,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent / 'config'))
 
 try:
-    from unified_settings import settings, get_database_path
+    from unified_settings import settings, get_database_engine, get_database_url
     USE_UNIFIED_SETTINGS = True
 except ImportError:
     USE_UNIFIED_SETTINGS = False
@@ -48,6 +52,279 @@ from database.db_portfolio_mixin import DbPortfolioMixin
 from database.db_notifications_mixin import DbNotificationsMixin
 
 
+POSTGRES_UPSERT_CONFLICTS = {
+    'system_status': ['id'],
+    'user_settings': ['user_id', 'is_demo'],
+    'portfolio': ['user_id', 'is_demo'],
+    'verification_codes': ['email'],
+    'user_sessions': ['user_id'],
+    'user_devices': ['user_id', 'device_id'],
+    'biometric_auth': ['user_id'],
+    'pending_verifications': ['user_id', 'action'],
+    'user_binance_keys': ['user_id'],
+    'successful_coins': ['symbol'],
+    'active_positions': ['user_id', 'symbol', 'strategy', 'is_demo'],
+    'trading_signals': ['symbol', 'strategy', 'timeframe'],
+    'portfolio_growth_history': ['user_id', 'date', 'is_demo'],
+    'coin_states': ['symbol'],
+}
+
+POSTGRES_BOOLEAN_COLUMNS = {
+    'is_active',
+    'is_demo',
+    'trading_enabled',
+    'is_running',
+    'is_processed',
+    'email_verified',
+    'is_phone_verified',
+    'notifications_enabled',
+    'verified',
+    'resolved',
+    'requires_admin',
+    'read',
+}
+
+
+def _replace_qmark_params(sql: str) -> str:
+    out = []
+    in_single = False
+    in_double = False
+    for ch in sql:
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            out.append(ch)
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            out.append(ch)
+            continue
+        if ch == '?' and not in_single and not in_double:
+            out.append('%s')
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+
+def _translate_datetime_literals(sql: str) -> str:
+    replacements = {
+        "datetime('now')": 'CURRENT_TIMESTAMP',
+        'datetime("now")': 'CURRENT_TIMESTAMP',
+        "DATE('now')": 'CURRENT_DATE',
+        'DATE("now")': 'CURRENT_DATE',
+        "datetime('now', '+7 days')": "CURRENT_TIMESTAMP + INTERVAL '7 days'",
+        'datetime("now", "+7 days")': "CURRENT_TIMESTAMP + INTERVAL '7 days'",
+        "datetime('now', '-7 days')": "CURRENT_TIMESTAMP - INTERVAL '7 days'",
+        "datetime('now', '-30 days')": "CURRENT_TIMESTAMP - INTERVAL '30 days'",
+        "datetime('now', '-3 days')": "CURRENT_TIMESTAMP - INTERVAL '3 days'",
+        "datetime('now', '-24 hours')": "CURRENT_TIMESTAMP - INTERVAL '24 hours'",
+        "datetime('now', '-1 hour')": "CURRENT_TIMESTAMP - INTERVAL '1 hour'",
+    }
+    for old, new in replacements.items():
+        sql = sql.replace(old, new)
+    sql = re.sub(r'\bdatetime\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)', r'\1', sql, flags=re.IGNORECASE)
+    return sql
+
+
+def _translate_boolean_literal_comparisons(sql: str) -> str:
+    for col in POSTGRES_BOOLEAN_COLUMNS:
+        sql = re.sub(rf'\b{re.escape(col)}\s*=\s*1\b', f'{col} = TRUE', sql, flags=re.IGNORECASE)
+        sql = re.sub(rf'\b{re.escape(col)}\s*=\s*0\b', f'{col} = FALSE', sql, flags=re.IGNORECASE)
+        sql = re.sub(rf'\b{re.escape(col)}\s*<>\s*1\b', f'{col} <> TRUE', sql, flags=re.IGNORECASE)
+        sql = re.sub(rf'\b{re.escape(col)}\s*<>\s*0\b', f'{col} <> FALSE', sql, flags=re.IGNORECASE)
+        sql = re.sub(rf'COALESCE\(\s*{re.escape(col)}\s*,\s*1\s*\)', f'COALESCE({col}, TRUE)', sql, flags=re.IGNORECASE)
+        sql = re.sub(rf'COALESCE\(\s*{re.escape(col)}\s*,\s*0\s*\)', f'COALESCE({col}, FALSE)', sql, flags=re.IGNORECASE)
+    return sql
+
+
+def _translate_insert_or_ignore(sql: str) -> Optional[str]:
+    upper_sql = sql.upper()
+    marker = 'INSERT OR IGNORE INTO '
+    if marker not in upper_sql:
+        return None
+    idx = upper_sql.index(marker)
+    rest = sql[idx + len(marker):]
+    table_name = rest.split('(', 1)[0].strip().strip('"')
+    prefix = sql[:idx]
+    translated = prefix + 'INSERT INTO ' + rest
+    return translated.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
+
+
+def _translate_insert_or_replace(sql: str) -> Optional[str]:
+    upper_sql = sql.upper()
+    marker = 'INSERT OR REPLACE INTO '
+    if marker not in upper_sql:
+        return None
+    idx = upper_sql.index(marker)
+    rest = sql[idx + len(marker):]
+    table_name = rest.split('(', 1)[0].strip().strip('"')
+    conflict_cols = POSTGRES_UPSERT_CONFLICTS.get(table_name)
+    if not conflict_cols:
+        return None
+    col_section = rest.split('(', 1)[1].split(')', 1)[0]
+    columns = [c.strip().strip('"') for c in col_section.split(',')]
+    update_cols = [c for c in columns if c not in conflict_cols and c != 'id']
+    prefix = sql[:idx]
+    base = prefix + 'INSERT INTO ' + rest
+    if update_cols:
+        set_clause = ', '.join(f'{col} = EXCLUDED.{col}' for col in update_cols)
+        return base.rstrip().rstrip(';') + f" ON CONFLICT ({', '.join(conflict_cols)}) DO UPDATE SET {set_clause}"
+    return base.rstrip().rstrip(';') + f" ON CONFLICT ({', '.join(conflict_cols)}) DO NOTHING"
+
+
+def _translate_sql_for_postgres(sql: str) -> Optional[str]:
+    stripped = sql.strip()
+    upper_sql = stripped.upper()
+    if upper_sql.startswith('PRAGMA '):
+        return None
+    if upper_sql.startswith('BEGIN IMMEDIATE'):
+        return None
+    sql = _translate_datetime_literals(sql)
+    sql = _translate_boolean_literal_comparisons(sql)
+    translated = _translate_insert_or_replace(sql)
+    if translated is None:
+        translated = _translate_insert_or_ignore(sql)
+    if translated is not None:
+        sql = translated
+    return _replace_qmark_params(sql)
+
+
+def _coerce_postgres_boolean_params(sql: str, params):
+    if not params:
+        return params
+    coerced = list(params)
+    for col in POSTGRES_BOOLEAN_COLUMNS:
+        pattern = re.compile(rf'\b{re.escape(col)}\s*=\s*%s\b', re.IGNORECASE)
+        for match in pattern.finditer(sql):
+            param_index = sql[:match.start()].count('%s')
+            if param_index < len(coerced) and coerced[param_index] in (0, 1):
+                coerced[param_index] = bool(coerced[param_index])
+    return tuple(coerced)
+
+
+def _normalize_postgres_param_value(value):
+    if hasattr(value, 'item') and callable(getattr(value, 'item')):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if isinstance(value, (list, tuple)):
+        return type(value)(_normalize_postgres_param_value(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _normalize_postgres_param_value(item) for key, item in value.items()}
+    return value
+
+
+def _normalize_postgres_params(params):
+    if not params:
+        return params
+    if isinstance(params, dict):
+        return {key: _normalize_postgres_param_value(value) for key, value in params.items()}
+    return tuple(_normalize_postgres_param_value(value) for value in params)
+
+
+class PostgresCursorWrapper:
+    def __init__(self, cursor, connection_wrapper):
+        self._cursor = cursor
+        self._connection_wrapper = connection_wrapper
+        self.lastrowid = None
+        self._empty_result = False
+
+    def execute(self, sql, params=None):
+        translated_sql = _translate_sql_for_postgres(sql)
+        if translated_sql is None:
+            self._empty_result = True
+            self.lastrowid = None
+            return self
+        try:
+            self._empty_result = False
+            normalized_params = _normalize_postgres_params(params or ())
+            coerced_params = _coerce_postgres_boolean_params(translated_sql, normalized_params)
+            self._cursor.execute(translated_sql, coerced_params)
+            self.lastrowid = None
+            normalized_sql = translated_sql.strip().upper()
+            if self._cursor.description and normalized_sql.startswith('INSERT') and 'RETURNING' in normalized_sql:
+                row = self._cursor.fetchone()
+                if row is not None:
+                    self.lastrowid = row[0] if not isinstance(row, dict) else row.get('id')
+                    self._connection_wrapper._pending_prefetched_row = row
+            return self
+        except PostgresIntegrityError as e:
+            from psycopg2 import IntegrityError as _PgIntegrityError
+            raise _PgIntegrityError(str(e)) from e
+
+    def fetchone(self):
+        if self._empty_result:
+            return None
+        if self._connection_wrapper._pending_prefetched_row is not None:
+            row = self._connection_wrapper._pending_prefetched_row
+            self._connection_wrapper._pending_prefetched_row = None
+            return row
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        if self._empty_result:
+            return []
+        if self._connection_wrapper._pending_prefetched_row is not None:
+            row = self._connection_wrapper._pending_prefetched_row
+            self._connection_wrapper._pending_prefetched_row = None
+            rest = self._cursor.fetchall()
+            return [row] + rest
+        return self._cursor.fetchall()
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class PostgresConnectionWrapper:
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+        self.row_factory = None  # PostgreSQL DictCursor handles dict-like access
+        self._pending_prefetched_row = None
+
+    def execute(self, sql, params=None):
+        cursor = self.cursor()
+        translated_sql = _translate_sql_for_postgres(sql) if isinstance(sql, str) else sql
+        if translated_sql and translated_sql.strip().upper().startswith('INSERT INTO '):
+            table_name = translated_sql.split('INSERT INTO ', 1)[1].split('(', 1)[0].strip().strip('"')
+            if table_name in {'users', 'active_positions'} and 'RETURNING' not in translated_sql.upper():
+                translated_sql = translated_sql.rstrip().rstrip(';') + ' RETURNING id'
+        return cursor.execute(translated_sql if translated_sql is not None else sql, params)
+
+    def cursor(self):
+        return PostgresCursorWrapper(self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor), self)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    @property
+    def in_transaction(self):
+        return self._conn.status != psycopg2.extensions.STATUS_READY
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotificationsMixin):
     """مدير قاعدة البيانات الموحد - محسن لتجنب التضارب"""
     
@@ -56,34 +333,40 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
     _initialized = False
     _singleton_lock = threading.Lock()
     
-    def __new__(cls, db_path: str = None):
+    def __new__(cls):
         """تأكد من وجود instance واحد فقط"""
         with cls._singleton_lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
             return cls._instance
     
-    def __init__(self, db_path: str = None):
+    def __init__(self):
         # ✅ FIX: منع إعادة التهيئة
         if DatabaseManager._initialized:
             return
             
-        if db_path is None:
-            if USE_UNIFIED_SETTINGS:
-                db_path = get_database_path()
-            else:
-                # مسار نسبي كبديل
-                db_path = str(Path(__file__).parent / 'trading_database.db')
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(exist_ok=True)
+        self.database_engine = 'postgresql'
+        self.database_url = ''
+             
+        if USE_UNIFIED_SETTINGS:
+            self.database_engine = get_database_engine()
+            self.database_url = get_database_url()
         self._local = threading.local()
         self.logger = logging.getLogger(__name__)
+        self._postgres_dsn = self._build_postgres_dsn()
         
         # نظام منع التضارب
         self._write_lock = threading.RLock()
         self._connection_pool = queue.Queue(maxsize=10)
         self._pool_initialized = False
-        
+
+        if not self.is_postgres():
+            raise RuntimeError(
+                f"Unsupported DATABASE_ENGINE='{self.database_engine}'. This project now runs in PostgreSQL-only mode."
+            )
+
+        self.logger.info("✅ DATABASE_ENGINE=postgresql enabled - using PostgreSQL runtime path")
+         
         self._init_database()
         self._init_connection_pool()
         self._apply_migrations()  # تطبيق أي migrations مطلوبة
@@ -92,638 +375,257 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         self.logger.info("✅ DatabaseManager initialized (Singleton)")
     
     def _init_database(self):
-        """تهيئة قاعدة البيانات - بدون أي تعديلات على البيانات الموجودة"""
-        try:
-            # فحص ما إذا كانت قاعدة البيانات موجودة بالفعل
-            if self.db_path.exists():
-                self.logger.info("✅ قاعدة البيانات موجودة مسبقاً - بدون أي تعديلات")
-                # لا نفعل أي شيء - قاعدة البيانات معزولة تماماً
-                return
-            
-            # إنشاء قاعدة البيانات فقط إذا لم تكن موجودة (مرة واحدة فقط)
-            self.logger.info("📝 إنشاء قاعدة البيانات الجديدة...")
-            if FK_HELPER_AVAILABLE:
-                with get_db_connection(str(self.db_path)) as conn:
-                    pass  # FK enabled automatically
-            else:
-                with sqlite3.connect(self.db_path, timeout=60.0, check_same_thread=False) as conn:
-                    # تفعيل foreign keys
-                    conn.execute("PRAGMA foreign_keys = ON")
-                
-                # تفعيل WAL mode لتجنب التضارب
-                conn.execute("PRAGMA journal_mode = WAL")
-                
-                # تحسين الأداء وتقليل التضارب
-                conn.execute("PRAGMA synchronous = NORMAL")
-                conn.execute("PRAGMA cache_size = -64000")  # 64MB cache (أفضل أداء)
-                conn.execute("PRAGMA temp_store = MEMORY")
-                conn.execute("PRAGMA mmap_size = 30000000000")  # memory-mapped I/O
-                conn.execute("PRAGMA page_size = 4096")  # حجم صفحة محسّن
-                conn.execute("PRAGMA busy_timeout = 30000")  # 30 ثانية (حل database locked)
-                
-                # إنشاء جدول verification_codes للتحقق من الإيميل
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS verification_codes (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        email TEXT NOT NULL,
-                        otp_code TEXT NOT NULL,
-                        purpose TEXT DEFAULT 'verification',
-                        created_at TEXT NOT NULL,
-                        expires_at REAL NOT NULL,
-                        attempts INTEGER DEFAULT 0,
-                        verified BOOLEAN DEFAULT FALSE,
-                        verified_at TEXT,
-                        UNIQUE(email, purpose)
-                    )
-                """)
-                
-                # إضافة فهرس للبحث السريع
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_verification_email ON verification_codes(email)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_verification_expires ON verification_codes(expires_at)")
-                
-                # ✅ جدول أخبار العملات الرقمية (للحماية من التقلبات)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS crypto_news (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT NOT NULL,
-                        symbol TEXT NOT NULL,
-                        impact TEXT NOT NULL,
-                        published_at TIMESTAMP NOT NULL,
-                        source TEXT,
-                        url TEXT,
-                        votes INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_crypto_news_symbol ON crypto_news(symbol)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_crypto_news_published ON crypto_news(published_at)")
-                
-                # إنشاء جدول مراقبة الصفقات المفتوحة
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS active_positions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        symbol TEXT NOT NULL,
-                        strategy TEXT NOT NULL,
-                        timeframe TEXT NOT NULL,
-                        position_type TEXT NOT NULL,
-                        entry_date TEXT NOT NULL,
-                        entry_price REAL,
-                        quantity REAL,
-                        stop_loss REAL,
-                        take_profit REAL,
-                        order_id TEXT,
-                        entry_commission REAL DEFAULT 0,
-                        exit_commission REAL DEFAULT 0,
-                        is_active BOOLEAN DEFAULT TRUE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_id, symbol, strategy)
-                    )
-                """)
-                
-                # إضافة فهارس للبحث السريع
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_active_positions_user ON active_positions(user_id)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_active_positions_symbol ON active_positions(symbol)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_active_positions_active ON active_positions(is_active)")
-                
-                # ✅ Phase 1: إضافة فهارس إضافية للأداء
-                # فهارس user_trades لتسريع الاستعلامات
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_trades_user_date ON user_trades(user_id, entry_time DESC)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_trades_status ON user_trades(user_id, status)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_trades_symbol ON user_trades(symbol)")
-                
-                # فهارس activity_logs للتقارير
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_user_date ON activity_logs(user_id, timestamp DESC)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_action ON activity_logs(action, timestamp DESC)")
-                
-                # فهارس successful_coins (جدول مشترك - بدون user_id)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_successful_coins_symbol ON successful_coins(symbol, is_active)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_successful_coins_score ON successful_coins(score DESC, is_active)")
-                
-                # ✅ جداول جديدة: تتبع نمو المحفظة
-                # جدول نمو المحفظة للمستخدمين العاديين والأدمن الحقيقي
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS portfolio_growth_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        date DATE NOT NULL,
-                        total_balance REAL NOT NULL,
-                        daily_pnl REAL NOT NULL,
-                        daily_pnl_percentage REAL NOT NULL,
-                        active_trades_count INTEGER DEFAULT 0,
-                        is_demo INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                        UNIQUE(user_id, date, is_demo)
-                    )
-                """)
-                
-                # جدول نمو المحفظة الوهمية للأدمن (عزل تام)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS admin_demo_portfolio_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        admin_id INTEGER NOT NULL,
-                        date DATE NOT NULL,
-                        total_balance REAL NOT NULL,
-                        daily_pnl REAL NOT NULL,
-                        daily_pnl_percentage REAL NOT NULL,
-                        active_trades_count INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
-                        UNIQUE(admin_id, date)
-                    )
-                """)
-                
-                # إنشاء جدول حالة النظام
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS system_status (
-                        id INTEGER PRIMARY KEY DEFAULT 1,
-                        status TEXT DEFAULT 'running',
-                        last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        is_running BOOLEAN DEFAULT 1,
-                        group_b_status TEXT DEFAULT 'idle',
-                        total_coins_analyzed INTEGER DEFAULT 0,
-                        successful_coins_count INTEGER DEFAULT 0,
-                        system_uptime_seconds INTEGER DEFAULT 0
-                    )
-                """)
-                
-                # إدراج صف افتراضي إذا لم يكن موجوداً
-                conn.execute("""
-                    INSERT OR IGNORE INTO system_status (id, status, is_running)
-                    VALUES (1, 'running', 1)
-                """)
-                
-                # فهارس للأداء
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_growth_user_date ON portfolio_growth_history(user_id, date DESC)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_admin_demo_portfolio_user_date ON admin_demo_portfolio_history(admin_id, date DESC)")
-                
-                # ✅ فهارس إضافية لتحسين الأداء على الجداول الحرجة
-                # فهارس user_trades - للاستعلامات الشائعة
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_trades_user_demo_status ON user_trades(user_id, is_demo, status)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_trades_created_at ON user_trades(created_at DESC)")
-                
-                # فهارس active_positions - للاستعلامات الشائعة
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_active_positions_user_active ON active_positions(user_id, is_active)")
-                
-                # ✅ إضافة عمود signal_metadata (للتعلم التكيّفي)
-                try:
-                    conn.execute("ALTER TABLE active_positions ADD COLUMN signal_metadata TEXT DEFAULT NULL")
-                except Exception:
-                    pass  # العمود موجود بالفعل
-                
-                # ✅ إضافة عمود is_demo لجدول portfolio_growth_history (للقواعد الموجودة مسبقاً)
-                try:
-                    conn.execute("ALTER TABLE portfolio_growth_history ADD COLUMN is_demo INTEGER DEFAULT 0")
-                except Exception:
-                    pass  # العمود موجود بالفعل
-                
-                # فهارس portfolio - للاستعلامات الشائعة
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_user_demo ON portfolio(user_id, is_demo)")
-                
-                # فهارس users - للبحث السريع
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_user_type ON users(user_type)")
-                
-                # فهارس user_settings - للاستعلامات الشائعة
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)")
-                
-                # فهارس user_binance_keys - للاستعلامات الشائعة
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_binance_keys_user_active ON user_binance_keys(user_id, is_active)")
-                
-                self.logger.info("✅ تم إنشاء جميع الفهارس لتحسين الأداء")
-                
-                # فحص إذا كانت قاعدة البيانات مهيأة مسبقاً
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-                tables_exist = cursor.fetchone() is not None
-                
-                if not tables_exist:
-                    # قراءة وتنفيذ ملف schema.sql فقط إذا لم تكن الجداول موجودة
-                    schema_path = Path(__file__).parent / "schema.sql"
-                    if schema_path.exists():
-                        with open(schema_path, 'r', encoding='utf-8') as f:
-                            schema_sql = f.read()
-                        conn.executescript(schema_sql)
-                        self.logger.info("تم إنشاء قاعدة البيانات بنجاح")
-                    else:
-                        self.logger.error("ملف schema.sql غير موجود")
-                else:
-                    self.logger.info("قاعدة البيانات موجودة مسبقاً - تم تخطي إنشاء الجداول")
-        except Exception as e:
-            self.logger.error(f"خطأ في تهيئة قاعدة البيانات: {e}")
-            raise
+        """تهيئة قاعدة البيانات - PostgreSQL فقط."""
+        self.logger.info(
+            "✅ PostgreSQL runtime detected - schema initialization is managed by postgres_schema.sql and runtime migrations"
+        )
+        return
     
     def _init_connection_pool(self):
         """تهيئة مجموعة الاتصالات لتجنب التضارب"""
         try:
             for _ in range(5):  # 5 اتصالات في المجموعة
-                if FK_HELPER_AVAILABLE:
-                    conn = get_db_connection(str(self.db_path))
-                else:
-                    conn = sqlite3.connect(
-                        self.db_path, 
-                        check_same_thread=False,
-                        timeout=30.0
-                    )
-                    conn.execute("PRAGMA foreign_keys = ON")
-                conn.row_factory = sqlite3.Row
-                
-                # تطبيق نفس الإعدادات
-                conn.execute("PRAGMA foreign_keys = ON")
-                conn.execute("PRAGMA journal_mode = WAL")
-                conn.execute("PRAGMA synchronous = NORMAL")
-                conn.execute("PRAGMA busy_timeout = 30000")
-                
-                self._connection_pool.put(conn)
-            
-            self._pool_initialized = True
-            self.logger.info("تم تهيئة مجموعة الاتصالات بنجاح")
+                conn = self._build_connection(timeout=30.0)
+                self._connection_pool.put(conn, block=False)
+
+            self.logger.info("✅ تم تهيئة مجموعة الاتصالات بنجاح")
+            return
         except Exception as e:
             self.logger.error(f"خطأ في تهيئة مجموعة الاتصالات: {e}")
-    
+
+    def _build_postgres_dsn(self) -> str:
+        if not self.is_postgres():
+            return ''
+        if self.database_url:
+            return self.database_url
+        host = os.getenv('POSTGRES_HOST', '127.0.0.1').strip()
+        port = os.getenv('POSTGRES_PORT', '5432').strip()
+        db_name = os.getenv('POSTGRES_DB', 'trading_ai_bot').strip()
+        user = os.getenv('POSTGRES_USER', 'trading_user').strip()
+        password = os.getenv('POSTGRES_PASSWORD', 'change-this-password')
+        return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+
+    def _connect_postgres(self, timeout: float = 60.0) -> PostgresConnectionWrapper:
+        if not PSYCOPG2_AVAILABLE:
+            raise RuntimeError("psycopg2 is required for PostgreSQL runtime")
+        dsn = self._postgres_dsn or self._build_postgres_dsn()
+        parsed = urlparse(dsn)
+        raw_conn = psycopg2.connect(
+            dbname=(parsed.path or '/').lstrip('/'),
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            connect_timeout=max(1, int(timeout)),
+        )
+        raw_conn.autocommit = False
+        return PostgresConnectionWrapper(raw_conn)
+
+    def _build_connection(self, timeout: float = 60.0):
+        """إنشاء اتصال PostgreSQL موحّد الإعدادات لكل مسارات القراءة/الكتابة."""
+        return self._connect_postgres(timeout=timeout)
+
+    def is_sqlite(self) -> bool:
+        """Always False — PostgreSQL only."""
+        return False
+
+    def is_postgres(self) -> bool:
+        """هل المحرك الحالي PostgreSQL؟"""
+        return self.database_engine in {'postgres', 'postgresql'}
+
+    def _migrate_user_settings_unique_constraint(self, conn):
+        """Legacy SQLite migration — no-op on PostgreSQL."""
+        return
+
+    def _migrate_portfolio_unique_constraint(self, conn):
+        """Legacy SQLite migration — no-op on PostgreSQL."""
+        return
+
+    def _migrate_active_positions_unique_constraint(self, conn):
+        """Legacy SQLite migration — no-op on PostgreSQL."""
+        return
+
     def _apply_migrations(self):
-        """تطبيق أي migrations مطلوبة على قاعدة البيانات"""
+        """تطبيق أي migrations مطلوبة على قاعدة البيانات — PostgreSQL only."""
+        self._apply_postgres_runtime_migrations()
+
+    def _apply_postgres_runtime_migrations(self):
+        """Apply lightweight compatibility migrations for existing PostgreSQL databases."""
         try:
             with self.get_write_connection() as conn:
-                # فحص ما إذا كان جدول portfolio يحتوي على عمود is_demo
-                cursor = conn.cursor()
-                cursor.execute("PRAGMA table_info(portfolio)")
-                columns = [row[1] for row in cursor.fetchall()]
-                
-                if 'is_demo' not in columns:
-                    # إضافة عمود is_demo إذا لم يكن موجوداً
-                    self.logger.info("🔧 إضافة عمود is_demo إلى جدول portfolio...")
-                    conn.execute("ALTER TABLE portfolio ADD COLUMN is_demo BOOLEAN DEFAULT 0")
-                    conn.commit()
-                    self.logger.info("✅ تم إضافة عمود is_demo بنجاح")
-                
-                # فحص ما إذا كان جدول active_positions يحتوي على عمود is_demo
-                cursor.execute("PRAGMA table_info(active_positions)")
-                columns = [row[1] for row in cursor.fetchall()]
-                
-                if 'is_demo' not in columns:
-                    # إضافة عمود is_demo إذا لم يكن موجوداً
-                    self.logger.info("🔧 إضافة عمود is_demo إلى جدول active_positions...")
-                    conn.execute("ALTER TABLE active_positions ADD COLUMN is_demo BOOLEAN DEFAULT 0")
-                    conn.commit()
-                    self.logger.info("✅ تم إضافة عمود is_demo بنجاح")
-                
-                # ✅ إضافة أعمدة ML للصفقات النشطة
-                if 'ml_status' not in columns:
-                    self.logger.info("🔧 إضافة أعمدة ML إلى جدول active_positions...")
-                    conn.execute("ALTER TABLE active_positions ADD COLUMN ml_status TEXT DEFAULT 'none'")
-                    conn.execute("ALTER TABLE active_positions ADD COLUMN ml_confidence REAL DEFAULT 0.0")
-                    conn.commit()
-                    self.logger.info("✅ تم إضافة أعمدة ML بنجاح")
-                
-                # ✅ جدول جديد: مقارنة Backtesting مع الواقع (لنظام ML الجديد)
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='backtest_vs_reality'")
-                if not cursor.fetchone():
-                    self.logger.info("🔧 إنشاء جدول backtest_vs_reality...")
-                    conn.execute("""
-                        CREATE TABLE IF NOT EXISTS backtest_vs_reality (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            
-                            -- معرف التركيبة
-                            symbol TEXT NOT NULL,
-                            strategy TEXT NOT NULL,
-                            timeframe TEXT NOT NULL,
-                            
-                            -- توقعات Backtesting (من successful_coins)
-                            backtest_win_rate REAL,
-                            backtest_profit_pct REAL,
-                            backtest_score REAL,
-                            backtest_total_trades INTEGER,
-                            
-                            -- النتيجة الفعلية
-                            actual_result TEXT NOT NULL,  -- 'win' or 'loss'
-                            actual_profit_pct REAL NOT NULL,
-                            
-                            -- ظروف السوق عند الدخول
-                            market_trend TEXT,
-                            
-                            -- التوقيت
-                            trade_id INTEGER,
-                            trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            
-                            -- حسابات الموثوقية (تُحدّث لاحقاً)
-                            reliability_score REAL DEFAULT NULL,
-                            
-                            FOREIGN KEY (trade_id) REFERENCES user_trades(id) ON DELETE SET NULL
-                        )
-                    """)
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_backtest_reality_combo ON backtest_vs_reality(symbol, strategy, timeframe)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_backtest_reality_date ON backtest_vs_reality(trade_date DESC)")
-                    conn.commit()
-                    self.logger.info("✅ تم إنشاء جدول backtest_vs_reality بنجاح")
-                
-                # ✅ جدول موثوقية التركيبات (ملخص محسوب)
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='combo_reliability'")
-                if not cursor.fetchone():
-                    self.logger.info("🔧 إنشاء جدول combo_reliability...")
-                    conn.execute("""
-                        CREATE TABLE IF NOT EXISTS combo_reliability (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            
-                            -- معرف التركيبة
-                            symbol TEXT NOT NULL,
-                            strategy TEXT NOT NULL,
-                            timeframe TEXT NOT NULL,
-                            
-                            -- إحصائيات الموثوقية
-                            total_trades INTEGER DEFAULT 0,
-                            winning_trades INTEGER DEFAULT 0,
-                            actual_win_rate REAL DEFAULT 0,
-                            
-                            -- مقارنة مع Backtesting
-                            avg_backtest_win_rate REAL DEFAULT 0,
-                            reliability_score REAL DEFAULT 0,  -- 0-100%
-                            deviation_pct REAL DEFAULT 0,  -- الفرق بين التوقع والواقع
-                            
-                            -- التحديث
-                            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            
-                            UNIQUE(symbol, strategy, timeframe)
-                        )
-                    """)
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_combo_reliability_score ON combo_reliability(reliability_score DESC)")
-                    conn.commit()
-                    self.logger.info("✅ تم إنشاء جدول combo_reliability بنجاح")
-                
-                # ✅ جدول تعلم الإشارات (Smart Incremental Learning)
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='signal_learning'")
-                if not cursor.fetchone():
-                    self.logger.info("🔧 إنشاء جدول signal_learning...")
-                    conn.execute("""
-                        CREATE TABLE IF NOT EXISTS signal_learning (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            signal_id TEXT NOT NULL UNIQUE,
-                            user_id INTEGER,
-                            
-                            -- التركيبة
-                            combination TEXT NOT NULL,
-                            symbol TEXT NOT NULL,
-                            strategy TEXT NOT NULL,
-                            timeframe TEXT NOT NULL,
-                            
-                            -- بيانات الدخول
-                            entry_price REAL,
-                            entry_rsi REAL,
-                            entry_macd REAL,
-                            entry_volume REAL,
-                            market_regime TEXT,
-                            volatility REAL,
-                            support_distance REAL,
-                            resistance_distance REAL,
-                            
-                            -- النتيجة الفعلية
-                            actual_profit_pct REAL,
-                            exit_reason TEXT,
-                            signal_quality_score REAL,
-                            was_correct INTEGER,
-                            holding_time_minutes INTEGER,
-                            
-                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            
-                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                        )
-                    """)
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_combo ON signal_learning(combination, timestamp DESC)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_quality ON signal_learning(signal_quality_score DESC)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_user ON signal_learning(user_id, timestamp DESC)")
-                    conn.commit()
-                    self.logger.info("✅ تم إنشاء جدول signal_learning بنجاح")
-                
-                # ============================================================
-                # Shadow Tables Migration — formerly created at runtime by services
-                # Centralized here as the single source of truth for DB schema
-                # ============================================================
-                
-                # ST-1: coin_states (from coin_state_tracker.py)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS coin_states (
-                        symbol TEXT PRIMARY KEY,
-                        state TEXT NOT NULL,
-                        position_size_multiplier REAL DEFAULT 1.0,
-                        stop_loss_multiplier REAL DEFAULT 1.0,
-                        consecutive_wins INTEGER DEFAULT 0,
-                        consecutive_losses INTEGER DEFAULT 0,
-                        total_trades INTEGER DEFAULT 0,
-                        winning_trades INTEGER DEFAULT 0,
-                        total_pnl REAL DEFAULT 0.0,
-                        blacklist_until TEXT,
-                        last_updated TEXT NOT NULL
-                    )
-                """)
-                
-                # ST-2: coin_trade_history (from coin_state_tracker.py)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS coin_trade_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        symbol TEXT NOT NULL,
-                        entry_time TEXT NOT NULL,
-                        exit_time TEXT NOT NULL,
-                        pnl REAL NOT NULL,
-                        profit_pct REAL NOT NULL,
-                        exit_reason TEXT,
-                        strategy TEXT,
-                        timeframe TEXT,
-                        market_regime TEXT
-                    )
-                """)
-                
-                # ST-3: trade_learning_log (from adaptive_optimizer.py)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS trade_learning_log (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        symbol TEXT NOT NULL,
-                        side TEXT NOT NULL,
-                        entry_price REAL NOT NULL,
-                        exit_price REAL NOT NULL,
-                        pnl REAL NOT NULL,
-                        pnl_pct REAL NOT NULL,
-                        exit_reason TEXT NOT NULL,
-                        sl_pct_used REAL DEFAULT 0.01,
-                        hold_minutes INTEGER DEFAULT 0,
-                        open_positions_count INTEGER DEFAULT 1,
-                        hour_of_day INTEGER DEFAULT 0,
-                        day_of_week TEXT DEFAULT '',
-                        rsi REAL DEFAULT NULL,
-                        macd REAL DEFAULT NULL,
-                        bb_position REAL DEFAULT NULL,
-                        volume_ratio REAL DEFAULT NULL,
-                        ema_trend TEXT DEFAULT NULL,
-                        atr_pct REAL DEFAULT NULL,
-                        trend_4h TEXT DEFAULT NULL,
-                        score REAL DEFAULT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_tll_symbol ON trade_learning_log(symbol)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_tll_created ON trade_learning_log(created_at)")
-                
-                # ST-4: learning_validation_log (from adaptive_optimizer.py)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS learning_validation_log (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        total_trades INTEGER NOT NULL,
-                        trades_with_indicators INTEGER NOT NULL,
-                        holdout_size INTEGER NOT NULL,
-                        scorer_accuracy REAL NOT NULL,
-                        scorer_precision REAL,
-                        baseline_accuracy REAL NOT NULL,
-                        lift REAL NOT NULL,
-                        factor_weights TEXT,
-                        factor_accuracies TEXT,
-                        verdict TEXT NOT NULL,
-                        details TEXT
-                    )
-                """)
-                
-                # ST-5: admin_notification_settings (from admin_notification_service.py)
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS message TEXT DEFAULT ''")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS pid INTEGER")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS session_id TEXT")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'demo'")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS initiated_by TEXT")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS subsystem_status TEXT DEFAULT '{}' ")
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS admin_notification_settings (
-                        id INTEGER PRIMARY KEY,
-                        telegram_enabled BOOLEAN DEFAULT 0,
+                        id BIGINT PRIMARY KEY,
+                        telegram_enabled BOOLEAN DEFAULT FALSE,
                         telegram_bot_token TEXT,
                         telegram_chat_id TEXT,
-                        email_enabled BOOLEAN DEFAULT 0,
+                        email_enabled BOOLEAN DEFAULT FALSE,
                         admin_email TEXT,
-                        webhook_enabled BOOLEAN DEFAULT 0,
+                        webhook_enabled BOOLEAN DEFAULT FALSE,
                         webhook_url TEXT,
-                        push_enabled BOOLEAN DEFAULT 1,
-                        notify_on_error BOOLEAN DEFAULT 1,
-                        notify_on_trade BOOLEAN DEFAULT 1,
-                        notify_on_warning BOOLEAN DEFAULT 1,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        push_enabled BOOLEAN DEFAULT TRUE,
+                        notify_on_error BOOLEAN DEFAULT TRUE,
+                        notify_on_trade BOOLEAN DEFAULT TRUE,
+                        notify_on_warning BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                
-                # ST-6: system_alerts (from admin_notification_service.py + system_alerts.py)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS system_alerts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        alert_type VARCHAR(50) NOT NULL,
-                        title TEXT NOT NULL,
-                        message TEXT NOT NULL,
-                        severity VARCHAR(20) DEFAULT 'warning',
-                        data TEXT,
-                        read INTEGER DEFAULT 0,
-                        resolved INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        resolved_at TIMESTAMP
-                    )
-                """)
-                
-                # ST-7: user_onboarding (from user_onboarding_service.py)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS user_onboarding (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        step TEXT NOT NULL,
-                        shown_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        dismissed_at TIMESTAMP,
-                        UNIQUE(user_id, step)
-                    )
-                """)
-                
-                # ST-8: security_audit_log (from security_audit_service.py)
+                conn.execute("INSERT INTO admin_notification_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS security_audit_log (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER,
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
                         action TEXT NOT NULL,
                         resource TEXT,
                         ip_address TEXT,
                         user_agent TEXT,
                         status TEXT DEFAULT 'success',
                         details TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON security_audit_log(user_id)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON security_audit_log(action)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_resource ON security_audit_log(resource)")
-                
-                # ST-9: smart_exit_stats (from smart_exit_api.py)
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS smart_exit_stats (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
+                    CREATE TABLE IF NOT EXISTS system_alerts (
+                        id BIGSERIAL PRIMARY KEY,
+                        alert_type TEXT DEFAULT 'general',
+                        title TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        severity TEXT DEFAULT 'info',
+                        data TEXT,
+                        read BOOLEAN DEFAULT FALSE,
+                        resolved BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS coin_states (
+                        symbol TEXT PRIMARY KEY,
+                        state TEXT NOT NULL,
+                        position_size_multiplier DOUBLE PRECISION DEFAULT 1.0,
+                        stop_loss_multiplier DOUBLE PRECISION DEFAULT 1.0,
+                        consecutive_wins INTEGER DEFAULT 0,
+                        consecutive_losses INTEGER DEFAULT 0,
+                        total_trades INTEGER DEFAULT 0,
+                        winning_trades INTEGER DEFAULT 0,
+                        total_pnl DOUBLE PRECISION DEFAULT 0.0,
+                        blacklist_until TEXT,
+                        last_updated TEXT NOT NULL
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS coin_trade_history (
+                        id BIGSERIAL PRIMARY KEY,
                         symbol TEXT NOT NULL,
-                        exit_type TEXT NOT NULL,
-                        exit_price REAL,
-                        profit_loss REAL DEFAULT 0,
-                        profit_pct REAL DEFAULT 0,
-                        is_demo INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        entry_time TEXT NOT NULL,
+                        exit_time TEXT NOT NULL,
+                        pnl DOUBLE PRECISION NOT NULL,
+                        profit_pct DOUBLE PRECISION NOT NULL,
+                        exit_reason TEXT,
+                        strategy TEXT,
+                        timeframe TEXT,
+                        market_regime TEXT
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_ses_user ON smart_exit_stats(user_id)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_ses_type ON smart_exit_stats(exit_type)")
-                
-                # ST-10: smart_exit_errors (from smart_exit_api.py)
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS smart_exit_errors (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
+                    CREATE TABLE IF NOT EXISTS trade_learning_log (
+                        id BIGSERIAL PRIMARY KEY,
                         symbol TEXT NOT NULL,
-                        error_type TEXT NOT NULL,
-                        error_message TEXT,
-                        error_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        side TEXT NOT NULL,
+                        entry_price DOUBLE PRECISION NOT NULL,
+                        exit_price DOUBLE PRECISION NOT NULL,
+                        pnl DOUBLE PRECISION NOT NULL,
+                        pnl_pct DOUBLE PRECISION NOT NULL,
+                        exit_reason TEXT NOT NULL,
+                        sl_pct_used DOUBLE PRECISION DEFAULT 0.01,
+                        hold_minutes INTEGER DEFAULT 0,
+                        open_positions_count INTEGER DEFAULT 1,
+                        hour_of_day INTEGER DEFAULT 0,
+                        day_of_week TEXT DEFAULT '',
+                        rsi DOUBLE PRECISION,
+                        macd DOUBLE PRECISION,
+                        bb_position DOUBLE PRECISION,
+                        volume_ratio DOUBLE PRECISION,
+                        ema_trend TEXT,
+                        atr_pct DOUBLE PRECISION,
+                        trend_4h TEXT,
+                        score DOUBLE PRECISION,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_see_user ON smart_exit_errors(user_id)")
-                
-                # ST-11: pending_verifications (from secure_actions_endpoints.py — was in-memory dict)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tll_symbol ON trade_learning_log(symbol)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tll_created ON trade_learning_log(created_at)")
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS pending_verifications (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        action TEXT NOT NULL,
-                        otp TEXT NOT NULL,
-                        expires_at TIMESTAMP NOT NULL,
-                        method TEXT DEFAULT 'email',
-                        new_value TEXT,
-                        old_password TEXT,
-                        attempts INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_id, action)
+                    CREATE TABLE IF NOT EXISTS learning_validation_log (
+                        id BIGSERIAL PRIMARY KEY,
+                        validated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        total_trades INTEGER NOT NULL,
+                        trades_with_indicators INTEGER NOT NULL,
+                        holdout_size INTEGER NOT NULL,
+                        scorer_accuracy DOUBLE PRECISION NOT NULL,
+                        scorer_precision DOUBLE PRECISION,
+                        baseline_accuracy DOUBLE PRECISION NOT NULL,
+                        lift DOUBLE PRECISION NOT NULL,
+                        factor_weights TEXT,
+                        factor_accuracies TEXT,
+                        verdict TEXT NOT NULL,
+                        details TEXT
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_pv_user_action ON pending_verifications(user_id, action)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_pv_expires ON pending_verifications(expires_at)")
-                
-                conn.commit()
-                self.logger.debug("✅ Shadow tables migration complete")
-                
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS signal_learning (
+                        id BIGSERIAL PRIMARY KEY,
+                        signal_id TEXT NOT NULL UNIQUE,
+                        user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                        combination TEXT NOT NULL,
+                        symbol TEXT NOT NULL,
+                        strategy TEXT NOT NULL,
+                        timeframe TEXT NOT NULL,
+                        entry_price DOUBLE PRECISION,
+                        entry_rsi DOUBLE PRECISION,
+                        entry_macd DOUBLE PRECISION,
+                        entry_volume DOUBLE PRECISION,
+                        market_regime TEXT,
+                        volatility DOUBLE PRECISION,
+                        support_distance DOUBLE PRECISION,
+                        resistance_distance DOUBLE PRECISION,
+                        actual_profit_pct DOUBLE PRECISION,
+                        exit_reason TEXT,
+                        signal_quality_score DOUBLE PRECISION,
+                        was_correct INTEGER,
+                        holding_time_minutes INTEGER,
+                        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_combo ON signal_learning(combination, timestamp DESC)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_quality ON signal_learning(signal_quality_score DESC)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_user ON signal_learning(user_id, timestamp DESC)")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_onboarding (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        step TEXT NOT NULL,
+                        shown_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        dismissed_at TIMESTAMPTZ,
+                        UNIQUE(user_id, step)
+                    )
+                """)
+            self.logger.info("✅ PostgreSQL runtime migrations applied")
         except Exception as e:
-            self.logger.warning(f"⚠️ خطأ في تطبيق migrations: {e}")
+            self.logger.warning(f"⚠️ PostgreSQL runtime migration warning: {e}")
     
     def _get_pooled_connection(self):
         """الحصول على اتصال جديد (بدون Pool للحصول على بيانات فورية)"""
         # إنشاء اتصال جديد في كل مرة لضمان الحصول على البيانات الفورية
-        if FK_HELPER_AVAILABLE:
-            conn = get_db_connection(str(self.db_path))
-        else:
-            conn = sqlite3.connect(
-                self.db_path, 
-                check_same_thread=False,
-                timeout=60.0
-            )
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=60000")
-            conn.execute("PRAGMA foreign_keys = ON")
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA busy_timeout = 30000")
-        conn.execute("PRAGMA synchronous = FULL")  # ضمان الكتابة الفورية
+        conn = self._build_connection(timeout=60.0)
         return conn
     
     def _return_pooled_connection(self, conn):
@@ -753,11 +655,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         """الحصول على اتصال جديد مباشرة (بدون pool)"""
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=60.0)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=60000")
+            conn = self._build_connection(timeout=60.0)
             yield conn
         finally:
             if conn:
@@ -772,13 +670,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         with self._write_lock:
             conn = None
             try:
-                conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=60.0)
-                conn.row_factory = sqlite3.Row
-                # ✅ FIX: تفعيل FK لاتصالات الكتابة أيضاً
-                conn.execute("PRAGMA foreign_keys = ON")
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA busy_timeout=60000")
-                conn.execute("BEGIN IMMEDIATE")  # قفل فوري للكتابة
+                conn = self._build_connection(timeout=60.0)
                 yield conn
                 conn.commit()
             except Exception as e:
@@ -940,17 +832,24 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         try:
             with self.get_write_connection() as conn:
                 # إعادة ضبط المحفظة باستخدام الأعمدة الموجودة فعلياً
+                portfolio_row = conn.execute("""
+                    SELECT initial_balance FROM portfolio WHERE user_id = ? ORDER BY is_demo DESC, updated_at DESC LIMIT 1
+                """, (user_id,)).fetchone()
+                initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
                 conn.execute("""
                     UPDATE portfolio 
-                    SET balance = 1000.0, totalBalance = 1000.0, availableBalance = 1000.0,
-                        total_profit_loss = 0.0, totalProfitLoss = 0.0, 
-                        total_trades = 0, winning_trades = 0, losing_trades = 0, 
+                    SET total_balance = ?, available_balance = ?,
+                        invested_balance = 0.0,
+                        total_profit_loss = 0.0,
+                        total_profit_loss_percentage = 0.0,
+                        total_trades = 0, winning_trades = 0, losing_trades = 0,
+                        initial_balance = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ?
-                """, (user_id,))
+                """, (initial_balance, initial_balance, initial_balance, user_id))
                 
-                # حذف الصفقات
-                conn.execute("DELETE FROM user_trades WHERE user_id = ?", (user_id,))
+                # حذف المراكز من active_positions
+                conn.execute("DELETE FROM active_positions WHERE user_id = ?", (user_id,))
                 
                 # إعادة ضبط الإعدادات للافتراضية
                 conn.execute("""
@@ -1002,7 +901,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         """الحصول على إجمالي عدد الصفقات"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute("SELECT COUNT(*) FROM user_trades")
+                cursor = conn.execute("SELECT COUNT(*) FROM active_positions")
                 return cursor.fetchone()[0]
         except Exception as e:
             self.logger.error(f"خطأ في جلب إجمالي الصفقات: {e}")

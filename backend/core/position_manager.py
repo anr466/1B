@@ -12,9 +12,278 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import pandas as pd
 
+try:
+    from backend.utils.error_logger import error_logger, ErrorLevel, ErrorSource
+    ERROR_LOGGER_AVAILABLE = True
+except Exception:
+    ERROR_LOGGER_AVAILABLE = False
+
 
 class PositionManagerMixin:
     """Mixin for position open/close/manage logic"""
+
+    def _report_trading_error(
+        self,
+        message: str,
+        details: str = None,
+        critical: bool = False,
+        requires_admin: bool = False,
+        auto_action: str = None,
+    ) -> None:
+        """تسجيل خطأ التداول في system_errors بالإضافة إلى logs التقليدية."""
+        if not ERROR_LOGGER_AVAILABLE:
+            return
+        try:
+            level = ErrorLevel.CRITICAL if critical else ErrorLevel.ERROR
+            status = 'escalated' if (critical or requires_admin) else 'new'
+            error_logger.log_error(
+                level=level,
+                source=ErrorSource.GROUP_B,
+                message=message,
+                details=details,
+                include_traceback=critical,
+                status=status,
+                requires_admin=requires_admin,
+                auto_action=auto_action,
+            )
+        except Exception:
+            # لا نكسر مسار التداول بسبب فشل تسجيل خطأ ثانوي
+            pass
+
+    def _generate_demo_order_id(self, symbol: str, side: str) -> str:
+        """إنشاء معرف أمر تجريبي قريب من شكل exchange order id."""
+        import uuid
+        ts = int(datetime.now().timestamp())
+        return f"DEMO_{side}_{symbol}_{ts}_{uuid.uuid4().hex[:8]}"
+
+    def _quantize_demo_quantity(self, quantity: float, step_size: float) -> float:
+        """تقريب كمية الأمر وفق step size (محاكاة فلاتر المنصة)."""
+        if step_size <= 0:
+            return quantity
+        steps = int(quantity / step_size)
+        return steps * step_size
+
+    def _get_demo_symbol_rules(self, symbol: str) -> Dict:
+        """جلب قواعد الرمز الفعلية من Binance exchange info لاستخدامها في demo."""
+        default_rules = {
+            'step': 0.001,
+            'min_qty': 0.0,
+            'min_notional': 10.0,
+            'tick_size': 0.0001,
+            'status': 'TRADING',
+            'slip_min_bps': 2,
+            'slip_max_bps': 12,
+            'spread_fallback_bps': 2,
+        }
+
+        # تحسينات بسيطة لرموز شائعة لو فشل exchange info
+        if symbol == 'BTCUSDT':
+            default_rules.update({'step': 0.00001, 'tick_size': 0.01, 'slip_min_bps': 1, 'slip_max_bps': 6})
+        elif symbol == 'ETHUSDT':
+            default_rules.update({'step': 0.0001, 'tick_size': 0.01, 'slip_min_bps': 1, 'slip_max_bps': 8})
+
+        try:
+            if not getattr(self, 'data_provider', None):
+                return default_rules
+
+            symbol_info = self.data_provider.get_symbol_info(symbol)
+            if not symbol_info:
+                return default_rules
+
+            rules = dict(default_rules)
+            rules['status'] = str(symbol_info.get('status', 'TRADING')).upper()
+
+            for f in symbol_info.get('filters', []):
+                f_type = f.get('filterType')
+                if f_type == 'LOT_SIZE':
+                    rules['step'] = float(f.get('stepSize', rules['step']) or rules['step'])
+                    rules['min_qty'] = float(f.get('minQty', rules['min_qty']) or rules['min_qty'])
+                elif f_type == 'MIN_NOTIONAL':
+                    rules['min_notional'] = float(f.get('minNotional', rules['min_notional']) or rules['min_notional'])
+                elif f_type == 'PRICE_FILTER':
+                    rules['tick_size'] = float(f.get('tickSize', rules['tick_size']) or rules['tick_size'])
+
+            return rules
+        except Exception as e:
+            self.logger.debug(f"Demo rules fallback for {symbol}: {e}")
+            return default_rules
+
+    def _get_demo_execution_price(self, symbol: str, side: str, reference_price: float, spread_fallback_bps: float) -> float:
+        """اختيار سعر التنفيذ الأساسي من bid/ask إن توفر، وإلا استخدام spread fallback."""
+        side_upper = side.upper()
+        try:
+            if getattr(self, 'data_provider', None) and getattr(self.data_provider, 'client', None):
+                book_ticker = self.data_provider.client.get_orderbook_ticker(symbol=symbol)
+                bid = float(book_ticker.get('bidPrice', 0) or 0)
+                ask = float(book_ticker.get('askPrice', 0) or 0)
+                if bid > 0 and ask > 0:
+                    return ask if side_upper == 'BUY' else bid
+        except Exception as e:
+            self.logger.debug(f"Orderbook ticker unavailable for {symbol}: {e}")
+
+        # استخدام spread أكبر وأكثر واقعية للتداول التجريبي (10 bps = 0.1% بدلاً من 2 bps)
+        # هذا يضمن اختلاف أسعار الدخول والخروج بشكل حقيقي
+        spread = max(0.0, float(spread_fallback_bps or 0)) / 10000.0
+        if spread < 0.0005:  # minimum 5 bps
+            spread = 0.001  # 10 bps minimum for demo
+            
+        if side_upper == 'BUY':
+            return reference_price * (1 + spread)
+        return reference_price * (1 - spread)
+
+    def _simulate_demo_fill(self, symbol: str, side: str, quantity: float, reference_price: float) -> Dict:
+        """محاكاة تنفيذ Market Order للحساب التجريبي بشكل أقرب للتداول الحقيقي.
+
+        - Slippage بسيط
+        - Latency قصير
+        - Quantity step-size
+        - Min notional check
+        """
+        import random
+        import time
+
+        if reference_price <= 0 or quantity <= 0:
+            return {'success': False, 'message': 'invalid_reference_price_or_quantity'}
+
+        rules = self._get_demo_symbol_rules(symbol)
+        side_upper = side.upper()
+
+        if rules.get('status') != 'TRADING':
+            return {'success': False, 'message': f"symbol_not_trading ({rules.get('status')})"}
+
+        latency_ms = random.randint(90, 350)
+        time.sleep(latency_ms / 1000.0)
+
+        base_exec_price = self._get_demo_execution_price(
+            symbol=symbol,
+            side=side_upper,
+            reference_price=reference_price,
+            spread_fallback_bps=rules.get('spread_fallback_bps', 10),
+        )
+        if base_exec_price <= 0:
+            return {'success': False, 'message': 'invalid_base_execution_price'}
+
+        slip_bps = random.uniform(rules['slip_min_bps'], rules['slip_max_bps'])
+
+        if side_upper == 'BUY':
+            exec_price = base_exec_price * (1 + (slip_bps / 10000.0))
+        else:
+            exec_price = base_exec_price * (1 - (slip_bps / 10000.0))
+
+        exec_qty = self._quantize_demo_quantity(quantity, rules['step'])
+        if exec_qty <= 0 or exec_qty < float(rules.get('min_qty', 0) or 0):
+            return {'success': False, 'message': 'quantity_below_step_size'}
+
+        notional = exec_price * exec_qty
+        min_notional = float(rules.get('min_notional', 10.0) or 10.0)
+        if notional < min_notional:
+            return {
+                'success': False,
+                'message': f'min_notional_not_met ({notional:.4f} < {min_notional:.4f})'
+            }
+
+        # Partial fills simulation: تقسيم التنفيذ إلى 1-3 تعبئات حسب حجم الكمية
+        step = rules['step']
+        fill_count = 1
+        if exec_qty >= step * 3:
+            roll = random.random()
+            if roll > 0.75:
+                fill_count = 3
+            elif roll > 0.35:
+                fill_count = 2
+
+        fills = []
+        remaining_qty = exec_qty
+        total_quote = 0.0
+        total_commission = 0.0
+
+        for i in range(fill_count):
+            is_last = i == (fill_count - 1)
+            if is_last:
+                fill_qty = remaining_qty
+            else:
+                min_remaining_after = step * (fill_count - i - 1)
+                max_fill_qty = max(step, remaining_qty - min_remaining_after)
+                raw_fill_qty = random.uniform(step, max_fill_qty)
+                fill_qty = self._quantize_demo_quantity(raw_fill_qty, step)
+                if fill_qty < step:
+                    fill_qty = step
+                if fill_qty > max_fill_qty:
+                    fill_qty = self._quantize_demo_quantity(max_fill_qty, step)
+                if fill_qty <= 0:
+                    fill_qty = step
+
+            remaining_qty = max(0.0, remaining_qty - fill_qty)
+
+            # تذبذب بسيط بين التعبئات (±2 bps) حول السعر التنفيذي
+            jitter_bps = random.uniform(-2.0, 2.0)
+            fill_price = exec_price * (1 + (jitter_bps / 10000.0))
+            fill_quote = fill_qty * fill_price
+            fill_commission = fill_quote * 0.001
+
+            total_quote += fill_quote
+            total_commission += fill_commission
+            fills.append({
+                'price': fill_price,
+                'qty': fill_qty,
+                'commission': fill_commission,
+            })
+
+        if exec_qty <= 0:
+            return {'success': False, 'message': 'invalid_executed_quantity'}
+
+        avg_exec_price = total_quote / exec_qty if exec_qty > 0 else exec_price
+
+        return {
+            'success': True,
+            'order_id': self._generate_demo_order_id(symbol, side_upper),
+            'price': avg_exec_price,
+            'quantity': exec_qty,
+            'commission': total_commission,
+            'fills': fills,
+            'status': 'FILLED',
+            'latency_ms': latency_ms,
+            'slippage_bps': slip_bps,
+            'fills_count': fill_count,
+        }
+
+    def _execute_real_order_with_retry(self, action: str, symbol: str, quantity: float, purpose: str) -> Dict:
+        """تنفيذ أمر حقيقي مع إعادة محاولة عند الفشل.
+
+        ملاحظة: يُستخدم فقط في مسار التداول الحقيقي.
+        حساب الأدمن التجريبي/الوهمي يبقى في مساره الداخلي بدون Binance retries.
+        """
+        import time
+
+        max_attempts = 3
+        last_result = {}
+
+        for attempt in range(1, max_attempts + 1):
+            if action == 'buy':
+                result = self.binance_manager.execute_buy_order(self.user_id, symbol, quantity)
+            else:
+                result = self.binance_manager.execute_sell_order(self.user_id, symbol, quantity)
+
+            last_result = result if isinstance(result, dict) else {}
+            success_with_order = last_result.get('success') and last_result.get('order_id')
+            if success_with_order:
+                return last_result
+
+            message = last_result.get('message', 'unknown error')
+            self.logger.warning(
+                f"⚠️ Binance {purpose} attempt {attempt}/{max_attempts} failed for {symbol}: {message}"
+            )
+
+            if attempt < max_attempts:
+                time.sleep(1.5)
+
+        return {
+            'success': False,
+            'message': (
+                f"Binance {purpose} failed after {max_attempts} attempts: "
+                f"{last_result.get('message', 'unknown error')}"
+            ),
+        }
 
     def _get_open_positions(self) -> List[Dict]:
         """جلب الصفقات المفتوحة من قاعدة البيانات"""
@@ -100,6 +369,10 @@ class PositionManagerMixin:
                 if updated.get('trail'):
                     self._update_trailing_stop(position_id, updated['trail'])
                 
+                # V8: persist breakeven SL updates
+                if updated.get('sl'):
+                    self._update_stop_loss(position_id, updated['sl'])
+                
                 if exit_result['should_exit']:
                     exit_price = exit_result['exit_price']
                     strategy_name = self.strategy.name if self.strategy else 'unknown'
@@ -141,6 +414,10 @@ class PositionManagerMixin:
 
                     return self._close_position(position, exit_price, reason, 1.0)
                 else:
+                    # V8: persist SL/trail updates even when holding
+                    if updated.get('sl'):
+                        self._update_stop_loss(position_id, updated['sl'])
+                    
                     # عرض حالة الاحتفاظ من منظور الاستراتيجية
                     trail_level = exit_result.get('trail_level', 0)
                     if trail_level > 0:
@@ -209,26 +486,50 @@ class PositionManagerMixin:
         entry_commission = position.get('entry_commission', 0)
         
         if self.is_demo_trading:
-            # Demo: نحسب عمولة الخروج ونخصمها من PnL
-            position_size_exit = abs(exit_price * quantity)
-            exit_commission = position_size_exit * 0.001  # 0.1%
+            # Demo: محاكاة تنفيذ أقرب للواقع (سعر/انزلاق/زمن/عمولة)
+            demo_close_side = 'SELL' if position_type != 'SHORT' else 'BUY'
+            demo_close_fill = self._simulate_demo_fill(symbol, demo_close_side, quantity, exit_price)
+            if not demo_close_fill.get('success'):
+                self.logger.warning(
+                    f"⚠️ Demo close simulation failed for {symbol}: {demo_close_fill.get('message')}"
+                )
+                return None
+
+            exit_price = float(demo_close_fill.get('price', exit_price))
+            exit_commission = float(demo_close_fill.get('commission', 0))
+            exit_order_id = str(demo_close_fill.get('order_id', ''))
+
+            # إعادة حساب PnL بعد سعر التنفيذ المحاكى
+            if position_type == 'SHORT':
+                pnl_raw = (entry_price - exit_price) * quantity
+            else:
+                pnl_raw = (exit_price - entry_price) * quantity
+
             # ✅ FIX: عمولة الدخول خُصمت بالفعل من الرصيد عند الفتح (total_deduction = position_size + entry_commission)
             # لذلك نخصم فقط عمولة الخروج من PnL الخام — لا نخصم عمولة الدخول مرة أخرى
             pnl = pnl_raw - exit_commission
             # ✅ النسبة المئوية الفعلية بعد عمولة الخروج فقط
             pnl_pct = pnl / position_size_entry if position_size_entry > 0 else 0
-            self.logger.info(f"   💰 Demo Exit Commission: ${exit_commission:.4f} (Entry commission ${entry_commission:.4f} already deducted at open)")
+            self.logger.info(
+                f"   💰 Demo Exit Fill: ${exit_price:.4f} | Commission ${exit_commission:.4f} "
+                f"(Entry commission ${entry_commission:.4f} already deducted at open)"
+            )
         else:
             # 💱 تنفيذ إغلاق حقيقي على Binance
             if self.binance_manager:
                 self.logger.info(f"   💱 Executing REAL close on Binance: {position_type} {symbol} qty={quantity:.6f}")
                 
                 if position_type == 'LONG':
-                    close_result = self.binance_manager.execute_sell_order(self.user_id, symbol, quantity)
+                    close_result = self._execute_real_order_with_retry('sell', symbol, quantity, 'close')
                 else:
-                    close_result = self.binance_manager.execute_buy_order(self.user_id, symbol, quantity)
+                    close_result = self._execute_real_order_with_retry('buy', symbol, quantity, 'close')
                 
                 if close_result.get('success'):
+                    if not close_result.get('order_id'):
+                        self.logger.error(
+                            "⛔ Binance close returned without order_id — keep position open in DB"
+                        )
+                        return None
                     real_exit_price = float(close_result.get('price', exit_price))
                     exit_commission = float(close_result.get('commission', 0))
                     exit_order_id = str(close_result.get('order_id', ''))
@@ -246,8 +547,16 @@ class PositionManagerMixin:
                 else:
                     self.logger.error(
                         f"⚠️ Binance close FAILED: {close_result.get('message')} — "
-                        f"closing in DB with market price ${exit_price:.4f}"
+                        "position remains OPEN in DB"
                     )
+                    self._report_trading_error(
+                        message="Binance close failed",
+                        details=f"user_id={self.user_id}, symbol={symbol}, message={close_result.get('message')}",
+                        critical=False,
+                        requires_admin=False,
+                        auto_action="retry_close_order",
+                    )
+                    return None
             
             # Real: PnL بعد خصم عمولة الخروج (عمولة الدخول خُصمت عند الفتح)
             pnl = pnl_raw - exit_commission
@@ -262,21 +571,19 @@ class PositionManagerMixin:
         # ========== إغلاق الصفقة وتحديث الرصيد بشكل atomic ==========
         try:
             with self.db.get_write_connection() as conn:
-                cursor = conn.cursor()
+                # 1. إغلاق في قاعدة البيانات (على نفس الاتصال)
+                self.db.close_position_on_conn(conn, position_id, exit_price, reason, pnl,
+                                               exit_commission=exit_commission,
+                                               exit_order_id=exit_order_id)
                 
-                # 1. إغلاق في قاعدة البيانات
-                self.db.close_position(position_id, exit_price, reason, pnl, 
-                                      exit_commission=exit_commission,
-                                      exit_order_id=exit_order_id)
-                
-                # 2. تحديث رصيد المحفظة
+                # 2. تحديث رصيد المحفظة (على نفس الاتصال)
                 current_balance = self.user_portfolio.get('balance', 0)
                 returned_amount = position_size_entry + pnl
                 new_balance = current_balance + returned_amount
-                self.db.update_user_balance(self.user_id, new_balance, self.is_demo_trading)
+                self.db.update_user_balance_on_conn(conn, self.user_id, new_balance, self.is_demo_trading)
                 
-                # 3. Commit معاً - إما تنجح العمليتان أو تفشلان
-                conn.commit()
+                # 3. get_write_connection يعمل commit تلقائياً عند الخروج بنجاح
+                #    وrollback تلقائياً عند حدوث exception — ذرية حقيقية
                 
                 # 4. تحديث الحالة المحلية بعد النجاح
                 self.user_portfolio['balance'] = new_balance
@@ -285,6 +592,13 @@ class PositionManagerMixin:
         except Exception as e:
             self.logger.error(f"❌ CRITICAL: Atomic transaction failed for closing {symbol}: {e}")
             self.logger.error(f"   ⛔ Position NOT closed, balance NOT updated - transaction rolled back")
+            self._report_trading_error(
+                message="Atomic close transaction failed",
+                details=f"user_id={self.user_id}, symbol={symbol}, error={e}",
+                critical=True,
+                requires_admin=True,
+                auto_action="check_db_integrity",
+            )
             return None
         
         # ========== التعلم من النتيجة ==========
@@ -341,7 +655,8 @@ class PositionManagerMixin:
                 symbol=symbol,
                 profit_loss=pnl,
                 profit_pct=pnl_pct * 100,
-                exit_reason=reason
+                exit_reason=reason,
+                trade_id=position_id  # ✅ تمرير معرف الصفقة
             )
         except Exception as e:
             self.logger.warning(f"⚠️ فشل إرسال إشعار إغلاق الصفقة: {e}")
@@ -359,6 +674,23 @@ class PositionManagerMixin:
                 profit_pct=pnl_pct * 100,
                 source=source
             )
+
+            # تدريب دوري تلقائي كل دفعة صفقات مغلقة
+            cycle_size = len(self.ml_training_manager.current_cycle_data)
+            if cycle_size >= 20:
+                train_result = self.ml_training_manager.end_cycle_and_train()
+                if train_result.get('success'):
+                    self.logger.info(
+                        f"🧠 Periodic ML training completed | "
+                        f"accuracy={train_result.get('accuracy', 0):.2%} | "
+                        f"ready={train_result.get('is_ready', False)}"
+                    )
+                else:
+                    self.logger.info(
+                        f"🧠 Periodic ML training skipped/failed | "
+                        f"reason={train_result.get('reason') or train_result.get('error', 'unknown')}"
+                    )
+                self.ml_training_manager.start_cycle()
         except Exception as e:
             self.logger.warning(f"⚠️ فشل تسجيل الصفقة لـ ML: {e}")
         
@@ -407,8 +739,25 @@ class PositionManagerMixin:
         order_id = None
         
         if self.is_demo_trading:
-            entry_commission = position_size * 0.001  # 0.1%
-            self.logger.info(f"   💰 Demo Commission (Entry): ${entry_commission:.4f}")
+            # Demo: محاكاة تنفيذ أقرب للواقع (سعر/انزلاق/زمن/عمولة)
+            demo_open_side = 'BUY' if side != 'SHORT' else 'SELL'
+            demo_open_fill = self._simulate_demo_fill(symbol, demo_open_side, quantity, entry_price)
+            if not demo_open_fill.get('success'):
+                self.logger.warning(
+                    f"⚠️ Demo open simulation failed for {symbol}: {demo_open_fill.get('message')}"
+                )
+                return None
+
+            entry_price = float(demo_open_fill.get('price', entry_price))
+            quantity = float(demo_open_fill.get('quantity', quantity))
+            position_size = entry_price * quantity
+            entry_commission = float(demo_open_fill.get('commission', 0))
+            order_id = str(demo_open_fill.get('order_id', ''))
+
+            self.logger.info(
+                f"   💰 Demo Entry Fill: ${entry_price:.4f} qty={quantity:.6f} "
+                f"commission=${entry_commission:.4f} order_id={order_id}"
+            )
         else:
             # 💱 تنفيذ حقيقي على Binance
             if not self.binance_manager:
@@ -421,12 +770,23 @@ class PositionManagerMixin:
             self.logger.info(f"   💱 Executing REAL {side} order on Binance: {symbol} qty={quantity:.6f}")
             
             if side == 'LONG':
-                result = self.binance_manager.execute_buy_order(self.user_id, symbol, quantity)
+                result = self._execute_real_order_with_retry('buy', symbol, quantity, 'open')
             else:
-                result = self.binance_manager.execute_sell_order(self.user_id, symbol, quantity)
+                result = self._execute_real_order_with_retry('sell', symbol, quantity, 'open')
             
             if not result.get('success'):
                 self.logger.error(f"⛔ Binance order FAILED: {result.get('message', 'unknown error')}")
+                self._report_trading_error(
+                    message="Binance open order failed",
+                    details=f"user_id={self.user_id}, symbol={symbol}, side={side}, message={result.get('message', 'unknown error')}",
+                    critical=False,
+                    requires_admin=False,
+                    auto_action="retry_open_order",
+                )
+                return None
+
+            if not result.get('order_id'):
+                self.logger.error("⛔ Binance order missing order_id — trade considered NOT executed")
                 return None
             
             # استخدام البيانات الحقيقية من Binance
@@ -483,16 +843,15 @@ class PositionManagerMixin:
         # ========== حفظ الصفقة وخصم الرصيد بشكل atomic ==========
         try:
             with self.db.get_write_connection() as conn:
-                cursor = conn.cursor()
-                
                 # 1. حفظ الصفقة في قاعدة البيانات
-                position_id = self.db.add_position(
+                position_id = self.db.add_position_on_conn(
+                    conn=conn,
                     user_id=self.user_id,
                     symbol=symbol,
                     entry_price=entry_price,
                     quantity=quantity,
                     position_size=position_size,
-                    signal_type=signal.get('signal_type', 'SCALP_V7'),
+                    signal_type=signal.get('signal_type', 'SCALP_V8'),
                     is_demo=1 if self.is_demo_trading else 0,
                     order_id=order_id,
                     position_type=side.lower(),
@@ -500,20 +859,17 @@ class PositionManagerMixin:
                     take_profit_price=None,  # V7 uses trailing, no fixed TP
                     timeframe='1h',
                     signal_metadata=metadata_json,
+                    entry_commission=entry_commission,
                 )
                 
                 if position_id is None:
-                    conn.rollback()
-                    self.logger.error(f"❌ Failed to save position {symbol} in DB - aborting (balance NOT deducted)")
+                    self.logger.warning(f"⚠️ Position {symbol} not saved — duplicate or constraint violation (balance NOT deducted)")
                     return None
                 
                 # 2. خصم الرصيد
                 total_deduction = position_size + entry_commission
                 new_balance = balance - total_deduction
-                self.db.update_user_balance(self.user_id, new_balance, self.is_demo_trading)
-                
-                # 3. Commit معاً - إما تنجح العمليتان أو تفشلان
-                conn.commit()
+                self.db.update_user_balance_on_conn(conn, self.user_id, new_balance, self.is_demo_trading)
                 
                 # 4. تحديث الحالة المحلية بعد النجاح
                 self.user_portfolio['balance'] = new_balance
@@ -522,6 +878,13 @@ class PositionManagerMixin:
         except Exception as e:
             self.logger.error(f"❌ CRITICAL: Atomic transaction failed for {symbol}: {e}")
             self.logger.error(f"   ⛔ Position NOT saved, balance NOT deducted - transaction rolled back")
+            self._report_trading_error(
+                message="Atomic open transaction failed",
+                details=f"user_id={self.user_id}, symbol={symbol}, error={e}",
+                critical=True,
+                requires_admin=True,
+                auto_action="check_db_write_path",
+            )
             return None
         
         # ✅ Phase 1: تسجيل الصفقة في العداد اليومي
@@ -534,7 +897,8 @@ class PositionManagerMixin:
                 symbol=symbol,
                 position_type=side,
                 entry_price=entry_price,
-                quantity=quantity
+                quantity=quantity,
+                trade_id=position_id  # ✅ تمرير معرف الصفقة
             )
         except Exception as e:
             self.logger.warning(f"⚠️ فشل إرسال إشعار فتح الصفقة: {e}")
@@ -580,3 +944,14 @@ class PositionManagerMixin:
             self.db.update_position_trailing_stop(position_id, new_price)
         except Exception as e:
             self.logger.error(f"Error updating trailing stop: {e}")
+
+    def _update_stop_loss(self, position_id: int, new_sl: float):
+        """تحديث Stop Loss (V8 breakeven)"""
+        try:
+            with self.db.get_write_connection() as conn:
+                conn.execute(
+                    "UPDATE active_positions SET stop_loss = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (new_sl, position_id))
+            self.logger.debug(f"   🛡️ SL updated to ${new_sl:.4f} (breakeven)")
+        except Exception as e:
+            self.logger.error(f"Error updating stop loss: {e}")

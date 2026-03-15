@@ -4,7 +4,6 @@ System Health Check API - مراقبة صحة النظام
 """
 
 from flask import Blueprint, jsonify
-import sqlite3
 import os
 import sys
 from datetime import datetime
@@ -190,13 +189,11 @@ def get_critical_errors():
                     'data': errors,
                     'count': len(errors)
                 })
-            except sqlite3.OperationalError:
+            except Exception as inner_error:
                 return jsonify({
-                    'success': True,
-                    'data': [],
-                    'count': 0,
-                    'message': 'لا توجد أخطاء مسجلة'
-                })
+                    'success': False,
+                    'message': f'خطأ في قراءة الأخطاء: {str(inner_error)}'
+                }), 500
     except Exception as e:
         return jsonify({
             'success': False,

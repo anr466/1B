@@ -190,8 +190,9 @@ class UserOnboardingService:
             with self.db_manager.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT OR IGNORE INTO user_onboarding (user_id, step, shown_at)
-                    VALUES (?, ?, datetime('now'))
+                    INSERT INTO user_onboarding (user_id, step, shown_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, step) DO NOTHING
                 """, (user_id, step))
                 return True
         except Exception as e:
@@ -205,7 +206,7 @@ class UserOnboardingService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE user_onboarding 
-                    SET dismissed_at = datetime('now')
+                    SET dismissed_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND step = ?
                 """, (user_id, step))
                 
@@ -213,7 +214,7 @@ class UserOnboardingService:
                 if cursor.rowcount == 0:
                     cursor.execute("""
                         INSERT INTO user_onboarding (user_id, step, shown_at, dismissed_at)
-                        VALUES (?, ?, datetime('now'), datetime('now'))
+                        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id, step))
                 
                 return True

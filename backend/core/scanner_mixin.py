@@ -29,6 +29,16 @@ except ImportError:
 class ScannerMixin:
     """Mixin for market scanning and entry signal detection"""
 
+    def _persist_detected_signals(self, signals: List[Dict]) -> None:
+        """حفظ الإشارات المكتشفة في trading_signals حتى لو لم تتحول مباشرة إلى صفقات."""
+        if not signals:
+            return
+
+        try:
+            self.db.save_current_signals(signals)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to persist detected signals: {e}")
+
     def _scan_for_entries(self) -> List[Dict]:
         """
         البحث عن فرص دخول جديدة
@@ -63,8 +73,9 @@ class ScannerMixin:
             try:
                 hour_ok, hour_reason = self.optimizer.is_good_trading_hour()
                 if not hour_ok:
-                    self.logger.info(f"   📈 Adaptive BLOCKED: {hour_reason}")
-                    return entries
+                    # ✅ تم إلغاء ميزة الحظر الزمني الكامل:
+                    # يبقى التقييم التكيّفي إرشادياً فقط ولا يمنع التداول بالكامل.
+                    self.logger.warning(f"   📈 Adaptive hour warning (non-blocking): {hour_reason}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Hour filter error: {e}")
         
@@ -82,6 +93,7 @@ class ScannerMixin:
         if self.strategy:
             # NOTE: نحفظ أيضاً DataFrame المعالج لكل رمز لاستخدامه لاحقاً في فلتر السيولة
             qualified_signals = []  # [(symbol, signal, predicted_wr, score, df_prepared)]
+            signals_to_persist = []
             timeframe = self.config.get('execution_timeframe', '1h')
             
             for symbol in symbols_to_scan:
@@ -103,6 +115,8 @@ class ScannerMixin:
                     
                     # كشف إشارة الدخول (عبر الواجهة الموحدة)
                     signal = self.strategy.detect_entry(df, {'trend': trend})
+                    if not signal:
+                        self.logger.info(f"   ⏭️ [{symbol}] trend={trend} → no signal")
                     
                     # ===== Smart Money Enhancement =====
                     # تحسين الإشارة بتحليل Smart Money إذا كان متاحاً
@@ -116,6 +130,15 @@ class ScannerMixin:
                             self.logger.warning(f"⚠️ Smart Money analysis error for {symbol}: {e}")
                     
                     if signal:
+                        signals_to_persist.append({
+                            'symbol': symbol,
+                            'strategy': signal.get('strategy', strategy_name),
+                            'timeframe': timeframe,
+                            'signal_type': signal.get('signal_type', signal.get('side', 'UNKNOWN')),
+                            'price': float(signal.get('entry_price') or df['close'].iloc[-1]),
+                            'confidence': float(signal.get('confidence', signal.get('score', 0.0)) or 0.0),
+                        })
+
                         # ===== Phase 1: Capital Stress — فحص تكدس الاتجاه =====
                         dir_ok, dir_reason = self._check_directional_stress(open_positions, signal['side'])
                         if not dir_ok:
@@ -155,6 +178,8 @@ class ScannerMixin:
                     
                 except Exception as e:
                     self.logger.error(f"Error scanning {symbol}: {e}")
+
+            self._persist_detected_signals(signals_to_persist)
             
             # ✅ اختيار الأفضل من المرشحين
             if qualified_signals:
@@ -251,6 +276,14 @@ class ScannerMixin:
                             'side': 'LONG',
                             'reasons': [cognitive_decision.entry_logic],
                         }
+                        self._persist_detected_signals([{
+                            'symbol': symbol,
+                            'strategy': 'cognitive_fallback',
+                            'timeframe': exec_tf,
+                            'signal_type': signal.get('signal_type', 'COGNITIVE'),
+                            'price': float(signal.get('entry_price') or 0.0),
+                            'confidence': float(signal.get('confidence', 0.0) or 0.0),
+                        }])
                         
                         entry = self._open_position(symbol, signal)
                         if entry:

@@ -1,0 +1,69 @@
+# DB Coverage Report
+
+- Objects: 58
+- Covered by SQL references: 41
+- Unreferenced: 17
+- Referenced but missing: 0
+
+## Referenced but missing
+- None
+
+## All objects
+- [COVERED] (table) active_positions
+- [COVERED] (table) activity_logs
+- [COVERED] (table) admin_demo_portfolio_history
+- [COVERED] (table) admin_notification_settings
+- [UNREFERENCED] (table) admin_trades
+- [UNREFERENCED] (table) agent_memory
+- [UNREFERENCED] (table) analytics
+- [UNREFERENCED] (table) backtest_results
+- [COVERED] (table) backtest_vs_reality
+- [UNREFERENCED] (view) binance_keys
+- [COVERED] (table) biometric_auth
+- [COVERED] (table) coin_states
+- [COVERED] (table) coin_trade_history
+- [COVERED] (table) combo_reliability
+- [COVERED] (table) crypto_news
+- [UNREFERENCED] (table) cryptowave_signals
+- [UNREFERENCED] (table) dynamic_blacklist
+- [COVERED] (table) fcm_tokens
+- [COVERED] (table) learning_validation_log
+- [UNREFERENCED] (table) lost_and_found
+- [UNREFERENCED] (table) ml_models
+- [UNREFERENCED] (table) ml_patterns
+- [UNREFERENCED] (table) ml_quality_metrics
+- [UNREFERENCED] (table) ml_training_data
+- [UNREFERENCED] (table) ml_training_history
+- [COVERED] (table) notification_history
+- [COVERED] (table) notifications
+- [COVERED] (table) operation_log
+- [UNREFERENCED] (table) password_reset_requests
+- [COVERED] (table) pending_verifications
+- [COVERED] (table) portfolio
+- [COVERED] (table) portfolio_growth_history
+- [COVERED] (table) security_audit_log
+- [COVERED] (table) signal_learning
+- [COVERED] (table) smart_exit_errors
+- [COVERED] (table) smart_exit_stats
+- [COVERED] (table) successful_coins
+- [COVERED] (table) system_alerts
+- [COVERED] (table) system_errors
+- [COVERED] (table) system_status
+- [COVERED] (table) trade_learning_log
+- [UNREFERENCED] (table) trades
+- [UNREFERENCED] (table) trading_history
+- [COVERED] (table) trading_signals
+- [COVERED] (table) user_binance_balance
+- [COVERED] (table) user_binance_keys
+- [COVERED] (table) user_binance_orders
+- [COVERED] (table) user_biometric_auth
+- [COVERED] (table) user_devices
+- [COVERED] (view) user_full_profile
+- [COVERED] (table) user_notification_settings
+- [COVERED] (table) user_onboarding
+- [UNREFERENCED] (table) user_portfolio_backup_20260215
+- [COVERED] (table) user_sessions
+- [COVERED] (table) user_settings
+- [COVERED] (table) user_trades
+- [COVERED] (table) users
+- [COVERED] (table) verification_codes

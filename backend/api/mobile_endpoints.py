@@ -10,7 +10,6 @@ Mobile API Endpoints - Trading AI Bot
 
 from flask import Blueprint, request, jsonify, g
 import logging
-import sqlite3
 import sys
 from datetime import datetime, timedelta
 from functools import wraps
@@ -19,6 +18,7 @@ from backend.utils.response_formatter import success_response, error_response, p
 from backend.utils.unified_error_handler import handle_errors, ValidationError, NotFoundError, AuthenticationError
 from backend.utils.idempotency_manager import require_idempotency
 from backend.utils.request_deduplicator import prevent_concurrent_duplicates
+from backend.utils.trading_context import get_trading_context
 from config.logging_config import log_api_error
 import os
 
@@ -187,31 +187,16 @@ def get_user_portfolio(user_id):
         # ✅ استخدام db_manager المُعرّف مسبقاً بدلاً من إنشاء instance جديد
         db = db_manager
         
-        # ✅ تحديد is_demo من trading_mode للأدمن
+        trading_context = get_trading_context(db, user_id, requested_mode=requested_mode)
         user_data = db.get_user_by_id(user_id)
         if not user_data:
             return error_response('المستخدم غير موجود', 'NOT_FOUND', 404)
-        
-        is_admin = user_data.get('user_type') == 'admin'
-        is_demo = None
-        
-        if is_admin:
-            # ✅ الأدمن: يمكنه التبديل بين Demo و Real
-            if requested_mode:
-                is_demo = 1 if requested_mode == 'demo' else 0
-            else:
-                # استخدام الوضع المحفوظ في الإعدادات
-                settings = db.get_trading_settings(user_id)
-                if settings:
-                    trading_mode = settings.get('trading_mode', 'auto')
-                    if trading_mode == 'demo':
-                        is_demo = 1
-                    elif trading_mode == 'real':
-                        is_demo = 0
-                    else:  # auto
-                        keys = db.get_binance_keys(user_id)
-                        is_demo = 0 if keys else 1
-        else:
+
+        is_admin = trading_context['is_admin']
+        is_demo = trading_context['is_demo']
+        portfolio_owner_id = trading_context['portfolio_owner_id']
+
+        if not is_admin:
             # ✅ المستخدم العادي: Real فقط - التحقق من المفاتيح أولاً
             keys = db.get_binance_keys(user_id)
             if not keys:
@@ -227,7 +212,7 @@ def get_user_portfolio(user_id):
             is_demo = 0
         
         # ✅ جلب بيانات المحفظة حسب الوضع (demo/real)
-        portfolio_data = db.get_user_portfolio(user_id, is_demo)
+        portfolio_data = db.get_user_portfolio(portfolio_owner_id, is_demo)
         
         if not portfolio_data:
             return error_response('المحفظة غير موجودة', 'NOT_FOUND', 404)
@@ -241,6 +226,8 @@ def get_user_portfolio(user_id):
         # تحويل آمن للقيم
         def safe_float(value, default=0.0):
             try:
+                if value is None:
+                    return default
                 if isinstance(value, str):
                     return float(value.replace(',', '').replace('+', '').replace('%', ''))
                 return float(value) if value else default
@@ -249,19 +236,22 @@ def get_user_portfolio(user_id):
         
         total_balance = safe_float(portfolio_data.get('totalBalance', '0.00'))
         available_balance = safe_float(portfolio_data.get('availableBalance', '0.00'))
-        locked_balance = safe_float(portfolio_data.get('lockedBalance', '0.00'))
+        locked_balance = safe_float(portfolio_data.get('lockedBalance', portfolio_data.get('investedBalance', '0.00')))
         daily_pnl = safe_float(portfolio_data.get('dailyPnL', '+0.00'))
         daily_pnl_pct = safe_float(portfolio_data.get('dailyPnLPercentage', '+0.0'))
-        total_pnl = safe_float(portfolio_data.get('totalPnL', '0.00'))
+        # ✅ إصلاح: التعامل مع totalPnL كـ None بشكل صحيح
+        total_pnl_raw = portfolio_data.get('totalPnL', '0.00')
+        total_pnl = safe_float(total_pnl_raw, 0.0)
         
         # ✅ جلب الرصيد الأولي + المستثمر من جدول portfolio
         initial_balance = safe_float(portfolio_data.get('initialBalance', '0.00'))
         invested_balance = safe_float(portfolio_data.get('investedBalance', '0.00'))
-        if initial_balance == 0 or invested_balance == 0:
+        should_backfill_from_db = (is_demo == 1) or has_keys
+        if should_backfill_from_db and (initial_balance == 0 or invested_balance == 0):
             try:
                 extra = db.execute_query(
                     "SELECT initial_balance, invested_balance FROM portfolio WHERE user_id = ? AND is_demo = ?",
-                    (user_id, is_demo)
+                    (portfolio_owner_id, is_demo)
                 )
                 if extra and len(extra) > 0:
                     if initial_balance == 0:
@@ -271,14 +261,15 @@ def get_user_portfolio(user_id):
             except Exception:
                 pass
         
-        # ✅ FIX: حساب totalPnL و totalPnLPercentage بشكل موحد من البيانات الفعلية
-        # totalPnL = totalBalance - initialBalance (الربح/الخسارة الفعلية)
-        total_pnl = total_balance - initial_balance if initial_balance > 0 else total_pnl
-        total_pnl_pct = (total_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
+        # ✅ مهم: لا نعيد اشتقاق PnL من (totalBalance - initialBalance)
+        # للحساب الحقيقي قد يتغير الرصيد بسبب إيداع/سحب خارجي، بينما المطلوب إظهار PnL صفقات النظام فقط
+        total_pnl = safe_float(portfolio_data.get('totalPnL', portfolio_data.get('totalProfitLoss', 0.0)), 0.0)
+        total_pnl_pct = safe_float(portfolio_data.get('totalPnLPercentage', portfolio_data.get('totalProfitLossPercentage', 0.0)), 0.0)
         
         # ✅ البيانات الكاملة للـ Frontend (Dashboard + PortfolioScreen)
         # ✅ FIX: إرجاع أرقام حقيقية (float) بدلاً من نصوص — حتى يتمكن الـ Frontend من الحساب مباشرة
         data = {
+            'currentBalance': round(total_balance, 2),
             'totalBalance': round(total_balance, 2),
             'initialBalance': round(initial_balance, 2),
             'availableBalance': round(available_balance, 2),
@@ -288,6 +279,7 @@ def get_user_portfolio(user_id):
             'dailyPnLPercentage': round(daily_pnl_pct, 2),
             'totalPnL': round(total_pnl, 2),
             'totalPnLPercentage': round(total_pnl_pct, 2),
+            'totalProfitLoss': round(total_pnl, 2),
             'hasKeys': has_keys,
             'lastUpdate': portfolio_data.get('lastUpdate')
         }
@@ -295,7 +287,7 @@ def get_user_portfolio(user_id):
         # ✅ حفظ في Cache مع توحيد Cache Key + Dynamic TTL
         if CACHE_AVAILABLE:
             cache_key = f"portfolio_{user_id}_{requested_mode}" if requested_mode else f"portfolio_{user_id}"
-            response_cache.set(cache_key, data, ttl=300, user_id=user_id)
+            response_cache.set(cache_key, data, ttl=30, user_id=user_id)
         
         response_data, status_code = success_response(data, 'تم جلب المحفظة بنجاح')
         return jsonify(response_data), status_code
@@ -316,7 +308,7 @@ def get_user_stats(user_id):
     الحصول على إحصائيات التداول للمستخدم
     
     ✅ عزل كامل: WHERE user_id = ?
-    ✅ حساب من جدول user_trades فقط
+    ✅ حساب من جدول active_positions (المصدر الوحيد للبيانات)
     
     Returns:
         {
@@ -349,25 +341,32 @@ def get_user_stats(user_id):
         # ✅ استخدام db_manager المُعرّف مسبقاً
         db = db_manager
         
-        # ✅ تحديد is_demo من trading_mode
-        user_data = db.get_user_by_id(user_id)
-        is_admin = user_data.get('user_type') == 'admin' if user_data else False
-        
-        is_demo = None
+        trading_context = get_trading_context(db, user_id, requested_mode=requested_mode)
+        is_admin = trading_context['is_admin']
+        is_demo = trading_context['is_demo']
+        portfolio_owner_id = trading_context['portfolio_owner_id']
+
         if is_admin:
-            # ✅ إذا تم تمرير mode في الطلب، استخدمه مباشرة
-            if requested_mode:
-                is_demo = 1 if requested_mode == 'demo' else 0
-            else:
-                settings = db.get_trading_settings(user_id)
-                trading_mode = settings.get('trading_mode', 'auto') if settings else 'auto'
-                if trading_mode == 'demo':
-                    is_demo = 1
-                elif trading_mode == 'real':
-                    is_demo = 0
-                else:  # auto
-                    keys = db.get_binance_keys(user_id)
-                    is_demo = 0 if keys else 1
+            # ✅ الأدمن الحقيقي يتبع نفس قاعدة المستخدم الحقيقي: مفاتيح Binance مطلوبة
+            if is_demo == 0:
+                keys = db.get_binance_keys(user_id)
+                if not keys:
+                    response_data, status_code = success_response({
+                        'requiresSetup': True,
+                        'message': 'أضف مفاتيح Binance للبدء',
+                        'totalTrades': 0,
+                        'activeTrades': 0,
+                        'winningTrades': 0,
+                        'losingTrades': 0,
+                        'closedTrades': 0,
+                        'totalProfit': 0.0,
+                        'winRate': 0.0,
+                        'portfolioGrowth': 0.0,
+                        'portfolioGrowthPct': 0.0,
+                        'initialBalance': 0.0,
+                        'currentBalance': 0.0
+                    }, 'يتطلب إعداد مفاتيح Binance')
+                    return jsonify(response_data), status_code
         else:
             # ✅ المستخدم العادي: Real فقط - التحقق من المفاتيح
             keys = db.get_binance_keys(user_id)
@@ -388,24 +387,31 @@ def get_user_stats(user_id):
             
             is_demo = 0
         
-        # حساب الإحصائيات حسب الوضع
+        # حساب الإحصائيات حسب الوضع — يقرأ من active_positions (المصدر الوحيد للبيانات)
         stats_query = """
-            SELECT 
-                COUNT(*) as total_trades,
-                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as active_trades,
-                SUM(CASE WHEN status = 'closed' AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
-                SUM(CASE WHEN status = 'closed' AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades,
-                SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_trades,
-                AVG(CASE WHEN status = 'closed' THEN profit_loss ELSE NULL END) as avg_profit,
-                SUM(CASE WHEN status = 'closed' THEN profit_loss ELSE 0 END) as total_profit,
-                MAX(CASE WHEN status = 'closed' THEN profit_loss ELSE NULL END) as best_trade,
-                MIN(CASE WHEN status = 'closed' THEN profit_loss ELSE NULL END) as worst_trade,
-                MIN(entry_time) as first_trade_date
-            FROM user_trades
+            SELECT
+                SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as closed_trades,
+                SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades,
+                AVG(CASE WHEN is_active = FALSE THEN profit_loss ELSE NULL END) as avg_profit,
+                SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END) as total_profit,
+                MAX(CASE WHEN is_active = FALSE THEN profit_loss ELSE NULL END) as best_trade,
+                MIN(CASE WHEN is_active = FALSE THEN profit_loss ELSE NULL END) as worst_trade,
+                MIN(COALESCE(entry_date, CAST(created_at AS TEXT))) as first_trade_date,
+                COALESCE(SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN profit_loss ELSE 0 END), 0) as gross_profit,
+                COALESCE(ABS(SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN profit_loss ELSE 0 END)), 0) as gross_loss
+            FROM active_positions
             WHERE user_id = ? AND is_demo = ?
         """
-        
-        stats_result = db.execute_query(stats_query, (user_id, is_demo))
+
+        active_trades_query = """
+            SELECT COUNT(*) as active_trades
+            FROM active_positions
+            WHERE user_id = ? AND is_demo = ? AND is_active = TRUE
+        """
+
+        stats_result = db.execute_query(stats_query, (portfolio_owner_id, is_demo))
+        active_result = db.execute_query(active_trades_query, (portfolio_owner_id, is_demo))
         
         # ✅ جلب الرصيد الأولي عند أول تداول (لحساب نمو المحفظة)
         initial_balance_query = """
@@ -413,48 +419,60 @@ def get_user_stats(user_id):
             FROM portfolio 
             WHERE user_id = ? AND is_demo = ?
         """
-        portfolio_result = db.execute_query(initial_balance_query, (user_id, is_demo))
+        portfolio_result = db.execute_query(initial_balance_query, (portfolio_owner_id, is_demo))
         initial_balance = 0.0
         current_balance = 0.0
         if portfolio_result and len(portfolio_result) > 0:
-            initial_balance = float(portfolio_result[0].get('initial_balance') or 0)
-            current_balance = float(portfolio_result[0].get('total_balance') or 0)
+            # ✅ إصلاح: التعامل مع القيم None بشكل صحيح
+            initial_balance_raw = portfolio_result[0].get('initial_balance')
+            current_balance_raw = portfolio_result[0].get('total_balance')
+            
+            initial_balance = float(initial_balance_raw) if initial_balance_raw is not None else 0.0
+            current_balance = float(current_balance_raw) if current_balance_raw is not None else 0.0
         
         if stats_result and len(stats_result) > 0:
             stats = stats_result[0]
+            active_trades = int((active_result[0].get('active_trades', 0) if active_result else 0) or 0)
+            closed_trades = int((stats.get('closed_trades', 0) or 0))
+            total_trades = active_trades + closed_trades
             
             # حساب معدل النجاح
             win_rate = 0.0
             success_rate = 0.0
-            if stats['closed_trades'] and stats['closed_trades'] > 0:
-                win_rate = (stats['winning_trades'] / stats['closed_trades']) * 100
+            if closed_trades > 0:
+                win_rate = ((stats.get('winning_trades', 0) or 0) / closed_trades) * 100
                 success_rate = win_rate
             
-            # ✅ حساب نمو المحفظة من أول تداول
+            # ✅ نمو المحفظة = أرباح/خسائر صفقات النظام فقط
+            # ولا يشمل تغيرات خارج النظام (إيداع/سحب/تداول يدوي خارج التطبيق)
             portfolio_growth = 0.0
             portfolio_growth_pct = 0.0
             total_profit = float(stats['total_profit'] or 0)
-            
-            if initial_balance > 0:
-                # النمو = (الرصيد الحالي - الرصيد الأولي) / الرصيد الأولي * 100
-                portfolio_growth = current_balance - initial_balance
-                portfolio_growth_pct = (portfolio_growth / initial_balance) * 100
-            elif total_profit != 0:
-                # إذا لم يكن هناك رصيد أولي، نستخدم إجمالي الأرباح
+
+            has_system_activity = total_trades > 0
+            if has_system_activity:
                 portfolio_growth = total_profit
+                if initial_balance is not None and initial_balance > 0:
+                    portfolio_growth_pct = (portfolio_growth / initial_balance) * 100
+            
+            gross_profit = float(stats.get('gross_profit', 0) or 0)
+            gross_loss = float(stats.get('gross_loss', 0) or 0)
+            profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
             
             data = {
-                'activeTrades': stats['active_trades'] or 0,
-                'totalTrades': stats['total_trades'] or 0,
+                'activeTrades': active_trades,
+                'totalTrades': total_trades,
                 'winRate': round(win_rate, 1),
                 'successRate': f"{round(success_rate, 1)}%",
-                'closedTrades': stats['closed_trades'] or 0,
-                'winningTrades': stats['winning_trades'] or 0,
-                'losingTrades': stats['losing_trades'] or 0,
+                'closedTrades': closed_trades,
+                'winningTrades': stats.get('winning_trades', 0) or 0,
+                'losingTrades': stats.get('losing_trades', 0) or 0,
                 'averageProfit': round(stats['avg_profit'], 2) if stats['avg_profit'] else 0.00,
                 'totalProfit': round(total_profit, 2),
+                'totalProfitLoss': round(total_profit, 2),
                 'bestTrade': round(stats['best_trade'], 2) if stats['best_trade'] else 0.00,
                 'worstTrade': round(stats['worst_trade'], 2) if stats['worst_trade'] else 0.00,
+                'profitFactor': profit_factor,
                 # ✅ بيانات نمو المحفظة الجديدة
                 'portfolioGrowth': round(portfolio_growth, 2),
                 'portfolioGrowthPct': round(portfolio_growth_pct, 2),
@@ -467,7 +485,7 @@ def get_user_stats(user_id):
             # ✅ حفظ في Cache مع توحيد Cache Key + Dynamic TTL
             if CACHE_AVAILABLE:
                 cache_key = f"stats_{user_id}_{requested_mode}" if requested_mode else f"stats_{user_id}"
-                response_cache.set(cache_key, data, ttl=300, user_id=user_id)
+                response_cache.set(cache_key, data, ttl=30, user_id=user_id)
             
             response_data, status_code = success_response(data, 'تم جلب الإحصائيات بنجاح')
             return jsonify(response_data), status_code
@@ -482,6 +500,7 @@ def get_user_stats(user_id):
                 'losingTrades': 0,
                 'averageProfit': 0.00,
                 'totalProfit': 0.00,
+                'totalProfitLoss': 0.00,
                 'bestTrade': 0.00,
                 'worstTrade': 0.00
             }
@@ -489,7 +508,7 @@ def get_user_stats(user_id):
             # ✅ حفظ في Cache مع Dynamic TTL
             if CACHE_AVAILABLE:
                 cache_key = f"stats_{user_id}"
-                response_cache.set(cache_key, data, ttl=300, user_id=user_id)
+                response_cache.set(cache_key, data, ttl=30, user_id=user_id)
             
             response_data, status_code = success_response(data, 'تم جلب الإحصائيات بنجاح')
             return jsonify(response_data), status_code

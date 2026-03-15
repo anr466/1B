@@ -88,7 +88,7 @@ class RiskManagerMixin:
 
     def _restore_daily_state_from_db(self):
         """
-        ✅ استعادة الحالة اليومية من DB عند التشغيل
+        استعادة الحالة اليومية من DB عند التشغيل
         يحسب trades_today و daily_pnl و consecutive_losses من الصفقات المغلقة اليوم
         """
         try:
@@ -98,7 +98,7 @@ class RiskManagerMixin:
                 rows = conn.execute("""
                     SELECT profit_loss, closed_at
                     FROM active_positions
-                    WHERE user_id = ? AND is_active = 0
+                    WHERE user_id = ? AND is_active = FALSE
                       AND DATE(closed_at) = ?
                     ORDER BY closed_at ASC
                 """, (self.user_id, today_str)).fetchall()

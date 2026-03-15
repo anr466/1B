@@ -248,6 +248,16 @@ class BackgroundTradingManager:
             self.is_running = True
             self.stop_event.clear()
             
+            # ✅ FIX: كتابة PID file لتمكين UnifiedSystemManager من كشف العملية
+            try:
+                pid_file = Path(project_root) / 'tmp' / 'system.pid'
+                pid_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(pid_file, 'w') as f:
+                    f.write(str(os.getpid()))
+                logger.info(f"✅ تم كتابة PID file: {os.getpid()}")
+            except Exception as pid_err:
+                logger.warning(f"⚠️ فشل كتابة PID file: {pid_err}")
+            
             # ✅ إزالة Group A - Group B يحتوي على جميع الوظائف
             # بدء خيط Group B (التداول الآلي مع اختيار العملات) — أولاً قبل أي شيء
             self.group_b_thread = Thread(target=self._run_group_b_loop, daemon=False)
@@ -341,6 +351,15 @@ class BackgroundTradingManager:
             status = "emergency_stopped" if emergency else "stopped"
             self._update_system_status(status)
             
+            # ✅ FIX: حذف PID file عند الإيقاف
+            try:
+                pid_file = Path(project_root) / 'tmp' / 'system.pid'
+                if pid_file.exists():
+                    pid_file.unlink()
+                    logger.info("✅ تم حذف PID file")
+            except Exception as pid_err:
+                logger.warning(f"⚠️ فشل حذف PID file: {pid_err}")
+            
             # ✅ SK-1 FIX: تحرير Process Lock
             if PROCESS_LOCK_AVAILABLE:
                 success, message = release_system_lock()
@@ -384,6 +403,13 @@ class BackgroundTradingManager:
             try:
                 # تنفيذ Group B
                 self._execute_group_b()
+                if self.state_manager:
+                    try:
+                        from backend.core.heartbeat_monitor import get_heartbeat_monitor
+                        monitor = get_heartbeat_monitor(self.state_manager)
+                        monitor.check_heartbeat()
+                    except Exception as monitor_error:
+                        logger.warning(f"⚠️ فشل فحص heartbeat في worker: {monitor_error}")
                 
                 # نجاح — إعادة عداد الأخطاء
                 if _consecutive_errors > 0:
@@ -430,11 +456,15 @@ class BackgroundTradingManager:
     def _execute_group_b(self):
         """تنفيذ Group B (التداول الآلي لجميع المستخدمين النشطين)"""
         try:
+            # ✅ دائماً زيادة عداد الدورات (يعكس عدد مرات المسح الفعلية)
+            self._group_b_cycles += 1
+
             # ========== جلب جميع المستخدمين النشطين ==========
             active_users = self._get_active_trading_users()
             
             if not active_users:
                 logger.debug("⚠️ Group B: لا يوجد مستخدمين نشطين للتداول")
+                self._update_group_b_activity(self._group_b_cycles, 0)
                 return
             
             logger.info(f"🔄 Group B: بدء التداول لـ {len(active_users)} مستخدم")
@@ -477,7 +507,6 @@ class BackgroundTradingManager:
             
             # ✅ تحديث نشاط Group B
             total_active_trades = sum(1 for u in active_users if u.get('has_open_positions', False))
-            self._group_b_cycles += 1
             self._update_group_b_activity(self._group_b_cycles, total_active_trades)
             
             logger.info(f"✅ Group B: اكتملت الدورة لـ {len(active_users)} مستخدم")
@@ -490,7 +519,7 @@ class BackgroundTradingManager:
                 critical=False
             )
             self._update_system_status("error", f"Group B: {e}")
-    
+
     def _get_active_trading_users(self) -> list:
         """
         جلب المستخدمين النشطين للتداول
@@ -502,34 +531,44 @@ class BackgroundTradingManager:
         """
         try:
             with self.db_manager.get_connection() as conn:
+                demo_false = False if self.db_manager.is_postgres() else 0
+                demo_true = True if self.db_manager.is_postgres() else 1
+                active_true = True if self.db_manager.is_postgres() else 1
                 cursor = conn.execute("""
                     SELECT DISTINCT
                         u.id,
                         u.username,
                         u.user_type,
-                        COALESCE(us.trading_enabled, 0) as trading_enabled,
+                        COALESCE(us.trading_enabled, FALSE) as trading_enabled,
                         (SELECT COUNT(*) FROM active_positions ap 
-                         WHERE ap.user_id = u.id AND ap.is_active = 1) as open_positions_count,
-                        CASE WHEN ubk.id IS NOT NULL AND ubk.is_active = 1 THEN 1 ELSE 0 END as has_binance_keys
+                         WHERE ap.user_id = u.id AND ap.is_active = ?) as open_positions_count,
+                        CASE WHEN ubk.id IS NOT NULL AND ubk.is_active = ? THEN 1 ELSE 0 END as has_binance_keys
                     FROM users u
                     LEFT JOIN user_settings us ON u.id = us.user_id AND (
-                        us.is_demo = 0 
-                        OR (u.user_type = 'admin' AND us.is_demo = 1 AND us.trading_mode = 'demo')
+                        us.is_demo = ?
+                        OR (u.user_type = 'admin' AND us.is_demo = ? AND us.trading_mode = 'demo')
                     )
-                    LEFT JOIN user_binance_keys ubk ON u.id = ubk.user_id AND ubk.is_active = 1
-                    WHERE u.is_active = 1
+                    LEFT JOIN user_binance_keys ubk ON u.id = ubk.user_id AND ubk.is_active = ?
+                    WHERE u.is_active = ?
                     AND (
-                        -- مستخدمين لديهم تداول مفعل ومفاتيح Binance (أو أدمن في وضع demo)
-                        (us.trading_enabled = 1 AND (ubk.id IS NOT NULL AND ubk.is_active = 1 OR (u.user_type = 'admin' AND us.trading_mode = 'demo')))
-                        OR
-                        -- مستخدمين لديهم صفقات مفتوحة (للمراقبة)
-                        EXISTS (
+                        (us.trading_enabled = ? AND ((ubk.id IS NOT NULL AND ubk.is_active = ?) OR (u.user_type = 'admin' AND us.trading_mode = 'demo')))
+                        OR EXISTS (
                             SELECT 1 FROM active_positions ap 
-                            WHERE ap.user_id = u.id AND ap.is_active = 1
+                            WHERE ap.user_id = u.id AND ap.is_active = ?
                         )
                     )
                     ORDER BY u.id
-                """)
+                """, (
+                    active_true,
+                    active_true,
+                    demo_false,
+                    demo_true,
+                    active_true,
+                    active_true,
+                    active_true,
+                    active_true,
+                    active_true,
+                ))
                 
                 users = []
                 for row in cursor.fetchall():
@@ -541,14 +580,14 @@ class BackgroundTradingManager:
                         'has_open_positions': row[4] > 0,
                         'has_binance_keys': bool(row[5])
                     })
-                
+
                 logger.debug(f"📋 وجدنا {len(users)} مستخدم نشط للتداول/المراقبة")
                 return users
-                
+
         except Exception as e:
             logger.error(f"❌ خطأ في جلب المستخدمين النشطين: {e}")
             return []
-    
+
     def _cleanup_old_logs(self):
         """✅ تنظيف السجلات القديمة عند البدء"""
         try:
@@ -621,7 +660,7 @@ class BackgroundTradingManager:
         import time
         
         # تحديد is_running بناءً على الحالة
-        is_running = 1 if status in ['running', 'starting'] else 0
+        is_running = status in ['running', 'starting']
         
         # ✅ FIX: تحديث StateManager JSON أيضاً (حل مشكلة Dual State)
         if self.state_manager:
@@ -642,6 +681,16 @@ class BackgroundTradingManager:
                 logger.debug(f"✅ تم تحديث StateManager JSON: {status}")
             except Exception as e:
                 logger.warning(f"⚠️ فشل تحديث StateManager JSON: {e}")
+
+        if status in {'error', 'stopped', 'emergency_stopped'}:
+            try:
+                from backend.services.admin_notification_service import get_admin_notification_service
+                admin_notifier = get_admin_notification_service()
+                admin_notifier.notify_trading_stopped(
+                    message or f'تحول النظام إلى الحالة: {status}'
+                )
+            except Exception as notify_error:
+                logger.warning(f"⚠️ فشل إرسال إشعار توقف التداول للأدمن: {notify_error}")
         
         # محاولة التحديث في DB مع retry (timeout قصير لتجنب الحجب)
         max_retries = 3
@@ -661,9 +710,12 @@ class BackgroundTradingManager:
                     conn.execute("""
                         UPDATE system_status 
                         SET status = ?, is_running = ?, trading_state = ?,
+                            pid = ?,
                             last_update = datetime('now'), message = ?
                         WHERE id = 1
-                    """, (status, is_running, trading_state, message))
+                    """, (status, is_running, trading_state,
+                          os.getpid() if is_running else None,
+                          message))
                     
                     logger.debug(f"✅ تم تحديث DB: status={status}, is_running={is_running}")
                     self._last_status = status

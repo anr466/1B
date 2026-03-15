@@ -52,7 +52,7 @@ class AdaptiveOptimizer:
     6. get_max_positions() → عدد الصفقات الأمثل
     """
     
-    def __init__(self, db_path: str = None, db_manager=None):
+    def __init__(self, db_manager=None):
         self.db_manager = db_manager or DatabaseManager()
         
         # كاش محلي (يُحدَّث كل 5 دقائق)
@@ -185,7 +185,7 @@ class AdaptiveOptimizer:
                     FROM trade_learning_log
                     WHERE created_at > ?
                     GROUP BY symbol
-                    HAVING total_trades >= 3
+                    HAVING COUNT(*) >= 3
                     ORDER BY avg_pnl_pct DESC
                 """, (cutoff,)).fetchall()
             
@@ -1099,9 +1099,9 @@ class AdaptiveOptimizer:
 # ==================== Singleton ====================
 _optimizer_instance: Optional[AdaptiveOptimizer] = None
 
-def get_adaptive_optimizer(db_path: str = None, db_manager=None) -> AdaptiveOptimizer:
+def get_adaptive_optimizer(db_manager=None) -> AdaptiveOptimizer:
     """الحصول على المحسّن التكيّفي (singleton)"""
     global _optimizer_instance
     if _optimizer_instance is None:
-        _optimizer_instance = AdaptiveOptimizer(db_path, db_manager)
+        _optimizer_instance = AdaptiveOptimizer(db_manager)
     return _optimizer_instance

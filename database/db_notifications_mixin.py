@@ -4,7 +4,6 @@ Database Notifications Mixin — extracted from database_manager.py (God Object 
 Methods: notifications, FCM tokens, activity logs, sessions, biometrics, devices
 """
 
-import sqlite3
 import json
 import time
 from datetime import datetime
@@ -123,9 +122,8 @@ class DbNotificationsMixin:
         try:
             with self.get_write_connection() as conn:
                 conn.execute("""
-                    UPDATE user_devices 
-                    SET is_trusted = 0, last_login = datetime('now')
-                    WHERE user_id = ? AND push_token = ?
+                    DELETE FROM fcm_tokens 
+                    WHERE user_id = ? AND fcm_token = ?
                 """, (user_id, fcm_token))
                 conn.commit()
                 return True
@@ -134,12 +132,12 @@ class DbNotificationsMixin:
             return False
 
     def get_user_fcm_tokens(self, user_id: int):
-        """جلب جميع FCM Tokens النشطة للمستخدم"""
+        """جلب جميع FCM Tokens النشطة للمستخدم من جدول fcm_tokens"""
         try:
             with self.get_connection() as conn:
                 rows = conn.execute("""
-                    SELECT push_token as fcm_token, device_type as platform FROM user_devices 
-                    WHERE user_id = ? AND is_trusted = 1 AND push_token IS NOT NULL
+                    SELECT fcm_token, platform FROM fcm_tokens 
+                    WHERE user_id = ?
                 """, (user_id,)).fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -186,7 +184,6 @@ class DbNotificationsMixin:
         """التحقق من صحة جلسة المستخدم"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
                 
                 session = conn.execute("""
                     SELECT us.*, u.username, u.user_type 
@@ -223,7 +220,6 @@ class DbNotificationsMixin:
         """الحصول على جلسات المستخدم النشطة"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
                 
                 sessions = conn.execute("""
                     SELECT session_token, created_at, expires_at
@@ -274,7 +270,6 @@ class DbNotificationsMixin:
         """التحقق من البيانات البيومترية للمستخدم"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
                 
                 stored_biometric = conn.execute("""
                     SELECT biometric_hash, biometric_type 
@@ -295,7 +290,6 @@ class DbNotificationsMixin:
         """الحصول على البيانات البيومترية المسجلة للمستخدم"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
                 
                 biometrics = conn.execute("""
                     SELECT biometric_type, device_id, created_at, is_active
@@ -338,7 +332,6 @@ class DbNotificationsMixin:
         """الحصول على أجهزة المستخدم المسجلة"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
                 
                 devices = conn.execute("""
                     SELECT device_id, device_name, device_type, device_model, created_at

@@ -353,17 +353,16 @@ class ScalpingV7Engine:
         if idx < 55:
             return None
 
-        if trend == 'NEUTRAL':
-            return None
-
-        # V7.1: Try cognitive entry first
+        # V7.1: Try cognitive entry first (runs even in NEUTRAL — breakout doesn't need trend)
         if self.config.get('use_cognitive_entry', False):
             cog_signal = self._detect_cognitive(df, idx, trend)
             if cog_signal:
                 cog_signal = self._apply_atr_sl(df, idx, cog_signal)
                 return cog_signal
 
-        # V7 fallback
+        # V7 fallback requires directional trend
+        if trend == 'NEUTRAL':
+            return None
         row = df.iloc[idx]
 
         if trend == 'UP':
@@ -445,8 +444,8 @@ class ScalpingV7Engine:
 
         # Strategy 3: Breakout LONG
         if len(ds) >= 20:
-            resistance = ds['high'].tail(20).quantile(0.9)
-            if cur > resistance and vr > 1.5:
+            resistance = ds['high'].tail(20).quantile(0.85)
+            if cur > resistance and vr > 1.2:
                 sl = resistance * 0.985
                 return self._cog_signal('LONG', cur, sl, 'breakout', 8, 70)
 

@@ -103,9 +103,9 @@ def require_auth(f):
         if error_response is not None:
             return error_response
         
-        # Enforce URL user_id match (user endpoints only, NOT admin)
+        # Enforce URL user_id match for regular users only
         user_id_from_url = kwargs.get('user_id')
-        if user_id_from_url:
+        if user_id_from_url and getattr(g, 'current_user_type', None) != 'admin':
             try:
                 user_id_int = int(user_id_from_url)
                 if g.current_user_id != user_id_int:

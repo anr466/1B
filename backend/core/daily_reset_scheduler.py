@@ -52,6 +52,13 @@ class DailyResetScheduler:
                 self.logger.warning("⚠️ لا يوجد مستخدمين نشطين")
                 return
             
+            # ✅ تسجيل snapshot يومي للمحافظ قبل إعادة التعيين
+            try:
+                snap_count = self.db.record_all_portfolios_snapshot()
+                self.logger.info(f"📸 تم تسجيل {snap_count} snapshot يومي للمحافظ")
+            except Exception as snap_err:
+                self.logger.warning(f"⚠️ تعذّر تسجيل snapshots المحافظ: {snap_err}")
+
             reset_count = 0
             for user in users:
                 user_id = user['id']

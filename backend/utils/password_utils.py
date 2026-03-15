@@ -23,7 +23,7 @@ def hash_password(password: str) -> str:
     New passwords are ALWAYS hashed with bcrypt if available.
     """
     if BCRYPT_AVAILABLE:
-        salt = bcrypt.gensalt(rounds=12)
+        salt = bcrypt.gensalt(rounds=10)  # 10 rounds = ~100ms, good balance
         return bcrypt.hashpw(password.encode(), salt).decode()
     return hashlib.sha256(password.encode()).hexdigest()
 

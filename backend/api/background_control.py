@@ -159,7 +159,6 @@ def get_background_status():
     الأدمن فقط
     """
     try:
-        import sqlite3
         from pathlib import Path
         
         # ✅ الخطوة 1: التحقق من العملية الفعلية أولاً (المصدر الحقيقي)
@@ -215,7 +214,7 @@ def get_background_status():
                 if process_running and not db_status.get('is_running'):
                     conn.execute("""
                         UPDATE system_status 
-                        SET status = 'running', is_running = 1, last_update = datetime('now'),
+                        SET status = 'running', is_running = 1, last_update = CURRENT_TIMESTAMP,
                             message = 'النظام يعمل (تم المزامنة)'
                         WHERE id = 1
                     """)
@@ -223,7 +222,7 @@ def get_background_status():
                 elif not process_running and db_status.get('is_running'):
                     conn.execute("""
                         UPDATE system_status 
-                        SET status = 'stopped', is_running = 0, last_update = datetime('now'),
+                        SET status = 'stopped', is_running = 0, last_update = CURRENT_TIMESTAMP,
                             message = 'النظام متوقف (تم المزامنة)'
                         WHERE id = 1
                     """)

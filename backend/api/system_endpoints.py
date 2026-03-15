@@ -27,38 +27,31 @@ def get_system_status():
         with db.get_connection() as conn:
             # جلب الأعمدة الفعلية الموجودة في جدول system_status
             system_status = conn.execute("""
-                SELECT status, last_update, is_running, total_users, active_trades, total_trades
+                SELECT status, last_update, is_running, total_users, active_trades, total_trades, trading_state
                 FROM system_status
                 WHERE id = 1
             """).fetchone()
             
-            if system_status:
+            if not system_status:
                 return jsonify({
-                    'success': True,
-                    'data': {
-                        'status': system_status[0] or 'online',
-                        'lastUpdate': system_status[1],
-                        'tradingActive': bool(system_status[2]),
-                        'totalUsers': system_status[3] or 0,
-                        'activeTrades': system_status[4] or 0,
-                        'totalTrades': system_status[5] or 0,
-                        'serverStatus': 'online'
-                    }
-                })
-            else:
-                # إذا لم يكن هناك سجل، نعيد قيم افتراضية
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'status': 'online',
-                        'lastUpdate': None,
-                        'tradingActive': False,
-                        'totalUsers': 0,
-                        'activeTrades': 0,
-                        'totalTrades': 0,
-                        'serverStatus': 'online'
-                    }
-                })
+                    'success': False,
+                    'error': 'system_status_record_not_found'
+                }), 404
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'status': system_status[0],
+                    'lastUpdate': system_status[1],
+                    'tradingActive': bool(system_status[2]),
+                    'totalUsers': system_status[3],
+                    'activeTrades': system_status[4],
+                    'totalTrades': system_status[5],
+                    'serverStatus': system_status[0],
+                    'trading_state': system_status[6],
+                    'tradingState': system_status[6],
+                }
+            })
     
     except Exception as e:
         logger.error(f"❌ خطأ في الحصول على حالة النظام: {e}")
@@ -99,22 +92,25 @@ def reset_account_data():
             return jsonify({'success': False, 'error': 'لا يمكنك إعادة تعيين حساب آخر'}), 403
         
         with db.get_write_connection() as conn:
-            # حذف الصفقات (demo فقط)
-            conn.execute("DELETE FROM user_trades WHERE user_id = ? AND is_demo = 1", (user_id,))
-            
             # حذف المراكز النشطة (demo فقط)
             conn.execute("DELETE FROM active_positions WHERE user_id = ? AND is_demo = 1", (user_id,))
             
             # إعادة تعيين المحفظة (demo فقط)
+            portfolio_row = conn.execute("""
+                SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = 1 LIMIT 1
+            """, (user_id,)).fetchone()
+            initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
             conn.execute("""
                 UPDATE portfolio
-                SET total_balance = 1000.0,
-                    available_balance = 1000.0,
+                SET total_balance = ?,
+                    available_balance = ?,
                     invested_balance = 0,
                     total_profit_loss = 0,
+                    total_profit_loss_percentage = 0,
+                    initial_balance = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = ? AND is_demo = 1
-            """, (user_id,))
+            """, (initial_balance, initial_balance, initial_balance, user_id))
             
             # حذف الإشعارات
             conn.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))

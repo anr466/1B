@@ -4,65 +4,97 @@
 🔧 Unified State Manager - مدير الحالة الموحد
 ================================================
 
-Single Source of Truth لحالة النظام
-- JSON file only (no database duplication)
-- Atomic writes
-- Audit trail
+Single Source of Truth لحالة النظام — DATABASE ONLY
+- NO JSON files (follows system philosophy)
+- Uses system_status table in DB
+- Atomic writes via DB transactions
+- Audit trail in activity_logs
 - Thread-safe
 
 Author: System Unification Team
-Date: 2026-02-01
+Date: 2026-02-21 (Refactored to DB-only)
 """
 
 import json
 import threading
-from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 
 class StateManager:
     """
-    مدير الحالة الموحد - Single Source of Truth
+    مدير الحالة الموحد - DATABASE ONLY (تطبيق الفلسفة)
     
     Features:
-    - JSON file storage
-    - Atomic writes (no corruption)
+    - Database storage (system_status table)
+    - Atomic writes (DB transactions)
     - Thread-safe operations
-    - Audit trail logging
+    - Audit trail in activity_logs
     - State validation
     """
     
-    def __init__(self, state_file: str = 'tmp/system_state.json'):
-        self.state_file = Path(state_file)
+    def __init__(self, db_manager=None):
+        """
+        Args:
+            db_manager: DatabaseManager instance (optional, will create if needed)
+        """
         self.lock = threading.RLock()
-        self.audit_log = Path('logs/audit/state_changes.jsonl')
         
-        # Ensure directories exist
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        self.audit_log.parent.mkdir(parents=True, exist_ok=True)
+        if db_manager is None:
+            from database.database_manager import DatabaseManager
+            self.db = DatabaseManager()
+        else:
+            self.db = db_manager
     
     def read_state(self) -> Dict[str, Any]:
         """
-        قراءة الحالة الحالية
+        قراءة الحالة من DB (system_status table)
         
         Returns:
             dict: الحالة الحالية
         """
         with self.lock:
-            if not self.state_file.exists():
-                return self._get_default_state()
-            
             try:
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    state = json.load(f)
-                    return self._validate_state(state)
-            except (json.JSONDecodeError, IOError) as e:
-                print(f"⚠️ خطأ في قراءة الحالة: {e}")
+                with self.db.get_connection() as conn:
+                    row = conn.execute("""
+                        SELECT trading_state, mode, session_id, started_at,
+                               is_running, status, message, pid, subsystem_status
+                        FROM system_status WHERE id=1
+                    """).fetchone()
+                    
+                    if row:
+                        subsystem_data = {}
+                        raw_subsystem_status = row[8]
+                        if raw_subsystem_status:
+                            try:
+                                subsystem_data = json.loads(raw_subsystem_status)
+                                if not isinstance(subsystem_data, dict):
+                                    subsystem_data = {}
+                            except Exception:
+                                subsystem_data = {}
+                        
+                        state = {
+                            'trading_state': row[0],
+                            'mode': row[1],
+                            'session_id': row[2],
+                            'started_at': row[3],
+                            'is_running': bool(row[4]),
+                            'status': row[5],
+                            'message': row[6],
+                            'activity': subsystem_data.get('activity', {}),
+                            'heartbeat': subsystem_data.get('heartbeat', {}),
+                            'updated_at': datetime.now().isoformat(),
+                            'pid': row[7],
+                        }
+                        return self._validate_state(state)
+                    else:
+                        return self._get_default_state()
+            except Exception as e:
+                print(f"⚠️ خطأ في قراءة الحالة من DB: {e}")
                 return self._get_default_state()
     
     def write_state(self, state_data: Dict[str, Any], user: Optional[str] = None) -> bool:
         """
-        كتابة الحالة مع atomic write وaudit trail
+        كتابة الحالة في DB (atomic via transaction)
         
         Args:
             state_data: البيانات الجديدة
@@ -73,34 +105,69 @@ class StateManager:
         """
         with self.lock:
             # Get old state for audit
-            old_state = self.read_state() if self.state_file.exists() else {}
+            old_state = self.read_state()
+            merged_state = dict(old_state)
+
+            for key, value in (state_data or {}).items():
+                if key in {'activity', 'heartbeat'} and isinstance(value, dict):
+                    current_value = merged_state.get(key, {})
+                    merged_value = dict(current_value) if isinstance(current_value, dict) else {}
+                    for nested_key, nested_value in value.items():
+                        if isinstance(nested_value, dict) and isinstance(merged_value.get(nested_key), dict):
+                            nested_merged = dict(merged_value[nested_key])
+                            nested_merged.update(nested_value)
+                            merged_value[nested_key] = nested_merged
+                        else:
+                            merged_value[nested_key] = nested_value
+                    merged_state[key] = merged_value
+                else:
+                    merged_state[key] = value
             
-            # Add timestamp
-            state_data['updated_at'] = datetime.now().isoformat()
-            
-            # Validate state
-            state_data = self._validate_state(state_data)
+            # Validate merged state so partial updates never wipe monitoring data
+            state_data = self._validate_state(merged_state)
             
             try:
-                # Atomic write using temp file
-                temp_file = self.state_file.with_suffix('.tmp')
+                with self.db.get_write_connection() as conn:
+                    # Update system_status table
+                    subsystem_status = json.dumps({
+                        'activity': state_data.get('activity', {}),
+                        'heartbeat': state_data.get('heartbeat', {}),
+                    }, ensure_ascii=False, default=str)
+
+                    conn.execute("""
+                        UPDATE system_status SET
+                            trading_state = ?,
+                            mode = ?,
+                            session_id = ?,
+                            started_at = ?,
+                            is_running = ?,
+                            status = ?,
+                            message = ?,
+                            pid = ?,
+                            subsystem_status = ?,
+                            last_update = CURRENT_TIMESTAMP
+                        WHERE id = 1
+                    """, (
+                        state_data.get('trading_state'),
+                        state_data.get('mode'),
+                        state_data.get('session_id'),
+                        state_data.get('started_at'),
+                        bool(state_data.get('is_running')),
+                        state_data.get('status'),
+                        state_data.get('message'),
+                        state_data.get('pid'),
+                        subsystem_status,
+                    ))
+                    
+                    conn.commit()
                 
-                with open(temp_file, 'w', encoding='utf-8') as f:
-                    json.dump(state_data, f, ensure_ascii=False, indent=2)
-                
-                # Atomic rename (replaces old file)
-                temp_file.replace(self.state_file)
-                
-                # Log to audit trail
+                # Log to audit trail in DB
                 self._log_audit(old_state, state_data, user)
                 
                 return True
                 
-            except (IOError, OSError) as e:
-                print(f"❌ فشل كتابة الحالة: {e}")
-                # Clean up temp file if exists
-                if temp_file.exists():
-                    temp_file.unlink()
+            except Exception as e:
+                print(f"❌ فشل كتابة الحالة في DB: {e}")
                 return False
     
     def update_state(self, **kwargs) -> bool:
@@ -294,7 +361,7 @@ class StateManager:
     
     def _log_audit(self, old_state: Dict, new_state: Dict, user: Optional[str] = None):
         """
-        تسجيل التغيير في audit trail
+        تسجيل التغيير في audit trail (DB: activity_logs table)
         
         Args:
             old_state: الحالة القديمة
@@ -302,22 +369,26 @@ class StateManager:
             user: المستخدم (optional)
         """
         try:
-            audit_entry = {
-                'timestamp': datetime.now().isoformat(),
-                'user': user or 'system',
+            changes = self._get_changes(old_state, new_state)
+            if not changes:
+                return  # No changes to log
+            
+            details = json.dumps({
                 'old_status': old_state.get('status', 'unknown'),
                 'new_status': new_state.get('status'),
-                'old_pid': old_state.get('pid'),
-                'new_pid': new_state.get('pid'),
-                'changes': self._get_changes(old_state, new_state)
-            }
+                'changes': changes
+            }, ensure_ascii=False, default=str)
             
-            # Append to audit log (JSONL format)
-            with open(self.audit_log, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(audit_entry, ensure_ascii=False) + '\n')
+            # Log to activity_logs table in DB
+            with self.db.get_write_connection() as conn:
+                conn.execute("""
+                    INSERT INTO activity_logs (action, details, created_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, ('state_change', details))
+                conn.commit()
                 
         except Exception as e:
-            print(f"⚠️ فشل تسجيل audit: {e}")
+            print(f"⚠️ فشل تسجيل audit في DB: {e}")
     
     def _get_changes(self, old: Dict, new: Dict) -> Dict:
         """استخراج التغييرات بين الحالتين"""
@@ -331,7 +402,7 @@ class StateManager:
     
     def get_audit_trail(self, limit: int = 100) -> list:
         """
-        جلب آخر التغييرات من audit trail
+        جلب آخر التغييرات من audit trail (DB: activity_logs)
         
         Args:
             limit: عدد السجلات المراد جلبها
@@ -339,28 +410,32 @@ class StateManager:
         Returns:
             list: قائمة السجلات
         """
-        if not self.audit_log.exists():
-            return []
-        
         try:
-            with open(self.audit_log, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            with self.db.get_connection() as conn:
+                rows = conn.execute("""
+                    SELECT created_at, action, details
+                    FROM activity_logs
+                    WHERE action = 'state_change'
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                """, (limit,)).fetchall()
                 
-            # Get last N lines
-            recent_lines = lines[-limit:] if len(lines) > limit else lines
-            
-            # Parse JSON
-            entries = []
-            for line in recent_lines:
-                try:
-                    entries.append(json.loads(line.strip()))
-                except Exception:
-                    continue
-            
-            return entries
+                entries = []
+                for row in rows:
+                    try:
+                        details = json.loads(row[2]) if row[2] else {}
+                        entries.append({
+                            'timestamp': row[0],
+                            'action': row[1],
+                            **details
+                        })
+                    except Exception:
+                        continue
+                
+                return entries
             
         except Exception as e:
-            print(f"⚠️ فشل قراءة audit trail: {e}")
+            print(f"⚠️ فشل قراءة audit trail من DB: {e}")
             return []
 
 

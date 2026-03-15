@@ -16,7 +16,8 @@ class UnifiedSettings:
         self.BASE_DIR = Path(__file__).parent.parent
         
         # Database
-        self.DATABASE_PATH = os.getenv('DATABASE_PATH', 'database/trading_database.db')
+        self.DATABASE_ENGINE = os.getenv('DATABASE_ENGINE', 'postgresql').strip().lower()
+        self.DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
         self.DATABASE_TIMEOUT = int(os.getenv('DATABASE_TIMEOUT', '30'))
         
         # Security
@@ -61,8 +62,15 @@ class UnifiedSettings:
 
 settings = UnifiedSettings()
 
+def get_database_engine():
+    """الحصول على نوع قاعدة البيانات الحالية"""
+    engine = (settings.DATABASE_ENGINE or 'postgresql').strip().lower()
+    return engine if engine in {'postgres', 'postgresql'} else 'postgresql'
+
+def get_database_url():
+    """الحصول على رابط قاعدة البيانات إن كان مضبوطًا"""
+    return (settings.DATABASE_URL or '').strip()
+
 def get_database_path():
-    """الحصول على مسار قاعدة البيانات الكامل"""
-    if os.path.isabs(settings.DATABASE_PATH):
-        return settings.DATABASE_PATH
-    return str(settings.BASE_DIR / settings.DATABASE_PATH)
+    """Legacy — لم يعد مستخدمًا مع PostgreSQL. يبقى لتوافق الاستيرادات القديمة."""
+    return ''

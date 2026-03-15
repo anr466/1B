@@ -4,26 +4,48 @@
 📝 نظام السجلات الموحد
 ====================
 ملف إعدادات التسجيل المركزي للنظام بأكمله
+✅ Single Source of Truth للسجلات
+✅ تصنيف السجلات حسب النوع
+✅ تنظيف تلقائي للسجلات القديمة
 """
 
 import logging
 import sys
 from pathlib import Path
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 import os
+import time
+from datetime import datetime, timedelta
 
-# مسارات السجلات
+# ═══════════════════════════════════════════════════════
+# Configuration
+# ═══════════════════════════════════════════════════════
+
 PROJECT_ROOT = Path(__file__).parent.parent
 LOGS_DIR = PROJECT_ROOT / 'logs'
-LOG_FILE = LOGS_DIR / 'server.log'
-ERROR_LOG_FILE = LOGS_DIR / 'errors.log'
-PRINT_LOG_FILE = LOGS_DIR / 'print_output.log'
-
-# إنشاء مجلد logs إذا لم يكن موجوداً
 LOGS_DIR.mkdir(exist_ok=True)
 
-# البيئة
 ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
+
+# ═══════════════════════════════════════════════════════
+# Log Files - موحدة ومنظمة
+# ═══════════════════════════════════════════════════════
+
+LOG_FILES = {
+    'main': LOGS_DIR / 'server.log',           # السيرفر الرئيسي
+    'errors': LOGS_DIR / 'errors.log',         # الأخطاء فقط
+    'trading': LOGS_DIR / 'trading.log',       # عمليات التداول
+    'api': LOGS_DIR / 'api.log',               # API calls
+    'database': LOGS_DIR / 'database.log',     # Database operations
+    'mobile': LOGS_DIR / 'mobile.log',         # Mobile app logs
+    'security': LOGS_DIR / 'security.log',     # Security events
+    'print': LOGS_DIR / 'print_output.log',    # Print redirection
+}
+
+# Legacy files for backward compatibility
+LOG_FILE = LOG_FILES['main']
+ERROR_LOG_FILE = LOG_FILES['errors']
+PRINT_LOG_FILE = LOG_FILES['print']
 
 def is_production():
     """التحقق من بيئة الإنتاج"""
@@ -41,7 +63,7 @@ def setup_logging(name: str, level=None) -> logging.Logger:
         Logger instance
     """
     if level is None:
-        level = logging.WARNING if is_production() else logging.DEBUG
+        level = logging.INFO if is_production() else logging.DEBUG
     
     logger = logging.getLogger(name)
     
@@ -51,9 +73,9 @@ def setup_logging(name: str, level=None) -> logging.Logger:
     
     logger.setLevel(logging.DEBUG)
     
-    # Console Handler - WARNING+ فقط
+    # Console Handler - INFO+ في production لرؤية scanning
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.WARNING if is_production() else logging.INFO)
+    console_handler.setLevel(logging.INFO)  # كان WARNING في production
     console_formatter = logging.Formatter(
         '%(levelname)s - %(message)s'
     )
@@ -91,6 +113,112 @@ def setup_logging(name: str, level=None) -> logging.Logger:
 def get_logger(name: str) -> logging.Logger:
     """الحصول على logger (alias لـ setup_logging)"""
     return setup_logging(name)
+
+# ═══════════════════════════════════════════════════════
+# Specialized Loggers
+# ═══════════════════════════════════════════════════════
+
+def get_trading_logger(name: str) -> logging.Logger:
+    """Logger for trading operations"""
+    logger = setup_logging(name)
+    # Add trading-specific file handler
+    if not any(isinstance(h, RotatingFileHandler) and str(h.baseFilename).endswith('trading.log') for h in logger.handlers):
+        trading_handler = RotatingFileHandler(
+            LOG_FILES['trading'],
+            maxBytes=10*1024*1024,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        trading_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        trading_handler.setFormatter(formatter)
+        logger.addHandler(trading_handler)
+    return logger
+
+def get_api_logger(name: str) -> logging.Logger:
+    """Logger for API calls"""
+    logger = setup_logging(name)
+    if not any(isinstance(h, RotatingFileHandler) and str(h.baseFilename).endswith('api.log') for h in logger.handlers):
+        api_handler = RotatingFileHandler(
+            LOG_FILES['api'],
+            maxBytes=10*1024*1024,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        api_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        api_handler.setFormatter(formatter)
+        logger.addHandler(api_handler)
+    return logger
+
+def get_database_logger(name: str) -> logging.Logger:
+    """Logger for database operations"""
+    logger = setup_logging(name)
+    if not any(isinstance(h, RotatingFileHandler) and str(h.baseFilename).endswith('database.log') for h in logger.handlers):
+        db_handler = RotatingFileHandler(
+            LOG_FILES['database'],
+            maxBytes=10*1024*1024,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        db_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        db_handler.setFormatter(formatter)
+        logger.addHandler(db_handler)
+    return logger
+
+def get_security_logger(name: str) -> logging.Logger:
+    """Logger for security events"""
+    logger = setup_logging(name)
+    if not any(isinstance(h, RotatingFileHandler) and str(h.baseFilename).endswith('security.log') for h in logger.handlers):
+        security_handler = RotatingFileHandler(
+            LOG_FILES['security'],
+            maxBytes=10*1024*1024,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        security_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        security_handler.setFormatter(formatter)
+        logger.addHandler(security_handler)
+    return logger
+
+# ═══════════════════════════════════════════════════════
+# Log Cleanup
+# ═══════════════════════════════════════════════════════
+
+def cleanup_old_logs(days: int = 7):
+    """
+    حذف السجلات القديمة
+    
+    Args:
+        days: عدد الأيام للاحتفاظ بالسجلات
+    """
+    cutoff_time = time.time() - (days * 86400)
+    deleted_count = 0
+    
+    for log_file in LOGS_DIR.glob('*.log*'):
+        try:
+            if log_file.stat().st_mtime < cutoff_time:
+                log_file.unlink()
+                deleted_count += 1
+                print(f"Deleted old log: {log_file.name}")
+        except Exception as e:
+            print(f"Failed to delete {log_file.name}: {e}")
+    
+    return deleted_count
 
 def disable_print_in_production():
     """تعطيل print() في الإنتاج وتحويله لملف"""

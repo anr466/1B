@@ -107,8 +107,10 @@ class HeartbeatMonitor:
         """
         try:
             from backend.utils.error_logger import ErrorLogger, ErrorLevel, ErrorSource
+            from backend.services.admin_notification_service import get_admin_notification_service
             
             error_logger = ErrorLogger()
+            admin_notifier = get_admin_notification_service()
             
             if critical:
                 error_logger.log_error(
@@ -117,6 +119,9 @@ class HeartbeatMonitor:
                     message=f'⚠️ النظام متوقف أو معلق - لم تصل نبضة منذ {seconds_ago} ثانية',
                     details=f'آخر نبضة كانت منذ {seconds_ago} ثانية. النظام على الأرجح معلق أو توقف. يجب التحقق فوراً.',
                     include_traceback=False
+                )
+                admin_notifier.notify_trading_stopped(
+                    f"انقطاع heartbeat: آخر نبضة منذ {seconds_ago} ثانية"
                 )
                 logger.critical(f"🚨 HEARTBEAT FAILURE: {seconds_ago}s ago")
             else:

@@ -5,7 +5,6 @@ System Alerts Service - للمراقبة والإنذار المبكر
 """
 
 import logging
-import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, Any
 import psutil
@@ -19,8 +18,7 @@ class SystemAlertService:
     تُراقب صحة الخدمات وتُنبّه عند المشاكل
     """
     
-    def __init__(self, db_path: str = "database/trading_database.db"):
-        self.db_path = db_path
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
         
         # عتبات التحذير

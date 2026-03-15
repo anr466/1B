@@ -238,10 +238,11 @@ class FirebaseNotificationService:
             db = DatabaseManager()
             
             with db.get_connection() as conn:
-                # جلب FCM Token للمستخدم
+                # جلب FCM Token للمستخدم من جدول fcm_tokens
                 result = conn.execute("""
-                    SELECT fcm_token FROM users 
-                    WHERE id = ? AND fcm_token IS NOT NULL AND fcm_token != ''
+                    SELECT fcm_token FROM fcm_tokens 
+                    WHERE user_id = ? AND fcm_token IS NOT NULL AND fcm_token != ''
+                    ORDER BY created_at DESC LIMIT 1
                 """, (user_id,)).fetchone()
                 
                 if not result or not result[0]:
@@ -278,15 +279,17 @@ class FirebaseNotificationService:
             db = DatabaseManager()
             
             with db.get_connection() as conn:
+                # جلب FCM Tokens من جدول fcm_tokens
                 if user_type:
                     results = conn.execute("""
-                        SELECT fcm_token FROM users 
-                        WHERE fcm_token IS NOT NULL AND fcm_token != ''
-                        AND user_type = ?
+                        SELECT f.fcm_token FROM fcm_tokens f
+                        JOIN users u ON f.user_id = u.id
+                        WHERE f.fcm_token IS NOT NULL AND f.fcm_token != ''
+                        AND u.user_type = ?
                     """, (user_type,)).fetchall()
                 else:
                     results = conn.execute("""
-                        SELECT fcm_token FROM users 
+                        SELECT fcm_token FROM fcm_tokens 
                         WHERE fcm_token IS NOT NULL AND fcm_token != ''
                     """).fetchall()
                 

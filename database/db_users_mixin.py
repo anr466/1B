@@ -4,9 +4,10 @@ Database Users Mixin — extracted from database_manager.py (God Object split)
 Methods: user CRUD, authentication, settings, profile, email verification
 """
 
-import sqlite3
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any, Optional
+
+from backend.utils.trading_context import get_effective_is_demo, is_admin_user
 
 
 class DbUsersMixin:
@@ -99,16 +100,17 @@ class DbUsersMixin:
             with self.get_write_connection() as conn:
                 conn.execute("""
                     INSERT OR IGNORE INTO user_settings (
-                        user_id, trading_enabled, max_positions, stop_loss_pct, 
-                        take_profit_pct, trade_amount, capital_percentage, risk_level,
-                        trading_enabled, email_notifications_enabled, push_notifications_enabled, 
-                        sms_notifications_enabled, two_factor_enabled, session_timeout,
-                        language, app_theme, timezone
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        user_id, is_demo, trading_enabled, trade_amount,
+                        position_size_percentage, stop_loss_pct, take_profit_pct, trailing_distance,
+                        max_positions, risk_level, max_daily_loss_pct, daily_loss_limit,
+                        trading_mode, volatility_buffer, min_signal_strength,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, (
-                    user_id, True, 5, 2.0, 5.0, 100.0, 10.0, 'medium',
-                    False, True, False, False, False, 30,
-                    'ar', 'dark', 'Asia/Riyadh'
+                    user_id, 0, False, 100.0,
+                    10.0, 2.0, 5.0, 3.0,
+                    5, 'medium', 10.0, 100.0,
+                    'demo', 0.3, 0.6
                 ))
                 self.logger.info(f"تم إنشاء إعدادات افتراضية للمستخدم {user_id}")
         except Exception as e:
@@ -188,30 +190,13 @@ class DbUsersMixin:
     def get_trading_settings(self, user_id: int, is_demo: int = None) -> Dict[str, Any]:
         """الحصول على إعدادات التداول حسب الوضع"""
         try:
-            user_data = self.get_user_by_id(user_id)
-            is_admin = user_data.get('user_type') == 'admin' if user_data else False
+            is_admin = is_admin_user(self, user_id)
             
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
                 
                 if is_admin:
                     if is_demo is None:
-                        mode_row = conn.execute("""
-                            SELECT trading_mode FROM user_settings 
-                            WHERE user_id = ? LIMIT 1
-                        """, (user_id,)).fetchone()
-                        
-                        if mode_row:
-                            trading_mode = mode_row['trading_mode']
-                            if trading_mode == 'demo':
-                                is_demo = 1
-                            elif trading_mode == 'real':
-                                is_demo = 0
-                            else:  # auto
-                                keys = self.get_binance_keys(user_id)
-                                is_demo = 0 if keys else 1
-                        else:
-                            is_demo = 1
+                        is_demo = get_effective_is_demo(self, user_id)
                     
                     settings_row = conn.execute("""
                         SELECT trading_enabled, max_positions, stop_loss_pct, 
@@ -245,7 +230,7 @@ class DbUsersMixin:
                     'trade_amount': float(settings_data.get('trade_amount', 100.0)),
                     'risk_level': settings_data.get('risk_level', 'medium'),
                     'max_daily_loss_pct': float(settings_data.get('max_daily_loss_pct', 10.0)),
-                    'trading_mode': settings_data.get('trading_mode', 'auto'),
+                    'trading_mode': settings_data.get('trading_mode', 'demo'),
                     'trailing_distance': float(settings_data.get('trailing_distance', 3.0)),
                     'volatility_buffer': float(settings_data.get('volatility_buffer', 0.3)),
                     'min_signal_strength': float(settings_data.get('min_signal_strength', 0.6)),
@@ -269,7 +254,7 @@ class DbUsersMixin:
             'trade_amount': 100.0,
             'risk_level': 'medium',
             'max_daily_loss_pct': 10.0,
-            'trading_mode': 'auto',
+            'trading_mode': 'demo',
             'trailing_distance': 3.0,
             'volatility_buffer': 0.3,
             'min_signal_strength': 0.6,
@@ -283,6 +268,13 @@ class DbUsersMixin:
         """تحديث إعدادات التداول مع التحقق من الصحة - جميع الحقول في user_settings"""
         try:
             settings_updates = {}
+            with self.get_connection() as conn:
+                user_settings_columns = {
+                    row[0] for row in conn.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'user_settings'
+                    """).fetchall()
+                }
             
             if 'stop_loss_pct' in settings:
                 sl = float(settings['stop_loss_pct'])
@@ -308,9 +300,6 @@ class DbUsersMixin:
             if 'trading_enabled' in settings:
                 settings_updates['trading_enabled'] = bool(settings['trading_enabled'])
             
-            if 'trading_enabled' in settings:
-                settings_updates['trading_enabled'] = bool(settings['trading_enabled'])
-            
             if 'risk_level' in settings and settings['risk_level'] in ['low', 'medium', 'high']:
                 settings_updates['risk_level'] = settings['risk_level']
                 
@@ -324,31 +313,20 @@ class DbUsersMixin:
             if 'capital_percentage' in settings:
                 cap_pct = float(settings['capital_percentage'])
                 if 1.0 <= cap_pct <= 50.0:
-                    settings_updates['capital_percentage'] = cap_pct
+                    # توافق خلفي: نستقبل capital_percentage ونخزنه في الحقل القياسي
+                    settings_updates['position_size_percentage'] = cap_pct
                 else:
                     raise ValueError(f"نسبة رأس المال يجب أن تكون بين 1% و 50%")
             
-            # ⚡ الحقول الجديدة لاستراتيجيات الخروج
-            if 'exit_strategy' in settings:
-                valid_strategies = ['take_profit', 'strategy_signal', 'safe_mode']
-                if settings['exit_strategy'] in valid_strategies:
-                    settings_updates['exit_strategy'] = settings['exit_strategy']
-                    
-                    if settings['exit_strategy'] == 'safe_mode':
-                        settings_updates['safe_mode_enabled'] = True
-                        settings_updates['stop_loss_pct'] = 2.0
-                        settings_updates['take_profit_pct'] = 4.0
-                        settings_updates['max_positions'] = 3
-                        settings_updates['risk_level'] = 'low'
-                else:
-                    raise ValueError(f"استراتيجية الخروج يجب أن تكون واحدة من: {', '.join(valid_strategies)}")
-            
-            if 'safe_mode_enabled' in settings:
+            # ⚡ دعم اختياري لحقول متقدمة إذا كانت موجودة في الـ schema
+            if 'exit_strategy' in settings and 'exit_strategy' in user_settings_columns:
+                settings_updates['exit_strategy'] = settings['exit_strategy']
+            if 'safe_mode_enabled' in settings and 'safe_mode_enabled' in user_settings_columns:
                 settings_updates['safe_mode_enabled'] = bool(settings['safe_mode_enabled'])
             
             # ✅ Toggle Mode للأدمن
             if 'trading_mode' in settings:
-                valid_modes = ['auto', 'demo', 'real']
+                valid_modes = ['demo', 'real']
                 if settings['trading_mode'] in valid_modes:
                     settings_updates['trading_mode'] = settings['trading_mode']
                 else:
@@ -356,9 +334,17 @@ class DbUsersMixin:
             
             if settings_updates:
                 with self.get_write_connection() as conn:
-                    update_fields = [f"{key} = ?" for key in settings_updates.keys()]
+                    filtered_updates = {
+                        key: value for key, value in settings_updates.items()
+                        if key in user_settings_columns
+                    }
+
+                    if not filtered_updates:
+                        return True
+
+                    update_fields = [f"{key} = ?" for key in filtered_updates.keys()]
                     update_fields.append("updated_at = CURRENT_TIMESTAMP")
-                    values = list(settings_updates.values()) + [user_id]
+                    values = list(filtered_updates.values()) + [user_id]
                     
                     query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ?"
                     conn.execute(query, values)
@@ -420,16 +406,16 @@ class DbUsersMixin:
         try:
             with self.get_connection() as conn:
                 trades_query = """
-                    SELECT 
-                        COUNT(*) as total_trades,
-                        COUNT(CASE WHEN profit_loss > 0 THEN 1 END) as winning_trades,
-                        COUNT(CASE WHEN profit_loss < 0 THEN 1 END) as losing_trades,
-                        AVG(profit_loss) as avg_profit_loss,
-                        SUM(profit_loss) as total_profit_loss,
-                        MAX(profit_loss) as max_profit,
-                        MIN(profit_loss) as min_profit
-                    FROM user_trades 
-                    WHERE user_id = ? AND status = 'closed'
+                    SELECT
+                        COUNT(CASE WHEN is_active = 0 THEN 1 END) as total_trades,
+                        COUNT(CASE WHEN is_active = 0 AND profit_loss > 0 THEN 1 END) as winning_trades,
+                        COUNT(CASE WHEN is_active = 0 AND profit_loss < 0 THEN 1 END) as losing_trades,
+                        AVG(CASE WHEN is_active = 0 THEN profit_loss END) as avg_profit_loss,
+                        SUM(CASE WHEN is_active = 0 THEN profit_loss ELSE 0 END) as total_profit_loss,
+                        MAX(CASE WHEN is_active = 0 THEN profit_loss END) as max_profit,
+                        MIN(CASE WHEN is_active = 0 THEN profit_loss END) as min_profit
+                    FROM active_positions
+                    WHERE user_id = ?
                 """
                 
                 params = [user_id]
@@ -505,26 +491,38 @@ class DbUsersMixin:
         """تحديث تفضيلات الإشعارات"""
         try:
             with self.get_write_connection() as conn:
-                update_fields = []
-                values = []
-                
-                notification_fields = [
-                    'push_notifications_enabled', 'email_notifications_enabled', 
-                    'sms_notifications_enabled', 'price_alerts_enabled',
-                    'sound_enabled', 'vibration_enabled'
+                user_settings_columns = {
+                    row[0] for row in conn.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'user_settings'
+                    """).fetchall()
+                }
+
+                notifications_enabled = None
+                candidate_fields = [
+                    'notifications_enabled',
+                    'push_notifications_enabled',
+                    'email_notifications_enabled',
+                    'sms_notifications_enabled',
+                    'price_alerts_enabled',
                 ]
-                
-                for field in notification_fields:
-                    if field in preferences:
-                        update_fields.append(f"{field} = ?")
-                        values.append(bool(preferences[field]))
-                
-                if update_fields:
-                    update_fields.append("updated_at = CURRENT_TIMESTAMP")
-                    values.append(user_id)
-                    
-                    query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ?"
-                    conn.execute(query, values)
+
+                provided = [bool(preferences[f]) for f in candidate_fields if f in preferences]
+                if provided:
+                    notifications_enabled = any(provided)
+
+                if notifications_enabled is None:
+                    return True
+
+                if 'notifications_enabled' in user_settings_columns:
+                    conn.execute(
+                        """
+                        UPDATE user_settings
+                        SET notifications_enabled = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = ?
+                        """,
+                        (int(notifications_enabled), user_id),
+                    )
                     self.logger.info(f"تم تحديث تفضيلات الإشعارات للمستخدم {user_id}")
                 
                 return True
@@ -569,11 +567,18 @@ class DbUsersMixin:
                     WHERE email = ? AND verified = FALSE
                 """, (email,))
                 
-                conn.execute("""
-                    UPDATE users 
-                    SET email_verified = TRUE, email_verified_at = datetime('now')
-                    WHERE email = ?
-                """, (email,))
+                try:
+                    conn.execute("""
+                        UPDATE users 
+                        SET email_verified = TRUE, email_verified_at = datetime('now')
+                        WHERE email = ?
+                    """, (email,))
+                except Exception:
+                    conn.execute("""
+                        UPDATE users 
+                        SET email_verified = TRUE
+                        WHERE email = ?
+                    """, (email,))
                 
                 conn.commit()
                 self.logger.info(f"تم تأكيد التحقق من الإيميل {email}")

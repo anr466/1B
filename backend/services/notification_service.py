@@ -36,25 +36,33 @@ class NotificationService:
             success
         """
         try:
+            # تحضير بيانات الإشعار
+            notification_data = data or {}
+            notification_data['notification_type'] = 'trade' if 'trade' in notification_type else 'system'
+            notification_data['created_at'] = datetime.now().isoformat()
+            
+            # تحويل البيانات إلى JSON
+            data_json = json.dumps(notification_data, ensure_ascii=False)
+            
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 
-                # حفظ الإشعار
+                # حفظ الإشعار في جدول notifications الجديد
                 cursor.execute("""
-                    INSERT INTO notification_history 
-                    (user_id, type, title, message, data, priority, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+                    INSERT INTO notifications 
+                    (user_id, title, message, type, is_read, created_at, data)
+                    VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, ?)
                 """, (
                     user_id,
-                    notification_type,
                     title,
                     message,
-                    json.dumps(data) if data else None,
-                    priority
+                    notification_type,
+                    data_json
                 ))
                 
+                conn.commit()
                 return True
-        
+                
         except Exception as e:
             print(f"❌ خطأ في إرسال الإشعار: {e}")
             return False
@@ -120,7 +128,7 @@ class NotificationService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE notification_history
-                    SET status = 'delivered', delivered_at = datetime('now')
+                    SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (notification_id,))
                 return True
@@ -135,7 +143,7 @@ class NotificationService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE notification_history
-                    SET status = 'read', read_at = datetime('now')
+                    SET status = 'read', read_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (notification_id,))
                 return True
@@ -218,24 +226,17 @@ class NotificationService:
         
         except Exception:
             return {}
-    
-    # ==================== حذف الإشعارات ====================
-    
-    def clear_old_notifications(self, user_id: int, days: int = 7) -> int:
-        """حذف الإشعارات القديمة"""
-        try:
-            with self.db.get_write_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    DELETE FROM notification_history
-                    WHERE user_id = ?
-                    AND datetime(created_at) < datetime('now', '-' || ? || ' days')
-                    AND status = 'delivered'
-                """, (user_id, days))
-                return cursor.rowcount
-        
-        except Exception:
-            return 0
+
+
+# Singleton instance
+_notification_service = None
+
+def get_notification_service() -> NotificationService:
+    """الحصول على نسخة واحدة من الخدمة"""
+    global _notification_service
+    if _notification_service is None:
+        _notification_service = NotificationService()
+    return _notification_service
 
 
 # إنشاء instance عام

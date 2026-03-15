@@ -21,7 +21,7 @@ class CoinStateTracker:
     - BLACKLISTED: 3 خسائر متتالية → منع التداول 7 أيام
     """
     
-    def __init__(self, db_path: str = "database/trading_database.db", db_manager=None):
+    def __init__(self, db_manager=None):
         self.db_manager = db_manager or DatabaseManager()
     
     def update_after_trade(self, symbol: str, pnl: float, profit_pct: float, 
@@ -124,11 +124,22 @@ class CoinStateTracker:
             
             # 5. حفظ الحالة الجديدة
             cursor.execute("""
-                INSERT OR REPLACE INTO coin_states
+                INSERT INTO coin_states
                 (symbol, state, position_size_multiplier, stop_loss_multiplier,
                  consecutive_wins, consecutive_losses, total_trades, winning_trades,
                  total_pnl, blacklist_until, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (symbol) DO UPDATE SET
+                    state = EXCLUDED.state,
+                    position_size_multiplier = EXCLUDED.position_size_multiplier,
+                    stop_loss_multiplier = EXCLUDED.stop_loss_multiplier,
+                    consecutive_wins = EXCLUDED.consecutive_wins,
+                    consecutive_losses = EXCLUDED.consecutive_losses,
+                    total_trades = EXCLUDED.total_trades,
+                    winning_trades = EXCLUDED.winning_trades,
+                    total_pnl = EXCLUDED.total_pnl,
+                    blacklist_until = EXCLUDED.blacklist_until,
+                    last_updated = EXCLUDED.last_updated
             """, (
                 symbol, new_state, pos_multiplier, sl_multiplier,
                 consec_wins, consec_losses, total_trades, winning_trades,

@@ -7,9 +7,10 @@ Routes: forgot-password, cancel-otp, send-change-email-otp, verify-change-email-
 """
 
 import os
-from flask import request, jsonify
+from flask import request, jsonify, g
 
 from config.logging_config import get_logger
+from backend.api.auth_middleware import require_auth
 
 logger = get_logger(__name__)
 
@@ -146,7 +147,7 @@ def register_password_routes(bp, shared):
     def cancel_otp():
         """✅ إلغاء OTP نشط - يسمح للمستخدم بإلغاء العملية"""
         try:
-            data = request.get_json(force=True) or {}
+            data = request.get_json(silent=True) or {}
             email = (data.get('email') or '').strip().lower()
             purpose = data.get('purpose', 'password_reset')
             
@@ -168,15 +169,20 @@ def register_password_routes(bp, shared):
             return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
 
     @bp.route('/send-change-email-otp', methods=['POST'])
+    @require_auth
     def send_change_email_otp():
         """إرسال OTP لتغيير الإيميل"""
         try:
-            data = request.get_json(force=True) or {}
+            data = request.get_json(silent=True) or {}
             new_email = (data.get('new_email') or data.get('newEmail') or '').strip().lower()
-            user_id = data.get('user_id') or data.get('userId')
+            requested_user_id = data.get('user_id') or data.get('userId')
+            user_id = g.user_id
             
-            if not new_email or not user_id:
+            if not new_email:
                 return jsonify({'success': False, 'error': 'الإيميل الجديد ومعرف المستخدم مطلوبان'}), 400
+
+            if requested_user_id is not None and str(requested_user_id) != str(user_id):
+                return jsonify({'success': False, 'error': 'لا توجد صلاحية'}), 403
             
             if not validate_email(new_email):
                 return jsonify({'success': False, 'error': 'صيغة الإيميل الجديد غير صحيحة'}), 400
@@ -206,19 +212,28 @@ def register_password_routes(bp, shared):
             return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
 
     @bp.route('/verify-change-email-otp', methods=['POST'])
+    @require_auth
     def verify_change_email_otp():
         """التحقق من OTP وتغيير الإيميل"""
         try:
-            data = request.get_json(force=True) or {}
+            data = request.get_json(silent=True) or {}
             new_email = (data.get('new_email') or data.get('newEmail') or '').strip().lower()
             otp_code = (data.get('otp') or data.get('otp_code') or '').strip()
-            user_id = data.get('user_id') or data.get('userId')
+            requested_user_id = data.get('user_id') or data.get('userId')
+            user_id = g.user_id
             
-            if not new_email or not otp_code or not user_id:
+            if not new_email or not otp_code:
                 return jsonify({'success': False, 'error': 'جميع البيانات مطلوبة'}), 400
+
+            if requested_user_id is not None and str(requested_user_id) != str(user_id):
+                return jsonify({'success': False, 'error': 'لا توجد صلاحية'}), 403
             
             if otp_service:
-                verified, result = otp_service.verify_email_otp(new_email, otp_code)
+                verified, result = otp_service.verify_email_otp(
+                    new_email,
+                    otp_code,
+                    purpose='change_email',
+                )
                 
                 if verified:
                     try:
@@ -226,7 +241,7 @@ def register_password_routes(bp, shared):
                             cursor = conn.cursor()
                             cursor.execute("UPDATE users SET email = ?, email_verified = 1 WHERE id = ?", (new_email, user_id))
                             logger.info(f"✅ تم تغيير الإيميل للمستخدم {user_id}")
-                            return jsonify({'success': True, 'message': 'تم تغيير الإيميل بنجاح'})
+                            return jsonify({'success': True, 'message': 'تم تغيير الإيميل بنجاح', 'email': new_email})
                     except Exception as e:
                         logger.error(f"خطأ في تحديث الإيميل: {e}")
                         return jsonify({'success': False, 'error': 'فشل في تحديث الإيميل'}), 500
@@ -244,24 +259,29 @@ def register_password_routes(bp, shared):
             return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
 
     @bp.route('/send-change-password-otp', methods=['POST'])
+    @require_auth
     def send_change_password_otp():
         """إرسال OTP لتغيير كلمة المرور"""
         try:
-            data = request.get_json(force=True) or {}
-            email = (data.get('email') or '').strip().lower()
+            data = request.get_json(silent=True) or {}
             old_password = data.get('old_password') or data.get('oldPassword')
+            user_id = g.user_id
             
-            if not email or not old_password:
-                return jsonify({'success': False, 'error': 'الإيميل وكلمة المرور القديمة مطلوبان'}), 400
+            if not old_password:
+                return jsonify({'success': False, 'error': 'كلمة المرور القديمة مطلوبة'}), 400
             
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT id, password_hash FROM users WHERE email = ?", (email,))
+                    cursor.execute("SELECT id, email, password_hash FROM users WHERE id = ?", (user_id,))
                     user = cursor.fetchone()
                     
                     if not user:
                         return jsonify({'success': False, 'error': 'المستخدم غير موجود'}), 404
+
+                    email = (user['email'] or '').strip().lower()
+                    if not email:
+                        return jsonify({'success': False, 'error': 'لا يوجد بريد إلكتروني موثق'}), 400
                     
                     from backend.utils.password_utils import verify_password as _verify_pw
                     if not _verify_pw(old_password, user['password_hash']):
@@ -285,22 +305,41 @@ def register_password_routes(bp, shared):
             return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
 
     @bp.route('/verify-change-password-otp', methods=['POST'])
+    @require_auth
     def verify_change_password_otp():
         """التحقق من OTP وتغيير كلمة المرور"""
         try:
-            data = request.get_json(force=True) or {}
-            email = (data.get('email') or '').strip().lower()
+            data = request.get_json(silent=True) or {}
             otp_code = (data.get('otp') or data.get('otp_code') or '').strip()
             new_password = data.get('new_password') or data.get('newPassword')
+            user_id = g.user_id
             
-            if not email or not otp_code or not new_password:
+            if not otp_code or not new_password:
                 return jsonify({'success': False, 'error': 'جميع البيانات مطلوبة'}), 400
             
             if not validate_password(new_password):
                 return jsonify({'success': False, 'error': 'كلمة المرور الجديدة يجب أن تحتوي على 8 أحرف على الأقل، وحرف كبير وصغير ورقم'}), 400
+
+            try:
+                with db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+                    user = cursor.fetchone()
+                    if not user:
+                        return jsonify({'success': False, 'error': 'المستخدم غير موجود'}), 404
+                    email = (user['email'] or '').strip().lower()
+                    if not email:
+                        return jsonify({'success': False, 'error': 'لا يوجد بريد إلكتروني موثق'}), 400
+            except Exception as e:
+                logger.error(f"خطأ في جلب المستخدم لتغيير كلمة المرور: {e}")
+                return jsonify({'success': False, 'error': 'خطأ في التحقق'}), 500
             
             if otp_service:
-                verified, result = otp_service.verify_email_otp(email, otp_code)
+                verified, result = otp_service.verify_email_otp(
+                    email,
+                    otp_code,
+                    purpose='change_password',
+                )
                 
                 if verified:
                     try:
@@ -309,8 +348,8 @@ def register_password_routes(bp, shared):
                         
                         with db_manager.get_write_connection() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("UPDATE users SET password_hash = ? WHERE email = ?", (password_hash, email))
-                            logger.info(f"✅ تم تغيير كلمة المرور للإيميل {email}")
+                            cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+                            logger.info(f"✅ تم تغيير كلمة المرور للمستخدم {user_id}")
                             return jsonify({'success': True, 'message': 'تم تغيير كلمة المرور بنجاح'})
                     except Exception as e:
                         logger.error(f"خطأ في تحديث كلمة المرور: {e}")
@@ -406,8 +445,8 @@ def register_password_routes(bp, shared):
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
             
-            reset_token = data.get('reset_token', '').strip()
-            new_password = data.get('new_password', '')
+            reset_token = (data.get('reset_token') or data.get('resetToken') or '').strip()
+            new_password = (data.get('new_password') or data.get('newPassword') or '')
             
             if not reset_token or not new_password:
                 return jsonify({'success': False, 'error': 'Reset Token وكلمة المرور الجديدة مطلوبان'}), 400

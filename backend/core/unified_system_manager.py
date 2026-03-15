@@ -279,7 +279,7 @@ class UnifiedSystemManager:
             with db.get_write_connection() as conn:
                 conn.execute("""
                     UPDATE system_status 
-                    SET status = ?, is_running = ?, last_update = datetime('now'), message = ?
+                    SET status = ?, is_running = ?, last_update = CURRENT_TIMESTAMP, message = ?
                     WHERE id = 1
                 """, (status, 1 if is_running else 0, message))
         except Exception as e:
@@ -329,26 +329,44 @@ class UnifiedSystemManager:
             self._sync_db_status('stopped', False, 'العملية توقفت بشكل غير متوقع')
             
         elif not pid and state.get('is_running'):
-            # No PID but state says running
-            print(f"⚠️ لا يوجد PID لكن الحالة تقول running - تحديث")
-            
-            try:
-                from backend.utils.error_logger import ErrorLogger, ErrorLevel, ErrorSource
-                error_logger = ErrorLogger()
-                error_logger.log_error(
-                    level=ErrorLevel.ERROR,
-                    source=ErrorSource.SYSTEM,
-                    message='حالة غير متسقة: لا يوجد PID لكن الحالة running',
-                    details='النظام يعتقد أنه يعمل لكن لا توجد عملية',
-                    include_traceback=False
-                )
-            except Exception as e:
-                print(f"⚠️ فشل تسجيل الخطأ: {e}")
-            self.state_manager.write_state({
-                'status': 'stopped',
-                'is_running': False,
-                'message': 'تم تصحيح الحالة'
-            }, user='system')
+            # No PID but state says running — check heartbeat before resetting
+            heartbeat_seconds = self.state_manager.get_seconds_since_heartbeat()
+            if heartbeat_seconds is not None and heartbeat_seconds < 60:
+                # Heartbeat is fresh — system IS running, just missing PID
+                print(f"ℹ️ لا يوجد PID لكن النبضات حية ({heartbeat_seconds}s) - النظام يعمل")
+            else:
+                # No PID AND no fresh heartbeat — truly stopped
+                print(f"⚠️ لا يوجد PID ولا نبضات حية - تحديث الحالة إلى stopped")
+                
+                try:
+                    from backend.utils.error_logger import ErrorLogger, ErrorLevel, ErrorSource
+                    error_logger = ErrorLogger()
+                    error_logger.log_error(
+                        level=ErrorLevel.ERROR,
+                        source=ErrorSource.SYSTEM,
+                        message='حالة غير متسقة: لا يوجد PID ولا نبضات حية',
+                        details='النظام يعتقد أنه يعمل لكن لا توجد عملية ولا نبضات',
+                        include_traceback=False
+                    )
+                except Exception as e:
+                    print(f"⚠️ فشل تسجيل الخطأ: {e}")
+                self.state_manager.write_state({
+                    'status': 'stopped',
+                    'is_running': False,
+                    'message': 'تم تصحيح الحالة'
+                }, user='system')
+        
+        elif not state.get('is_running'):
+            # State says stopped — but check if heartbeat is fresh (system may actually be running)
+            heartbeat_seconds = self.state_manager.get_seconds_since_heartbeat()
+            if heartbeat_seconds is not None and heartbeat_seconds < 60:
+                # Heartbeat proves system IS running — correct the state
+                print(f"🔄 الحالة stopped لكن النبضات حية ({heartbeat_seconds}s) - تصحيح إلى running")
+                self.state_manager.write_state({
+                    'status': 'running',
+                    'is_running': True,
+                    'message': 'تم تصحيح الحالة - النظام يعمل (كُشف عبر النبضات)'
+                }, user='system')
     
     # ==================== Helper Methods ====================
     

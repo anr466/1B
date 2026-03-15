@@ -69,15 +69,31 @@ class SmartIncrementalLearning:
             logger.warning(f"⚠️ لم يتم العثور على الإشارة: {signal_id}")
             return
         
-        # 2. تحديث النظام المزدوج
-        # نحتاج لاستعادة القرار الأصلي من الإشارة
-        # لكن للبساطة، سنستخدم النتيجة مباشرة
-        dummy_decision = {
+        # 2. تحديث النظام المزدوج بقرار مشتق من الإشارة الفعلية المسجلة
+        inferred_confidence = float(signal.get('signal_quality_score') or 0.0)
+        inferred_decision = {
             'action': 'trade',
-            'conservative_decision': {'action': 'trade'},
-            'balanced_decision': {'action': 'trade'}
+            'confidence': inferred_confidence,
+            'consensus': True,
+            'position_multiplier': 1.0,
+            'conservative_decision': {
+                'action': 'trade' if inferred_confidence >= self.dual_path.conservative.confidence_threshold else 'skip',
+                'confidence': inferred_confidence,
+                'reason': 'inferred_from_recorded_signal',
+                'learner': 'conservative',
+                'timestamp': signal.get('timestamp'),
+            },
+            'balanced_decision': {
+                'action': 'trade' if inferred_confidence >= self.dual_path.balanced.confidence_threshold else 'skip',
+                'confidence': inferred_confidence,
+                'reason': 'inferred_from_recorded_signal',
+                'learner': 'balanced',
+                'timestamp': signal.get('timestamp'),
+            },
+            'weights': self.dual_path.weights.copy(),
+            'explanation': 'decision_inferred_from_recorded_signal',
         }
-        self.dual_path.update_from_result(dummy_decision, trade_result)
+        self.dual_path.update_from_result(inferred_decision, trade_result)
         
         # 3. تحديث cache الأنماط المتعلمة
         combination = signal['combination']

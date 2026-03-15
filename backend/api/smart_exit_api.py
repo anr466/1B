@@ -7,11 +7,13 @@ Smart Exit System API Endpoints
 
 from flask import Blueprint, request, jsonify, g
 from functools import wraps
-import sqlite3
 import os
 import sys
 import logging
 from pathlib import Path
+from datetime import datetime
+
+import pandas as pd
 
 # إضافة مسارات المشروع
 project_root = Path(__file__).parent.parent.parent
@@ -173,24 +175,64 @@ def update_smart_exit_settings(user_id):
 def check_exit_conditions(user_id, symbol):
     """فحص شروط الإغلاق الذكية لصفقة معينة"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         
         # إنشاء نظام الإغلاق الذكي
         smart_exit = get_intelligent_exit_system()
         if not smart_exit:
             return jsonify({'success': False, 'error': 'Exit system not available'}), 503
         
-        # إعداد بيانات الموضع
-        position = {
-            'symbol': symbol,
-            'entry_price': data.get('entry_price', 0.0),
-            'current_price': data.get('current_price', 0.0),
-            'quantity': data.get('quantity', 0.0),
-            'sell_signal': data.get('sell_signal', False)
+        entry_price = float(data.get('entry_price', 0.0) or 0.0)
+        current_price = float(data.get('current_price', entry_price) or entry_price or 0.0)
+        quantity = float(data.get('quantity', 0.0) or 0.0)
+
+        if entry_price <= 0 or quantity <= 0:
+            return jsonify({
+                'success': False,
+                'error': 'entry_price and quantity must be greater than zero'
+            }), 400
+
+        smart_exit.register_position(
+            symbol=symbol,
+            entry_price=entry_price,
+            quantity=quantity,
+            entry_time=datetime.now()
+        )
+
+        df = pd.DataFrame([{
+            'timestamp': datetime.now(),
+            'open': entry_price,
+            'high': max(entry_price, current_price),
+            'low': min(entry_price, current_price),
+            'close': current_price,
+            'volume': 1.0,
+            'ema_8': current_price,
+            'ema_21': entry_price,
+            'rsi': 50.0,
+            'macd': 0.0,
+            'macd_signal': 0.0,
+        }])
+
+        signal = smart_exit.check_intelligent_exit(
+            symbol=symbol,
+            current_price=current_price,
+            df=df,
+            idx=0,
+            smaller_tf_data=None
+        )
+
+        result = {
+            'should_exit': signal.exit_pct > 0 and signal.decision.value != 'hold',
+            'exit_type': signal.decision.value,
+            'reason': signal.reason,
+            'confidence': signal.confidence,
+            'pnl_pct': signal.pnl_pct,
+            'exit_price': signal.exit_price,
+            'trailing_stop': signal.trailing_stop,
+            'next_tp': signal.next_tp,
+            'trend_status': signal.trend_status.value,
+            'exit_pct': signal.exit_pct,
         }
-        
-        # فحص الشروط
-        result = smart_exit.check_exit(position)
         
         return jsonify({
             'success': True,

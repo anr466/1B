@@ -15,7 +15,7 @@ import hashlib
 import time
 import re
 import bcrypt
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from typing import Dict, Optional
 
 # إضافة مسار المشروع
@@ -23,6 +23,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from database.database_manager import DatabaseManager
 from config.logging_config import get_logger
+from backend.api.auth_middleware import require_auth
 
 # استيراد نظام JWT Tokens
 try:
@@ -54,7 +55,7 @@ except ImportError as e:
     otp_service = None
 
 try:
-    from utils.firebase_sms_service import FirebaseSMSHandler
+    from backend.utils.firebase_sms_service import FirebaseSMSHandler
     sms_service = FirebaseSMSHandler()
 except ImportError:
     sms_service = None
@@ -169,7 +170,7 @@ def update_user_password(user_id: int, password_hash: str):
             
             cursor.execute("""
                 UPDATE users 
-                SET password_hash = ?, updated_at = datetime('now')
+                SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             """, (password_hash, user_id))
         
@@ -241,7 +242,7 @@ def send_otp():
     try:
         # ✅ معالجة JSON errors
         try:
-            data = request.get_json(force=True)
+            data = request.get_json(silent=True)
         except Exception as json_error:
             return jsonify({'success': False, 'error': 'JSON غير صحيح', 'code': 'INVALID_JSON'}), 400
         
@@ -252,9 +253,10 @@ def send_otp():
             }), 400
         
         email = data.get('email', '').strip().lower()
-        phone = data.get('phone', '').strip()
+        operation_type = data.get('operation_type', 'register')
+        otp_purpose = 'password_reset' if operation_type == 'reset_password' else 'registration'
+        phone = (data.get('phone') or data.get('phoneNumber') or data.get('phone_number') or '').strip()
         method = data.get('method', 'sms')  # ✅ الافتراضي: SMS
-        operation_type = data.get('operation_type', 'register')  # register, reset_password, change_email
         
         if not email:
             return jsonify({
@@ -282,7 +284,7 @@ def send_otp():
         
         # إرسال OTP
         if otp_service:
-            success, otp_code = otp_service.send_email_otp(email)
+            success, otp_code = otp_service.send_email_otp(email, purpose=otp_purpose)
             
             if success:
                 # ✅ إرسال حسب الطريقة المختارة
@@ -361,7 +363,9 @@ def verify_email_internal():
             }), 400
         
         email = data.get('email', '').strip().lower()
-        otp_code = data.get('otp', '').strip()
+        otp_code = (data.get('otp_code') or data.get('otp') or '').strip()
+        operation_type = data.get('operation_type', 'register')
+        otp_purpose = 'password_reset' if operation_type == 'reset_password' else 'registration'
         
         if not email or not otp_code:
             return jsonify({
@@ -371,7 +375,11 @@ def verify_email_internal():
         
         # التحقق من OTP
         if otp_service:
-            verified, result = otp_service.verify_email_otp(email, otp_code)
+            verified, result = otp_service.verify_email_otp(
+                email,
+                otp_code,
+                purpose=otp_purpose,
+            )
             
             if verified:
                 # تحديث حالة التحقق في قاعدة البيانات
@@ -384,7 +392,7 @@ def verify_email_internal():
                     
                     return jsonify({
                         'success': True,
-                        'user_id': user['id'],
+                        'userId': user['id'],
                         'message': 'تم التحقق من الإيميل بنجاح'
                     })
                 else:
@@ -423,6 +431,8 @@ def resend_otp():
             }), 400
         
         email = data.get('email', '').strip().lower()
+        operation_type = data.get('operation_type', 'register')
+        otp_purpose = 'password_reset' if operation_type == 'reset_password' else 'registration'
         
         if not email:
             return jsonify({
@@ -439,7 +449,7 @@ def resend_otp():
             }), 400
         
         # إرسال OTP جديد
-        success, otp_code = otp_service.send_email_otp(email)
+        success, otp_code = otp_service.send_email_otp(email, purpose=otp_purpose)
         
         if success:
             return jsonify({
@@ -481,7 +491,7 @@ def send_verification_email():
         
         # إرسال OTP (يعمل كـ verification email)
         if otp_service:
-            success, otp_code = otp_service.send_email_otp(email)
+            success, otp_code = otp_service.send_email_otp(email, purpose='registration')
             
             if success:
                 return jsonify({
@@ -517,7 +527,7 @@ def login_user():
     try:
         # ✅ معالجة JSON errors
         try:
-            data = request.get_json(force=True)
+            data = request.get_json(silent=True)
         except Exception as json_error:
             return jsonify({'success': False, 'error': 'JSON غير صحيح', 'code': 'INVALID_JSON'}), 400
         
@@ -573,6 +583,9 @@ def login_user():
             # إذا لم يُعثر عليه، جرب البحث باليوزر نيم (في حال أدخل المستخدم اليوزر في حقل الإيميل)
             if not user:
                 user = get_user_by_username(email)
+            # توافق إضافي: لو أُدخل بريد لحساب مسجل باليوزرنيم فقط، جرّب الجزء قبل @
+            if not user and '@' in email:
+                user = get_user_by_username(email.split('@', 1)[0])
         if username and not user:
             user = get_user_by_username(username)
         
@@ -676,12 +689,12 @@ def login_user():
 
 # ==================== Verification Methods ====================
 
-@auth_bp.route('/get-verification-methods', methods=['POST'])
+@auth_bp.route('/get-verification-methods', methods=['GET', 'POST'])
 def get_verification_methods():
     """✅ جلب طرق التحقق المتاحة لإيميل معين (قبل المصادقة)"""
     try:
-        data = request.get_json(force=True) or {}
-        email = (data.get('email') or '').strip().lower()
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or request.args.get('email') or '').strip().lower()
         
         if not email:
             return jsonify({'success': False, 'error': 'الإيميل مطلوب'}), 400
@@ -723,13 +736,17 @@ def get_verification_methods():
 # ==================== Phone Verification ====================
 
 @auth_bp.route('/verify-phone-token', methods=['POST'])
+@require_auth
 def verify_phone_token():
     """التحقق من رمز الهاتف وتحديث حالة المستخدم"""
     try:
-        data = request.get_json()
-        
-        id_token = data.get('idToken')
-        user_id = data.get('userId')  # اختياري، لتحديث مستخدم موجود
+        data = request.get_json() or {}
+
+        id_token = data.get('idToken') or data.get('id_token')
+        requested_user_id = data.get('userId') or data.get('user_id')
+        auth_user_id = getattr(g, 'current_user_id', None) or getattr(g, 'user_id', None)
+        if requested_user_id and str(requested_user_id) != str(auth_user_id):
+            return jsonify({'success': False, 'error': 'غير مصرح بتحديث مستخدم آخر'}), 403
         
         if not id_token:
             return jsonify({'success': False, 'error': 'Token مطلوب'}), 400
@@ -743,24 +760,18 @@ def verify_phone_token():
         if success:
             phone_number = result['phone_number']
             firebase_uid = result['uid']
-            
-            # إذا تم تمرير user_id، قم بتحديث حالته
-            if user_id:
-                sms_service.update_user_verification_status(user_id, phone_number)
-                return jsonify({
-                    'success': True,
-                    'message': 'تم التحقق من الهاتف بنجاح',
-                    'phone_number': phone_number,
-                    'verified': True
-                })
-            else:
-                # حالة تسجيل جديد أو تحقق عام
-                return jsonify({
-                    'success': True,
-                    'message': 'رمز التحقق صحيح',
-                    'phone_number': phone_number,
-                    'firebase_uid': firebase_uid
-                })
+
+            if not auth_user_id:
+                return jsonify({'success': False, 'error': 'تعذر تحديد المستخدم'}), 401
+
+            sms_service.update_user_verification_status(auth_user_id, phone_number)
+            return jsonify({
+                'success': True,
+                'message': 'تم التحقق من الهاتف بنجاح',
+                'phone_number': phone_number,
+                'firebase_uid': firebase_uid,
+                'verified': True
+            })
         else:
             return jsonify({'success': False, 'error': result.get('error', 'فشل التحقق')}), 400
             
@@ -843,7 +854,7 @@ def validate_session():
 def refresh_token():
     """تحديث التوكن باستخدام refresh_token"""
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(silent=True) or {}
         refresh_token_str = data.get('refresh_token')
         
         # محاولة الحصول على refresh_token من Authorization header
@@ -951,7 +962,7 @@ def logout_user():
             'error': 'خطأ في تسجيل الخروج'
         }), 500
 
-@auth_bp.route('/delete-account', methods=['DELETE'])
+@auth_bp.route('/delete-account', methods=['DELETE', 'POST'])
 def delete_account():
     """
     حذف حساب المستخدم نهائياً
@@ -1040,10 +1051,7 @@ def delete_account():
                     'error': 'لا يمكن حذف حساب الأدمن الرئيسي'
                 }), 403
             
-            # 8. تفعيل المفاتيح الأجنبية
-            cursor.execute("PRAGMA foreign_keys = ON")
-            
-            # 9. حذف المستخدم (CASCADE سيحذف جميع البيانات المرتبطة)
+            # 8. حذف المستخدم (CASCADE سيحذف جميع البيانات المرتبطة - PostgreSQL يدعم FK افتراضياً)
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
             

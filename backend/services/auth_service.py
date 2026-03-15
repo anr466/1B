@@ -321,7 +321,7 @@ class AuthService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO users (username, email, password_hash, phone_number, user_type, created_at)
-                    VALUES (?, ?, ?, ?, 'user', datetime('now'))
+                    VALUES (?, ?, ?, ?, 'user', CURRENT_TIMESTAMP)
                 """, (username, email.lower(), password_hash, phone_number))
                 return cursor.lastrowid
         except Exception:
@@ -346,7 +346,7 @@ class AuthService:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE users SET last_login_at = datetime('now') WHERE id = ?",
+                    "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (user_id,)
                 )
         except Exception:

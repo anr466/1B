@@ -267,20 +267,29 @@ class BinanceManager:
             else:
                 return {"success": False, "message": "نوع الأمر غير مدعوم حالياً"}
             
-            order_id = order['orderId']
+            order_id = order.get('orderId')
+            if not order_id:
+                return {"success": False, "message": "لم يتم إرجاع order_id من Binance"}
             self.logger.info(f"✅ تم إرسال الأمر برقم: {order_id}")
             
             # 🔍 الخطوة 2: سحب بيانات الأمر الفعلية من Binance
             actual_order_data = self._fetch_real_order_data(client, symbol, order_id)
             
-            if actual_order_data:
-                # استخدام البيانات الحقيقية
-                final_order_data = actual_order_data
-                self.logger.info(f"📊 تم سحب البيانات الحقيقية للأمر {order_id}")
-            else:
-                # استخدام البيانات الأولية كـ fallback
-                final_order_data = order
-                self.logger.warning(f"⚠️ استخدام البيانات الأولية للأمر {order_id}")
+            if not actual_order_data:
+                return {
+                    "success": False,
+                    "message": "فشل تأكيد تنفيذ الأمر من Binance بعد الانتظار"
+                }
+
+            # استخدام البيانات الحقيقية حصراً (لا fallback)
+            final_order_data = actual_order_data
+            self.logger.info(f"📊 تم سحب البيانات الحقيقية للأمر {order_id}")
+
+            if not final_order_data.get('orderId'):
+                return {
+                    "success": False,
+                    "message": "لا يوجد order_id في بيانات الأمر المؤكدة"
+                }
             
             # 🗄️ الخطوة 3: حفظ البيانات الحقيقية في قاعدة البيانات
             self._save_real_binance_order(user_id, final_order_data)
@@ -334,18 +343,28 @@ class BinanceManager:
             else:
                 return {"success": False, "message": "نوع الأمر غير مدعوم حالياً"}
             
-            order_id = order['orderId']
+            order_id = order.get('orderId')
+            if not order_id:
+                return {"success": False, "message": "لم يتم إرجاع order_id من Binance"}
             self.logger.info(f"✅ تم إرسال أمر البيع برقم: {order_id}")
             
             # 🔍 الخطوة 2: سحب بيانات الأمر الفعلية
             actual_order_data = self._fetch_real_order_data(client, symbol, order_id)
             
-            if actual_order_data:
-                final_order_data = actual_order_data
-                self.logger.info(f"📊 تم سحب بيانات البيع الحقيقية للأمر {order_id}")
-            else:
-                final_order_data = order
-                self.logger.warning(f"⚠️ استخدام بيانات البيع الأولية للأمر {order_id}")
+            if not actual_order_data:
+                return {
+                    "success": False,
+                    "message": "فشل تأكيد تنفيذ أمر البيع من Binance بعد الانتظار"
+                }
+
+            final_order_data = actual_order_data
+            self.logger.info(f"📊 تم سحب بيانات البيع الحقيقية للأمر {order_id}")
+
+            if not final_order_data.get('orderId'):
+                return {
+                    "success": False,
+                    "message": "لا يوجد order_id في بيانات أمر البيع المؤكدة"
+                }
             
             # 🗄️ الخطوة 3: حفظ بيانات البيع الحقيقية
             self._save_real_binance_order(user_id, final_order_data)
@@ -373,21 +392,36 @@ class BinanceManager:
             return {"success": False, "message": f"خطأ غير متوقع: {str(e)}"}
     
     def _fetch_real_order_data(self, client, symbol: str, order_id: str) -> Dict[str, Any]:
-        """سحب بيانات الأمر الحقيقية من Binance"""
+        """سحب بيانات الأمر الحقيقية من Binance مع انتظار قصير للتأكيد"""
         try:
             import time
-            
-            # انتظار قصير لضمان اكتمال التنفيذ
-            time.sleep(1)
-            
-            # سحب بيانات الأمر من Binance
-            order_data = client.get_order(
-                symbol=symbol,
-                orderId=order_id
-            )
-            
-            self.logger.info(f"🔍 تم سحب بيانات الأمر {order_id} بنجاح")
-            return order_data
+
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                time.sleep(1)
+
+                order_data = client.get_order(symbol=symbol, orderId=order_id)
+                if not isinstance(order_data, dict):
+                    continue
+
+                fetched_order_id = order_data.get('orderId')
+                executed_qty = float(order_data.get('executedQty', 0) or 0)
+                status = str(order_data.get('status', '')).upper()
+
+                if fetched_order_id and executed_qty > 0 and status in ['FILLED', 'PARTIALLY_FILLED']:
+                    self.logger.info(
+                        f"🔍 تم تأكيد الأمر {order_id} من Binance "
+                        f"(status={status}, executedQty={executed_qty})"
+                    )
+                    return order_data
+
+                self.logger.debug(
+                    f"⏳ انتظار تأكيد الأمر {order_id} "
+                    f"(attempt={attempt}/{max_attempts}, status={status}, executedQty={executed_qty})"
+                )
+
+            self.logger.error(f"❌ تعذر تأكيد تنفيذ الأمر {order_id} بعد {max_attempts} محاولات")
+            return None
             
         except Exception as e:
             self.logger.error(f"⚠️ خطأ في سحب بيانات الأمر {order_id}: {e}")

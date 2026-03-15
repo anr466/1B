@@ -77,6 +77,18 @@ class TradingStateMachine:
     def __init__(self):
         self.db = DatabaseManager()
         self.project_root = PROJECT_ROOT
+        self.pid_file = self.project_root / 'tmp' / 'system.pid'
+        self.reconcile_stats = {
+            'total': 0,
+            'running_to_error': 0,
+            'starting_timeout': 0,
+            'stopping_to_stopped': 0,
+            'stopped_orphan_killed': 0,
+            'stopped_to_running': 0,
+            'last_event_at': None,
+            'last_event_type': None,
+        }
+        self.reconcile_warn_threshold = int(os.getenv('RECONCILE_WARN_THRESHOLD', '5'))
         self._ensure_db_columns()
 
     # ==================== DB Schema ====================
@@ -86,7 +98,13 @@ class TradingStateMachine:
         try:
             with self.db.get_write_connection() as conn:
                 # Check existing columns
-                cols = [row[1] for row in conn.execute('PRAGMA table_info(system_status)').fetchall()]
+                cols = [
+                    row[0] for row in conn.execute("""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'system_status'
+                    """).fetchall()
+                ]
 
                 if 'trading_state' not in cols:
                     conn.execute("ALTER TABLE system_status ADD COLUMN trading_state TEXT DEFAULT 'STOPPED'")
@@ -104,14 +122,47 @@ class TradingStateMachine:
                     conn.execute("ALTER TABLE system_status ADD COLUMN initiated_by TEXT")
                     logger.info("✅ Added initiated_by column to system_status")
 
-                # Initialize trading_state if NULL
+                if 'error_count' not in cols:
+                    conn.execute("ALTER TABLE system_status ADD COLUMN error_count INTEGER DEFAULT 0")
+                    logger.info("✅ Added error_count column to system_status")
+
+                if 'last_error' not in cols:
+                    conn.execute("ALTER TABLE system_status ADD COLUMN last_error TEXT")
+                    logger.info("✅ Added last_error column to system_status")
+
+                # Ensure canonical row exists (single-source row id=1)
+                conn.execute("""
+                    INSERT INTO system_status
+                    (id, status, is_running, trading_state, mode, message, last_update)
+                    VALUES (1, 'stopped', FALSE, 'STOPPED', 'PAPER', 'النظام متوقف', CURRENT_TIMESTAMP)
+                    ON CONFLICT (id) DO NOTHING
+                """)
+
+                # Initialize/repair trading_state if NULL/empty/invalid
                 conn.execute("""
                     UPDATE system_status SET trading_state = 'STOPPED'
-                    WHERE id = 1 AND (trading_state IS NULL OR trading_state = '')
+                    WHERE id = 1 AND (
+                        trading_state IS NULL
+                        OR TRIM(trading_state) = ''
+                        OR UPPER(trading_state) NOT IN ('STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'ERROR')
+                    )
+                """)
+
+                # Ensure mode has a sane default
+                conn.execute("""
+                    UPDATE system_status SET mode = 'PAPER'
+                    WHERE id = 1 AND (mode IS NULL OR TRIM(mode) = '')
                 """)
                 conn.commit()
         except Exception as e:
             logger.error(f"❌ Failed to ensure DB columns: {e}")
+
+    def _normalize_state(self, raw_state: Any) -> str:
+        """Normalize DB state into canonical enum values."""
+        if raw_state is None:
+            return STOPPED
+        state = str(raw_state).strip().upper()
+        return state if state in VALID_STATES else STOPPED
 
     # ==================== Core State Operations ====================
 
@@ -129,14 +180,15 @@ class TradingStateMachine:
             with self.db.get_connection() as conn:
                 row = conn.execute("""
                     SELECT trading_state, session_id, mode, initiated_by,
-                           is_running, started_at, message, last_update
+                           is_running, started_at, message, last_update,
+                           error_count, last_error
                     FROM system_status WHERE id = 1
                 """).fetchone()
 
                 if not row:
                     return self._default_state()
 
-                trading_state = row[0] or STOPPED
+                trading_state = self._normalize_state(row[0])
                 session_id = row[1]
                 mode = row[2] or 'PAPER'
                 initiated_by = row[3]
@@ -144,6 +196,8 @@ class TradingStateMachine:
                 started_at = row[5]
                 message = row[6] or ''
                 last_update = row[7]
+                error_count = int(row[8] or 0)
+                last_error = row[9]
 
             # Verify process health
             pid = self._find_trading_process()
@@ -174,9 +228,12 @@ class TradingStateMachine:
             return {
                 'success': True,
                 'trading_state': trading_state,
+                'state': trading_state,
                 'trading_state_label': STATE_LABELS.get(trading_state, trading_state),
+                'trading_active': trading_state == RUNNING,
                 'session_id': session_id,
                 'mode': mode,
+                'trading_mode': mode.lower() if mode else 'demo',
                 'initiated_by': initiated_by,
                 'open_positions': open_positions,
                 'pid': pid,
@@ -185,7 +242,11 @@ class TradingStateMachine:
                 'started_at': started_at,
                 'message': message,
                 'last_update': last_update or datetime.now().isoformat(),
+                'last_updated': last_update or datetime.now().isoformat(),
+                'error_count': error_count,
+                'last_error': last_error,
                 'subsystems': subsystems,
+                'reconcile_stats': self.reconcile_stats,
             }
 
         except Exception as e:
@@ -193,14 +254,22 @@ class TradingStateMachine:
             return {
                 'success': False,
                 'trading_state': ERROR,
+                'state': ERROR,
                 'trading_state_label': STATE_LABELS[ERROR],
+                'trading_active': False,
                 'message': str(e),
                 'open_positions': 0,
                 'pid': None,
                 'uptime': 0,
                 'session_id': None,
                 'mode': 'PAPER',
+                'trading_mode': 'demo',
+                'error_count': 0,
+                'last_error': str(e),
+                'last_update': datetime.now().isoformat(),
+                'last_updated': datetime.now().isoformat(),
                 'subsystems': {},
+                'reconcile_stats': self.reconcile_stats,
             }
 
     def start(self, initiated_by: str = 'admin', mode: str = 'PAPER') -> Dict[str, Any]:
@@ -217,7 +286,7 @@ class TradingStateMachine:
                 row = conn.execute(
                     "SELECT trading_state FROM system_status WHERE id = 1"
                 ).fetchone()
-                current_state = row[0] if row else STOPPED
+                current_state = self._normalize_state(row[0] if row else STOPPED)
 
                 # Already running or starting — return current state (no error!)
                 if current_state in (STARTING, RUNNING):
@@ -308,7 +377,7 @@ class TradingStateMachine:
                 row = conn.execute(
                     "SELECT trading_state, session_id FROM system_status WHERE id = 1"
                 ).fetchone()
-                current_state = row[0] if row else STOPPED
+                current_state = self._normalize_state(row[0] if row else STOPPED)
                 session_id = row[1] if row else None
 
                 # Already stopped or stopping — return current state
@@ -416,7 +485,8 @@ class TradingStateMachine:
                 row = conn.execute(
                     "SELECT trading_state FROM system_status WHERE id = 1"
                 ).fetchone()
-                if row and row[0] == ERROR:
+                current_state = self._normalize_state(row[0] if row else STOPPED)
+                if current_state == ERROR:
                     self._transition(conn, STOPPED, pid=None,
                                     started_at=None,
                                     message='تم إعادة التعيين')
@@ -436,7 +506,7 @@ class TradingStateMachine:
         params = [new_state]
 
         # Also sync the legacy is_running column
-        is_running = 1 if new_state in (STARTING, RUNNING) else 0
+        is_running = new_state in (STARTING, RUNNING)
         updates.append('is_running = ?')
         params.append(is_running)
 
@@ -472,14 +542,23 @@ class TradingStateMachine:
         """
         corrected = db_state
         corrected_msg = message
+        heartbeat_seconds = self._get_seconds_since_heartbeat()
+        heartbeat_fresh = heartbeat_seconds is not None and heartbeat_seconds < 60
 
         if db_state == RUNNING and not process_alive:
-            # Process died but DB says running
-            corrected = ERROR
-            corrected_msg = 'العملية توقفت بشكل غير متوقع'
-            self._do_reconcile_update(corrected, corrected_msg)
-            self._log_transition(RUNNING, ERROR, 'reconcile', None,
-                                'Process died unexpectedly')
+            # In containerized/distributed runtime, PID discovery may fail while
+            # the system is still healthy. Fresh heartbeat is authoritative enough
+            # to keep the state as RUNNING.
+            if heartbeat_fresh:
+                corrected = RUNNING
+                corrected_msg = message or 'النظام يعمل (مؤكد عبر heartbeat)'
+            else:
+                corrected = ERROR
+                corrected_msg = 'العملية توقفت بشكل غير متوقع'
+                self._do_reconcile_update(corrected, corrected_msg)
+                self._record_reconcile_event('running_to_error')
+                self._log_transition(RUNNING, ERROR, 'reconcile', None,
+                                    'Process died unexpectedly')
 
         elif db_state == STARTING and not process_alive:
             # Check if stuck in STARTING for too long (>60s)
@@ -494,6 +573,7 @@ class TradingStateMachine:
                             corrected = ERROR
                             corrected_msg = 'انتهت مهلة التشغيل'
                             self._do_reconcile_update(corrected, corrected_msg)
+                            self._record_reconcile_event('starting_timeout')
             except Exception:
                 pass
 
@@ -503,6 +583,7 @@ class TradingStateMachine:
                 corrected = STOPPED
                 corrected_msg = 'تم الإيقاف'
                 self._do_reconcile_update(corrected, corrected_msg)
+                self._record_reconcile_event('stopping_to_stopped')
 
         elif db_state == STOPPED and process_alive:
             # Process running but DB says stopped
@@ -521,6 +602,7 @@ class TradingStateMachine:
                             logger.warning(f"⚠️ Orphan process PID={pid} found {seconds_since:.0f}s after STOPPED — killing it")
                             try:
                                 os.kill(pid, 9)
+                                self._record_reconcile_event('stopped_orphan_killed')
                             except OSError:
                                 pass
                             return corrected, corrected_msg
@@ -531,6 +613,7 @@ class TradingStateMachine:
             corrected = RUNNING
             corrected_msg = f'النظام يعمل (PID: {pid}) - تمت المزامنة'
             self._do_reconcile_update(corrected, corrected_msg)
+            self._record_reconcile_event('stopped_to_running')
             self._log_transition(STOPPED, RUNNING, 'reconcile', None,
                                 f'Found running process PID={pid}')
 
@@ -540,16 +623,40 @@ class TradingStateMachine:
         """Update DB during reconciliation."""
         try:
             with self.db.get_write_connection() as conn:
-                is_running = 1 if state in (STARTING, RUNNING) else 0
+                is_running = state in (STARTING, RUNNING)
                 conn.execute("""
                     UPDATE system_status
                     SET trading_state = ?, status = ?, is_running = ?,
-                        message = ?, last_update = datetime('now')
+                        message = ?, last_update = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (state, state.lower(), is_running, message))
                 conn.commit()
         except Exception as e:
             logger.warning(f"⚠️ Reconcile update failed: {e}")
+
+    def _record_reconcile_event(self, event_type: str):
+        """تسجيل حدث مصالحة مع تنبيهات عند التكرار العالي."""
+        self.reconcile_stats['total'] += 1
+        if event_type in self.reconcile_stats:
+            self.reconcile_stats[event_type] += 1
+        self.reconcile_stats['last_event_at'] = datetime.now().isoformat()
+        self.reconcile_stats['last_event_type'] = event_type
+
+        event_count = self.reconcile_stats.get(event_type, 0)
+        if event_count >= self.reconcile_warn_threshold:
+            logger.warning(
+                f"⚠️ Reconcile anomaly threshold reached: {event_type} count={event_count} "
+                f"(threshold={self.reconcile_warn_threshold})"
+            )
+
+    def _get_seconds_since_heartbeat(self) -> Optional[int]:
+        """Read heartbeat freshness from StateManager-backed DB state."""
+        try:
+            from backend.core.state_manager import StateManager
+            state_manager = StateManager(self.db)
+            return state_manager.get_seconds_since_heartbeat()
+        except Exception:
+            return None
 
     # ==================== Settings Check ====================
 
@@ -573,15 +680,35 @@ class TradingStateMachine:
     # ==================== Process Management ====================
 
     def _find_trading_process(self) -> Optional[int]:
-        """Find PID of running background_trading_manager process."""
+        """Find PID of a live background_trading_manager process."""
         try:
+            if self.pid_file.exists():
+                pid_text = self.pid_file.read_text(encoding='utf-8').strip()
+                if pid_text.isdigit():
+                    pid = int(pid_text)
+                    if self._is_process_alive(pid):
+                        return pid
+                    try:
+                        self.pid_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
             result = subprocess.run(
                 ['pgrep', '-f', 'background_trading_manager.py'],
                 capture_output=True, text=True, timeout=3
             )
             if result.returncode == 0 and result.stdout.strip():
                 pids = result.stdout.strip().split('\n')
-                return int(pids[0])
+                for pid_text in pids:
+                    if pid_text.strip().isdigit():
+                        pid = int(pid_text.strip())
+                        if self._is_process_alive(pid):
+                            try:
+                                self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+                                self.pid_file.write_text(str(pid), encoding='utf-8')
+                            except Exception:
+                                pass
+                            return pid
         except Exception:
             pass
         return None
@@ -639,20 +766,17 @@ class TradingStateMachine:
         """Graceful stop with escalation."""
         self._close_log_handles()
         try:
-            # SIGTERM first
             subprocess.run(
                 ['pkill', '-15', '-f', 'background_trading_manager.py'],
                 capture_output=True, timeout=5
             )
             time.sleep(2)
 
-            # Check if stopped
             result = subprocess.run(
                 ['pgrep', '-f', 'background_trading_manager.py'],
                 capture_output=True, timeout=2
             )
             if result.returncode == 0:
-                # Still alive — SIGKILL
                 subprocess.run(
                     ['pkill', '-9', '-f', 'background_trading_manager.py'],
                     capture_output=True, timeout=5
@@ -660,6 +784,11 @@ class TradingStateMachine:
                 time.sleep(1)
         except Exception as e:
             logger.warning(f"⚠️ Stop process error: {e}")
+        finally:
+            try:
+                self.pid_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def _force_kill_all(self):
         """Force kill all trading processes immediately."""
@@ -696,63 +825,64 @@ class TradingStateMachine:
             return 0
 
     def _get_subsystem_status(self) -> Dict:
-        """Read subsystem status from JSON state file (legacy compatibility)."""
+        """Read subsystem status from DB (system_status + activity_logs)."""
         try:
-            state_file = self.project_root / 'tmp' / 'system_state.json'
-            if state_file.exists():
-                with open(state_file, 'r') as f:
-                    data = json.load(f)
-                    activity = data.get('activity', {})
-                    heartbeat = data.get('heartbeat', {})
+            # استخدام StateManager للقراءة من DB
+            from backend.core.state_manager import get_state_manager
+            state_mgr = get_state_manager()
+            data = state_mgr.read_state()
+            
+            activity = data.get('activity', {})
+            heartbeat = data.get('heartbeat', {})
 
-                    result = {}
-                    # Group B
-                    gb = activity.get('group_b', {})
-                    if gb:
-                        last_act = gb.get('last_activity')
-                        seconds_ago = None
-                        if last_act:
-                            try:
-                                seconds_ago = int((datetime.now() - datetime.fromisoformat(last_act)).total_seconds())
-                            except Exception:
-                                pass
-                        result['group_b'] = {
-                            'status': 'active' if (seconds_ago is not None and seconds_ago < 120) else 'idle',
-                            'last_activity': last_act,
-                            'seconds_ago': seconds_ago,
-                            'total_cycles': gb.get('total_cycles', 0),
-                            'active_trades': gb.get('active_trades', 0),
-                        }
+            result = {}
+            # Group B
+            gb = activity.get('group_b', {})
+            if gb:
+                last_act = gb.get('last_activity')
+                seconds_ago = None
+                if last_act:
+                    try:
+                        seconds_ago = int((datetime.now() - datetime.fromisoformat(last_act)).total_seconds())
+                    except Exception:
+                        pass
+                result['group_b'] = {
+                    'status': 'active' if (seconds_ago is not None and seconds_ago < 120) else 'idle',
+                    'last_activity': last_act,
+                    'seconds_ago': seconds_ago,
+                    'total_cycles': gb.get('total_cycles', 0),
+                    'active_trades': gb.get('active_trades', 0),
+                }
 
-                    # ML
-                    ml = activity.get('ml', {})
-                    if ml:
-                        last_act = ml.get('last_activity')
-                        seconds_ago = None
-                        if last_act:
-                            try:
-                                seconds_ago = int((datetime.now() - datetime.fromisoformat(last_act)).total_seconds())
-                            except Exception:
-                                pass
-                        result['ml'] = {
-                            'status': 'active' if (seconds_ago is not None and seconds_ago < 300) else 'idle',
-                            'last_activity': last_act,
-                            'seconds_ago': seconds_ago,
-                            'total_samples': ml.get('total_samples', 0),
-                        }
+            # ML
+            ml = activity.get('ml', {})
+            if ml:
+                last_act = ml.get('last_activity')
+                seconds_ago = None
+                if last_act:
+                    try:
+                        seconds_ago = int((datetime.now() - datetime.fromisoformat(last_act)).total_seconds())
+                    except Exception:
+                        pass
+                result['ml'] = {
+                    'status': 'active' if (seconds_ago is not None and seconds_ago < 300) else 'idle',
+                    'last_activity': last_act,
+                    'seconds_ago': seconds_ago,
+                    'total_samples': ml.get('total_samples', 0),
+                }
 
-                    # Heartbeat
-                    if heartbeat.get('last_beat'):
-                        try:
-                            hb_seconds = int((datetime.now() - datetime.fromisoformat(heartbeat['last_beat'])).total_seconds())
-                            result['heartbeat'] = {
-                                'seconds_ago': hb_seconds,
-                                'status': 'healthy' if hb_seconds < 30 else 'warning' if hb_seconds < 60 else 'critical',
-                            }
-                        except Exception:
-                            pass
+            # Heartbeat
+            if heartbeat.get('last_beat'):
+                try:
+                    hb_seconds = int((datetime.now() - datetime.fromisoformat(heartbeat['last_beat'])).total_seconds())
+                    result['heartbeat'] = {
+                        'seconds_ago': hb_seconds,
+                        'status': 'healthy' if hb_seconds < 30 else 'warning' if hb_seconds < 60 else 'critical',
+                    }
+                except Exception:
+                    pass
 
-                    return result
+            return result
         except Exception:
             pass
         return {}
@@ -813,7 +943,10 @@ class TradingStateMachine:
             'started_at': None,
             'message': 'النظام متوقف',
             'last_update': datetime.now().isoformat(),
+            'error_count': 0,
+            'last_error': None,
             'subsystems': {},
+            'reconcile_stats': self.reconcile_stats,
         }
 
 

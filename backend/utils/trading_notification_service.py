@@ -8,6 +8,7 @@
 import sys
 import os
 import logging
+import json
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -116,52 +117,89 @@ class TradingNotificationService:
         try:
             with self.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
-                
                 cursor.execute("""
-                    SELECT 
-                        push_enabled,
-                        trade_notifications,
-                        price_alerts,
-                        system_notifications,
-                        notify_new_deal,
-                        notify_deal_profit,
-                        notify_deal_loss,
-                        notify_daily_profit,
-                        notify_daily_loss,
-                        notify_low_balance
+                    SELECT settings_data,
+                           push_enabled,
+                           trade_notifications,
+                           price_alerts,
+                           system_notifications,
+                           notify_new_deal,
+                           notify_deal_profit,
+                           notify_deal_loss,
+                           notify_daily_profit,
+                           notify_daily_loss,
+                           notify_low_balance
                     FROM user_notification_settings
                     WHERE user_id = ?
+                    ORDER BY updated_at DESC
+                    LIMIT 1
                 """, (user_id,))
-                
+
                 row = cursor.fetchone()
-                
-                if row:
-                    return {
-                        'push_enabled': bool(row[0]),
-                        'trade_notifications': bool(row[1]),
-                        'price_alerts': bool(row[2]),
-                        'system_notifications': bool(row[3]),
-                        'notify_new_deal': bool(row[4]),
-                        'notify_deal_profit': bool(row[5]),
-                        'notify_deal_loss': bool(row[6]),
-                        'notify_daily_profit': bool(row[7]),
-                        'notify_daily_loss': bool(row[8]),
-                        'notify_low_balance': bool(row[9])
-                    }
-                else:
-                    # إعدادات افتراضية
-                    return {
-                        'push_enabled': True,
-                        'trade_notifications': True,
-                        'price_alerts': True,
-                        'system_notifications': True,
-                        'notify_new_deal': True,
-                        'notify_deal_profit': True,
-                        'notify_deal_loss': True,
-                        'notify_daily_profit': True,
-                        'notify_daily_loss': True,
-                        'notify_low_balance': True
-                    }
+                default_settings = {
+                    'push_enabled': True,
+                    'trade_notifications': True,
+                    'price_alerts': True,
+                    'system_notifications': True,
+                    'notify_new_deal': True,
+                    'notify_deal_profit': True,
+                    'notify_deal_loss': True,
+                    'notify_daily_profit': True,
+                    'notify_daily_loss': True,
+                    'notify_low_balance': True,
+                    'daily_summary': True,
+                    'cumulative_loss_alert_enabled': True,
+                    'cumulative_loss_threshold_usd': 100.0,
+                    'end_of_day_report_enabled': True,
+                    'end_of_day_report_time': '23:00',
+                }
+
+                if not row:
+                    return default_settings
+
+                settings_data = row[0]
+                if settings_data:
+                    try:
+                        parsed = json.loads(settings_data) if isinstance(settings_data, str) else settings_data
+                        default_settings.update({
+                            'push_enabled': bool(parsed.get('pushEnabled', default_settings['push_enabled'])),
+                            'trade_notifications': bool(parsed.get('tradeNotifications', default_settings['trade_notifications'])),
+                            'price_alerts': bool(parsed.get('priceAlerts', default_settings['price_alerts'])),
+                            'system_notifications': bool(parsed.get('notifySystemStatus', default_settings['system_notifications'])),
+                            'notify_new_deal': bool(parsed.get('notifyNewDeal', default_settings['notify_new_deal'])),
+                            'notify_deal_profit': bool(parsed.get('notifyDealProfit', default_settings['notify_deal_profit'])),
+                            'notify_deal_loss': bool(parsed.get('notifyDealLoss', default_settings['notify_deal_loss'])),
+                            'notify_daily_profit': bool(parsed.get('notifyDailyProfit', default_settings['notify_daily_profit'])),
+                            'notify_daily_loss': bool(parsed.get('notifyDailyLoss', default_settings['notify_daily_loss'])),
+                            'notify_low_balance': bool(parsed.get('notifyLowBalance', default_settings['notify_low_balance'])),
+                            'daily_summary': bool(parsed.get('dailySummary', default_settings['daily_summary'])),
+                            'cumulative_loss_alert_enabled': bool(parsed.get('cumulativeLossAlertEnabled', default_settings['cumulative_loss_alert_enabled'])),
+                            'cumulative_loss_threshold_usd': float(parsed.get('cumulativeLossThresholdUsd', default_settings['cumulative_loss_threshold_usd'])),
+                            'end_of_day_report_enabled': bool(parsed.get('endOfDayReportEnabled', default_settings['end_of_day_report_enabled'])),
+                            'end_of_day_report_time': str(parsed.get('endOfDayReportTime', default_settings['end_of_day_report_time'])),
+                        })
+                        return default_settings
+                    except Exception as parse_error:
+                        self.logger.warning(f"فشل تحليل settings_data للمستخدم {user_id}: {parse_error}")
+
+                # fallback للأعمدة القديمة
+                return {
+                    'push_enabled': bool(row[1]),
+                    'trade_notifications': bool(row[2]),
+                    'price_alerts': bool(row[3]),
+                    'system_notifications': bool(row[4]),
+                    'notify_new_deal': bool(row[5]),
+                    'notify_deal_profit': bool(row[6]),
+                    'notify_deal_loss': bool(row[7]),
+                    'notify_daily_profit': bool(row[8]),
+                    'notify_daily_loss': bool(row[9]),
+                    'notify_low_balance': bool(row[10]),
+                    'daily_summary': True,
+                    'cumulative_loss_alert_enabled': bool(row[9]),
+                    'cumulative_loss_threshold_usd': 100.0,
+                    'end_of_day_report_enabled': True,
+                    'end_of_day_report_time': '23:00',
+                }
                     
         except Exception as e:
             self.logger.error(f"خطأ في جلب إعدادات الإشعارات: {e}")
@@ -238,6 +276,28 @@ class TradingNotificationService:
         setting_key = notification_settings_map.get(notification_type, 'system_notifications')
         
         return settings.get(setting_key, True)
+
+    def _get_today_cumulative_loss(self, user_id: int) -> float:
+        """إجمالي الخسائر المغلقة اليوم (موجب كقيمة خسارة)."""
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(ABS(profit_loss)), 0)
+                    FROM active_positions
+                    WHERE user_id = ?
+                      AND DATE(COALESCE(closed_at, updated_at)) = DATE('now')
+                      AND is_active = 0
+                      AND profit_loss < 0
+                    """,
+                    (user_id,),
+                )
+                value = cursor.fetchone()[0]
+                return float(value or 0.0)
+        except Exception as e:
+            self.logger.debug(f"خطأ في حساب الخسارة اليومية التراكمية: {e}")
+            return 0.0
     
     def is_duplicate_notification(self, user_id: int, notification_type: str, 
                                    unique_key: str, cooldown_minutes: int = 5) -> bool:
@@ -288,7 +348,7 @@ class TradingNotificationService:
                 cursor.execute("""
                     INSERT INTO notification_history 
                     (user_id, type, title, message, data, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, 'sent', datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
                 """, (user_id, notification_type, title, body, str(data or {})))
                 return True
                 
@@ -397,9 +457,24 @@ class TradingNotificationService:
         self.save_notification_to_history(user_id, notification_type, title, body, data)
         
         if self.firebase_service:
-            return self.firebase_service.send_to_user(user_id, title, body, data)
-        
-        return True
+            sent = self.firebase_service.send_to_user(user_id, title, body, data)
+        else:
+            sent = True
+
+        # ✅ تنبيه الخسائر التراكمية اليومية (يتحكم به المستخدم من الإعدادات)
+        if not is_profit:
+            settings = self.get_user_notification_settings(user_id)
+            if settings.get('cumulative_loss_alert_enabled', True):
+                threshold = float(settings.get('cumulative_loss_threshold_usd', 100.0) or 100.0)
+                cumulative_loss = self._get_today_cumulative_loss(user_id)
+                if cumulative_loss >= threshold:
+                    self.notify_daily_loss_limit(
+                        user_id=user_id,
+                        daily_loss=cumulative_loss,
+                        daily_limit=threshold,
+                    )
+
+        return sent
     
     def notify_trailing_stop_activated(self, user_id: int, symbol: str, 
                                        new_stop_price: float, current_price: float) -> bool:
@@ -436,17 +511,16 @@ class TradingNotificationService:
             'new_stop_price': new_stop_price,
             'current_price': current_price
         }
-        
+
+        # حفظ في السجل فقط (بدون إشعار Push)
         self.save_notification_to_history(user_id, 'trailing_stop_activated', title, body, data)
         
-        if self.firebase_service:
-            return self.firebase_service.send_to_user(user_id, title, body, data)
-        
+        # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
     
     def notify_daily_loss_limit(self, user_id: int, daily_loss: float, 
                                 daily_limit: float) -> bool:
-        """إشعار الوصول لحد الخسارة اليومي"""
+        """إشعار الوصول لحد الخسارة اليومي - يعمل تلقائياً بدون إشعار المستخدم"""
         if not self.should_send_notification(user_id, 'daily_loss_limit'):
             return False
         
@@ -458,17 +532,16 @@ class TradingNotificationService:
             'daily_loss': daily_loss,
             'daily_limit': daily_limit
         }
-        
+
+        # حفظ في السجل فقط (بدون إشعار Push)
         self.save_notification_to_history(user_id, 'daily_loss_limit', title, body, data)
         
-        if self.firebase_service:
-            return self.firebase_service.send_to_user(user_id, title, body, data)
-        
+        # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
     
     def notify_balance_low(self, user_id: int, current_balance: float, 
                           min_required: float) -> bool:
-        """إشعار رصيد منخفض"""
+        """إشعار رصيد منخفض - يعمل تلقائياً بدون إشعار المستخدم"""
         if not self.should_send_notification(user_id, 'balance_low'):
             return False
         
@@ -480,12 +553,11 @@ class TradingNotificationService:
             'current_balance': current_balance,
             'min_required': min_required
         }
-        
+
+        # حفظ في السجل فقط (بدون إشعار Push)
         self.save_notification_to_history(user_id, 'balance_low', title, body, data)
         
-        if self.firebase_service:
-            return self.firebase_service.send_to_user(user_id, title, body, data)
-        
+        # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
     
     def notify_low_free_balance_simple(self, user_id: int, free_balance: float, 
@@ -525,11 +597,10 @@ class TradingNotificationService:
             'open_positions': open_positions
         }
         
+        # حفظ في السجل فقط (بدون إشعار Push)
         self.save_notification_to_history(user_id, 'balance_low', title, body, data)
         
-        if self.firebase_service:
-            return self.firebase_service.send_to_user(user_id, title, body, data)
-        
+        # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
     
     def notify_system_alert(self, user_id: int, message: str, 
@@ -554,12 +625,11 @@ class TradingNotificationService:
             'alert_type': alert_type,
             'message': message
         }
-        
+
+        # حفظ في السجل فقط (بدون إشعار Push)
         self.save_notification_to_history(user_id, 'system_alert', title, body, data)
         
-        if self.firebase_service:
-            return self.firebase_service.send_to_user(user_id, title, body, data)
-        
+        # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
 
 

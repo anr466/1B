@@ -10,6 +10,7 @@ from flask import request, jsonify, g
 from datetime import datetime
 
 from config.logging_config import get_logger
+from backend.utils.trading_context import get_trading_context
 
 logger = get_logger(__name__)
 
@@ -25,9 +26,11 @@ def register_admin_ml_routes(bp, shared):
     def get_system_ml_status():
         """حالة النظام الشاملة للأدمن مع ML"""
         try:
-            admin_id = getattr(g, 'user_id', None) or 1
-            trading_mode = request.args.get('mode', 'demo')
-            is_demo = 1 if trading_mode == 'demo' else 0
+            admin_id = getattr(g, 'current_user_id', None) or getattr(g, 'user_id', None)
+            requested_mode = request.args.get('mode')
+            trading_context = get_trading_context(db, admin_id, requested_mode=requested_mode)
+            trading_mode = trading_context['active_portfolio']
+            is_demo = trading_context['is_demo']
             
             result = {
                 'success': True,
@@ -75,21 +78,27 @@ def register_admin_ml_routes(bp, shared):
                 }
             
             # 3️⃣ حالة التداول
-            conn = get_safe_connection(db.db_path)
+            conn = get_safe_connection()
             cursor = conn.cursor()
             
-            cursor.execute("SELECT trading_enabled, trading_mode FROM user_settings WHERE user_id=?", (admin_id,))
+            cursor.execute(
+                "SELECT trading_enabled, trading_mode FROM user_settings WHERE user_id=? AND is_demo=?",
+                (admin_id, is_demo),
+            )
             settings = cursor.fetchone()
             
             cursor.execute("SELECT COUNT(*) FROM successful_coins WHERE is_active=1")
             active_coins = cursor.fetchone()[0]
             
-            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE user_id=? AND is_active=1", (admin_id,))
+            cursor.execute(
+                "SELECT COUNT(*) FROM active_positions WHERE user_id=? AND is_demo=? AND is_active=1",
+                (admin_id, is_demo),
+            )
             active_positions = cursor.fetchone()[0]
             
             result['trading'] = {
                 'enabled': bool(settings[0]) if settings else False,
-                'mode': settings[1] if settings else 'auto',
+                'mode': trading_mode,
                 'active_coins': active_coins,
                 'active_positions': active_positions
             }
@@ -106,7 +115,7 @@ def register_admin_ml_routes(bp, shared):
                     COUNT(*) as total,
                     SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as wins,
                     SUM(profit_loss) as total_pnl
-                FROM user_trades WHERE user_id=? AND is_demo=? AND status='closed'
+                FROM active_positions WHERE user_id=? AND is_demo=? AND is_active=0
             """, (admin_id, is_demo))
             trades_stats = cursor.fetchone()
             
@@ -114,14 +123,16 @@ def register_admin_ml_routes(bp, shared):
             wins = trades_stats[1] or 0
             total_pnl = trades_stats[2] or 0
             
+            balance = float(portfolio[0] or 0) if portfolio else 0.0
+            initial_balance = float(portfolio[1] or 0) if portfolio else 0.0
             result['portfolio'] = {
-                'balance': portfolio[0] if portfolio else 1000,
-                'initial_balance': portfolio[1] if portfolio else 1000,
+                'balance': balance,
+                'initial_balance': initial_balance,
                 'total_pnl': round(total_pnl, 2),
                 'total_trades': total_trades,
                 'winning_trades': wins,
                 'win_rate': round(wins / total_trades * 100, 1) if total_trades > 0 else 0,
-                'growth_pct': round((portfolio[0] - portfolio[1]) / portfolio[1] * 100, 2) if portfolio and portfolio[1] > 0 else 0
+                'growth_pct': round((balance - initial_balance) / initial_balance * 100, 2) if initial_balance > 0 else 0
             }
             
             # 5️⃣ الصفقات النشطة
@@ -147,10 +158,10 @@ def register_admin_ml_routes(bp, shared):
             
             # 6️⃣ النشاط الأخير
             cursor.execute("""
-                SELECT symbol, profit_loss, exit_time
-                FROM user_trades 
-                WHERE user_id=? AND is_demo=? AND status='closed'
-                ORDER BY exit_time DESC
+                SELECT symbol, profit_loss, COALESCE(closed_at, updated_at) as exit_time
+                FROM active_positions 
+                WHERE user_id=? AND is_demo=? AND is_active=0
+                ORDER BY COALESCE(closed_at, updated_at) DESC
                 LIMIT 5
             """, (admin_id, is_demo))
             
@@ -175,16 +186,16 @@ def register_admin_ml_routes(bp, shared):
     def get_ml_backtest_status():
         """حالة التعلم الآلي - نظام Backtest Reliability"""
         try:
-            conn = get_safe_connection(db.db_path)
+            conn = get_safe_connection()
             cursor = conn.cursor()
             
-            cursor.execute("SELECT COUNT(*) FROM user_trades")
+            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0")
             total_trades = cursor.fetchone()[0]
             
-            cursor.execute("SELECT COUNT(DISTINCT symbol) FROM user_trades")
+            cursor.execute("SELECT COUNT(DISTINCT symbol) FROM active_positions WHERE is_active = 0")
             total_symbols = cursor.fetchone()[0]
             
-            cursor.execute("SELECT COUNT(*) FROM user_trades WHERE profit_loss > 0")
+            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0 AND profit_loss > 0")
             winning_trades = cursor.fetchone()[0]
             
             conn.close()
@@ -219,7 +230,7 @@ def register_admin_ml_routes(bp, shared):
     def get_ml_reliability():
         """جلب موثوقية جميع التركيبات - من قاعدة البيانات الفعلية"""
         try:
-            conn = get_safe_connection(db.db_path)
+            conn = get_safe_connection()
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -228,7 +239,8 @@ def register_admin_ml_routes(bp, shared):
                     COUNT(*) as total_trades,
                     SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                     AVG(profit_loss) as avg_profit
-                FROM user_trades
+                FROM active_positions
+                WHERE is_active = 0
                 GROUP BY symbol
                 HAVING COUNT(*) >= 3
                 ORDER BY total_trades DESC
@@ -337,16 +349,22 @@ def register_admin_ml_routes(bp, shared):
             from backend.ml.training_manager import MLTrainingManager
             from backend.ml.signal_classifier import get_ml_classifier
             from backend.ml.independent_learning_system import IndependentLearningSystem
-            
+
+            admin_id = getattr(g, 'current_user_id', None) or getattr(g, 'user_id', None)
+            requested_mode = request.args.get('mode')
+            trading_context = get_trading_context(db, admin_id, requested_mode=requested_mode)
+            trading_mode = trading_context['active_portfolio']
+            is_demo = trading_context['is_demo']
+
             tm = MLTrainingManager()
             classifier = get_ml_classifier()
             ils = IndependentLearningSystem()
-            
+
             ml_metrics = {
                 'accuracy': 0, 'precision': 0, 'recall': 0,
                 'f1_score': 0, 'is_ready': False
             }
-            
+
             if classifier and classifier.enabled:
                 try:
                     status_info = classifier.get_status()
@@ -357,37 +375,77 @@ def register_admin_ml_routes(bp, shared):
                     ml_metrics['is_ready'] = status_info.get('is_ready', False)
                 except Exception as e:
                     logger.debug(f"ML metrics fetch skipped: {e}")
-            
+
             total_samples = len(classifier.accumulated_data) if classifier and hasattr(classifier, 'accumulated_data') else 0
-            is_ready = total_samples >= (classifier.MIN_SAMPLES_FOR_READINESS if classifier else 200)
-            
+            required_samples = classifier.MIN_SAMPLES_FOR_READINESS if classifier else 200
+            is_ready = total_samples >= required_samples
+
+            conn = get_safe_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT trading_enabled FROM user_settings WHERE user_id = ? AND is_demo = ? LIMIT 1",
+                (admin_id, is_demo),
+            )
+            settings = cursor.fetchone()
+            cursor.execute("SELECT COUNT(*) FROM successful_coins WHERE is_active = TRUE")
+            active_coins = cursor.fetchone()[0] or 0
+            cursor.execute(
+                "SELECT COUNT(*) FROM active_positions WHERE user_id = ? AND is_demo = ? AND is_active = TRUE",
+                (admin_id, is_demo),
+            )
+            active_positions = cursor.fetchone()[0] or 0
+            cursor.execute(
+                "SELECT total_balance FROM portfolio WHERE user_id = ? AND is_demo = ? LIMIT 1",
+                (admin_id, is_demo),
+            )
+            portfolio_row = cursor.fetchone()
+            cursor.execute(
+                """
+                SELECT COUNT(*),
+                       SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END)
+                FROM active_positions
+                WHERE user_id = ? AND is_demo = ? AND is_active = FALSE
+                """,
+                (admin_id, is_demo),
+            )
+            trade_stats = cursor.fetchone()
+            conn.close()
+
+            total_trades = trade_stats[0] or 0 if trade_stats else 0
+            winning_trades = trade_stats[1] or 0 if trade_stats else 0
+            balance = float(portfolio_row[0] or 0) if portfolio_row else 0.0
+
             status = {
                 'success': True,
                 'ml': {
                     'enabled': classifier.enabled if classifier else False,
                     'is_ready': is_ready,
                     'total_samples': total_samples,
-                    'required_samples': classifier.MIN_SAMPLES_FOR_READINESS if classifier else 200,
-                    'progress_pct': min((total_samples / (classifier.MIN_SAMPLES_FOR_READINESS if classifier else 200)) * 100, 100),
+                    'required_samples': required_samples,
+                    'progress_pct': min((total_samples / required_samples) * 100, 100) if required_samples > 0 else 0,
                     'accuracy': ml_metrics['accuracy'],
                     'precision': ml_metrics['precision'],
                     'recall': ml_metrics['recall'],
                     'f1_score': ml_metrics['f1_score']
                 },
                 'portfolio': {
-                    'balance': 0, 'total_trades': 0,
-                    'winning_trades': 0, 'win_rate': 0
+                    'balance': balance,
+                    'total_trades': total_trades,
+                    'winning_trades': winning_trades,
+                    'win_rate': round((winning_trades / total_trades) * 100, 1) if total_trades > 0 else 0
                 },
                 'trading': {
-                    'enabled': False, 'mode': 'demo',
-                    'active_coins': 0, 'active_positions': 0
+                    'enabled': bool(settings[0]) if settings else False,
+                    'mode': trading_mode,
+                    'active_coins': active_coins,
+                    'active_positions': active_positions
                 },
                 'patterns': {
                     'total_patterns': ils.learning_stats['patterns_learned'],
                     'live_trades': ils.learning_stats['total_real_trades']
                 }
             }
-            
+
             return jsonify(status)
         except Exception as e:
             logger.error(f"خطأ في جلب حالة ML: {e}")
@@ -453,7 +511,7 @@ def register_admin_ml_routes(bp, shared):
     def get_ml_quality_metrics():
         """مقاييس جودة النموذج والبيانات - من البيانات الفعلية"""
         try:
-            conn = get_safe_connection(db.db_path)
+            conn = get_safe_connection()
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -463,7 +521,8 @@ def register_admin_ml_routes(bp, shared):
                     MAX(profit_loss) as max_profit,
                     MIN(profit_loss) as max_loss,
                     SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as wins
-                FROM user_trades
+                FROM active_positions
+                WHERE is_active = 0
             """)
             
             row = cursor.fetchone()

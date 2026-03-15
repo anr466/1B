@@ -5,10 +5,10 @@
 ====================================
 ملف الخادم الموحد الرئيسي للنظام الثلاثي
 - Backend (FastAPI + Flask)
-- Database (SQLite)
+- Database (PostgreSQL)
 - Mobile App Integration
 
-المسار: /Users/anr/Desktop/trading_ai_bot/start_server.py
+المسار: start_server.py
 الاستخدام: python start_server.py
 البورت: 3002 (موحد)
 """
@@ -21,11 +21,20 @@ import time
 from pathlib import Path
 from dotenv import load_dotenv
 
+PROJECT_ROOT = Path(__file__).parent
+VENV_PYTHON = PROJECT_ROOT / '.venv' / 'bin' / 'python'
+CURRENT_PYTHON = Path(sys.executable).resolve()
+TARGET_VENV_PYTHON = VENV_PYTHON.resolve() if VENV_PYTHON.exists() else None
+
+if TARGET_VENV_PYTHON and CURRENT_PYTHON != TARGET_VENV_PYTHON and not os.getenv('TRADING_AI_BOT_VENV_REEXEC'):
+    env = os.environ.copy()
+    env['TRADING_AI_BOT_VENV_REEXEC'] = '1'
+    os.execve(str(TARGET_VENV_PYTHON), [str(TARGET_VENV_PYTHON), __file__, *sys.argv[1:]], env)
+
 # تحميل متغيرات البيئة من .env
 load_dotenv()
 
 # إضافة المسار الجذري للمشروع
-PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / 'config'))
 sys.path.insert(0, str(PROJECT_ROOT / 'database'))
@@ -71,6 +80,12 @@ if disable_print_in_production():
 
 logger = setup_logging(__name__)
 
+MANAGED_PROCESS_MARKERS = (
+    'start_server.py',
+    'uvicorn',
+    'background_trading_manager.py',
+)
+
 # ============================================================
 # 🔄 نظام إعادة تعيين الحدود اليومية
 # ============================================================
@@ -82,10 +97,6 @@ try:
 except ImportError as e:
     DAILY_RESET_AVAILABLE = False
     logger.warning(f"⚠️ نظام إعادة التعيين اليومي غير متاح: {e}")
-
-# ============================================================
-# CryptoWave Scheduler (via BackgroundControl)
-# ============================================================
 
 # ============================================================
 # 🧹 التنظيف التلقائي عند التشغيل
@@ -101,21 +112,42 @@ def run_auto_cleanup():
     except Exception as e:
         logger.debug(f"⚠️ التنظيف التلقائي: {e}")
 
-# تشغيل التنظيف عند بدء السيرفر
-run_auto_cleanup()
-
 # ============================================================
 # دوال إدارة العمليات والمنافذ
 # ============================================================
 
 def kill_process_on_port(port):
-    """قتل أي عملية تعمل على المنفذ المحدد"""
+    """قتل عملياتنا المدارة فقط على المنفذ المحدد (آمن)."""
+    def _is_managed_process(pid: str) -> bool:
+        try:
+            cmd_result = subprocess.run(
+                ['ps', '-p', pid, '-o', 'command='],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            command = (cmd_result.stdout or '').strip()
+            user_result = subprocess.run(
+                ['ps', '-p', pid, '-o', 'user='],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            process_user = (user_result.stdout or '').strip()
+            current_user = os.getenv('USER', '').strip()
+            has_marker = any(marker in command for marker in MANAGED_PROCESS_MARKERS)
+            belongs_to_project = str(PROJECT_ROOT) in command
+            is_background_manager = 'background_trading_manager.py' in command
+            same_user = bool(current_user) and process_user == current_user
+            return has_marker and (belongs_to_project or is_background_manager or same_user)
+        except Exception:
+            return False
+
     try:
         if sys.platform == 'darwin':  # macOS
             # البحث عن العملية على المنفذ
             result = subprocess.run(
-                f"lsof -ti:{port}",
-                shell=True,
+                ['lsof', '-ti', f':{port}'],
                 capture_output=True,
                 text=True
             )
@@ -123,19 +155,19 @@ def kill_process_on_port(port):
             for pid in pids:
                 if pid:
                     try:
-                        subprocess.run(f"kill -9 {pid}", shell=True)
-                        logger.info(f"✅ تم قتل العملية {pid} على المنفذ {port}")
+                        if _is_managed_process(pid):
+                            subprocess.run(['kill', '-15', pid], check=False)
+                            logger.info(f"✅ تم إيقاف العملية المدارة {pid} على المنفذ {port}")
+                        else:
+                            logger.warning(f"⛔ تخطي PID {pid} على المنفذ {port} لأنه ليس عملية مدارة")
                     except Exception as e:
                         logger.warning(f"⚠️ فشل قتل العملية {pid}: {e}")
         elif sys.platform == 'linux':  # Linux
-            result = subprocess.run(
-                f"fuser -k {port}/tcp",
-                shell=True,
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                logger.info(f"✅ تم قتل العملية على المنفذ {port}")
+            result = subprocess.run(['lsof', '-ti', f':{port}'], capture_output=True, text=True, check=False)
+            for pid in result.stdout.strip().split('\n'):
+                if pid and _is_managed_process(pid):
+                    subprocess.run(['kill', '-15', pid], check=False)
+                    logger.info(f"✅ تم إيقاف العملية المدارة {pid} على المنفذ {port}")
         elif sys.platform == 'win32':  # Windows
             subprocess.run(
                 f"netstat -ano | findstr :{port}",
@@ -204,11 +236,20 @@ def start_background_services():
 
 def cleanup_on_exit():
     """تنظيف الموارد عند الإيقاف"""
-    logger.info("🧹 تنظيف الموارد...")
+    def _safe_log(msg: str):
+        try:
+            logger.info(msg)
+        except Exception:
+            pass
+
     try:
-        pass  # No cleanup needed currently
+        _safe_log("🧹 تنظيف الموارد...")
+        from database.database_manager import DatabaseManager
+        db = DatabaseManager()
+        db.close()
+        _safe_log("✅ تم إغلاق اتصالات قاعدة البيانات")
     except Exception as e:
-        logger.error(f"❌ خطأ في التنظيف: {e}")
+        logger.debug(f"ℹ️ تنظيف: {e}")
 
 
 # ============================================================
@@ -251,21 +292,10 @@ API_INFO = {
 }
 
 # ============================================================
-# CORS Middleware - تقييد للأمان
+# 🔒 CORS Configuration
 # ============================================================
 
-# ============================================================
-# 🔒 CORS Configuration - قائمة المصادر المسموح بها
-# ============================================================
-# ✅ تم إزالة "*" لمنع هجمات CSRF
-# ✅ يمكن إضافة domains إضافية حسب الحاجة
-
-import os
 ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
-
-# ============================================================
-# 🔒 CORS Configuration - مُبسط ومرن
-# ============================================================
 
 if ENVIRONMENT == 'development':
     # التطوير: regex مرن لأي IP على المنافذ الصحيحة
@@ -365,28 +395,6 @@ async def get_connection_info():
 
 
 # ============================================================
-# ❌ تم حذف FastAPI endpoints المكررة
-# ============================================================
-# السبب: Flask mounted على /api يعني أن FastAPI endpoints
-# في /api/* لن تعمل أبداً (Flask يلتقطها أولاً)
-# جميع /api/* endpoints موجودة في Flask blueprints
-# ============================================================
-
-
-# ============================================================
-# ❌ تم إزالة Endpoints المكررة بقيم ثابتة
-# ============================================================
-# الـ endpoints التالية موجودة في Flask (admin_unified_api.py) مع بيانات حقيقية:
-# - /api/admin/statistics → /api/admin/system/stats
-# - /api/admin/reports → /api/admin/reports (Flask)
-# - /api/admin/system-status → /api/admin/system/status (Flask)
-# - /api/admin/settings → /api/admin/settings (Flask)
-# - /api/admin/database-info → /api/admin/database/info (Flask)
-# - /api/admin/coins → /api/admin/coins (Flask)
-# - /api/admin/strategies → /api/admin/strategies (Flask)
-# ============================================================
-
-# ============================================================
 # إنشاء Flask App وتسجيل Blueprints
 # ============================================================
 
@@ -394,7 +402,7 @@ flask_app = Flask(__name__)
 flask_app.config['JSON_AS_ASCII'] = False
 
 # ============================================================
-# � Flask CORS Configuration
+# 🔒 Flask CORS Configuration
 # ============================================================
 
 try:
@@ -541,12 +549,6 @@ except Exception as e:
     blueprints_failed.append(f"Trading Control API: {e}")
     logger.error(f"❌ Trading Control API: {e}")
 
-# تسجيل Group A Control
-# ❌ REMOVED: Group A System is legacy and was removed from the codebase
-# The file backend/api/group_a_control.py no longer exists
-# Group A functionality has been replaced by CryptoWave unified system
-# Historical reference: Group A was for backtesting/coin selection (now integrated into CryptoWave)
-
 # تسجيل Smart Exit API
 try:
     from backend.api.smart_exit_api import smart_exit_bp
@@ -584,44 +586,38 @@ try:
     blueprints_loaded.append("Login OTP Endpoints (3 endpoints)")
     logger.debug("✅ Login OTP Endpoints loaded")
 except Exception as e:
-    logger.warning(f"⚠️ Failed to load Login OTP Endpoints: {e}")
+    blueprints_failed.append(f"Login OTP: {e}")
+    logger.error(f"❌ Login OTP Endpoints: {e}")
 
-# تسجيل Client Logs Endpoint (لتوحيد السجلات)
+# تسجيل Client Logs Endpoint
 try:
     from backend.api.client_logs_endpoint import client_logs_bp
     flask_app.register_blueprint(client_logs_bp)
     blueprints_loaded.append("Client Logs Endpoint (2 endpoints)")
     logger.debug("✅ Client Logs Endpoint loaded")
 except Exception as e:
-    logger.error(f"❌ فشل تحميل Client Logs Endpoint: {e}")
+    blueprints_failed.append(f"Client Logs: {e}")
+    logger.error(f"❌ Client Logs Endpoint: {e}")
 
-# تسجيل ML Status Endpoints (حالة التعلم الآلي)
+# تسجيل ML Status Endpoints
 try:
     from backend.api.ml_status_endpoints import ml_status_bp
     flask_app.register_blueprint(ml_status_bp)
     blueprints_loaded.append("ML Status Endpoints (5 endpoints)")
     logger.debug("✅ ML Status Endpoints loaded")
 except Exception as e:
-    logger.error(f"❌ خطأ في تحميل ML Status Endpoints: {e}")
+    blueprints_failed.append(f"ML Status: {e}")
+    logger.error(f"❌ ML Status Endpoints: {e}")
 
-# تسجيل ML Learning Endpoints (نظام التعلم الذكي الجديد)
+# تسجيل ML Learning Endpoints
 try:
     from backend.api.ml_learning_endpoints import ml_learning_bp
     flask_app.register_blueprint(ml_learning_bp)
-    blueprints_loaded.append("ML Learning Endpoints (6 endpoints - Smart Incremental Learning)")
+    blueprints_loaded.append("ML Learning Endpoints (6 endpoints)")
     logger.debug("✅ ML Learning Endpoints loaded")
 except Exception as e:
-    logger.error(f"❌ خطأ في تحميل ML Learning Endpoints: {e}")
-
-# تسجيل CryptoWave API Endpoints (نظام التداول الموحد)
-try:
-    from backend.cryptowave.api_endpoints import cryptowave_bp
-    flask_app.register_blueprint(cryptowave_bp)
-    blueprints_loaded.append("CryptoWave API Endpoints (6 endpoints)")
-    logger.debug("✅ CryptoWave API Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"CryptoWave API: {e}")
-    logger.error(f"❌ CryptoWave API: {e}")
+    blueprints_failed.append(f"ML Learning: {e}")
+    logger.error(f"❌ ML Learning Endpoints: {e}")
 
 logger.info(f"✅ تم تحميل {len(blueprints_loaded)} Blueprints بنجاح")
 
@@ -639,7 +635,6 @@ logger.debug("✅ Flask mounted على /api")
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """تسجيل الطلبات مع معالجة الأخطاء لضمان استمرارية الخادم"""
-    import time
     from fastapi.responses import JSONResponse
     
     start_time = time.time()
@@ -702,10 +697,6 @@ def signal_handler(sig, frame):
     cleanup_on_exit()
     sys.exit(0)
 
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-atexit.register(cleanup_on_exit)
-
 # ============================================================
 # التشغيل
 # ============================================================
@@ -716,6 +707,14 @@ if __name__ == "__main__":
     # ============================================================
     
     PORT = 3002
+
+    # تشغيل التنظيف التلقائي فقط عند التشغيل الفعلي (وليس عند import)
+    run_auto_cleanup()
+
+    # تسجيل الإشارات فقط أثناء التشغيل الفعلي لتجنب side effects أثناء الاستيراد
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    atexit.register(cleanup_on_exit)
     
     # فحص المنفذ
     logger.info(f"Starting server on port {PORT}")
@@ -760,6 +759,17 @@ if __name__ == "__main__":
     # تشغيل الخدمات الإضافية
     start_daily_summary_service()
     start_background_services()  # ✅ بدء Daily Reset Scheduler
+    
+    # بدء مجدول تنظيف الإشعارات
+    try:
+        from backend.schedulers.notification_cleanup_scheduler import start_notification_scheduler
+        notification_scheduler = start_notification_scheduler()
+        if notification_scheduler:
+            logger.info("✅ تم بدء مجدول تنظيف الإشعارات")
+        else:
+            logger.warning("⚠️ فشل بدء مجدول تنظيف الإشعارات")
+    except Exception as e:
+        logger.error(f"❌ خطأ في بدء مجدول تنظيف الإشعارات: {e}")
     
     # Startup confirmation with smart connection info
     print("")

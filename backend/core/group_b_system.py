@@ -18,12 +18,15 @@ Group B System - نظام التداول الموحد الرئيسي
     result = system.run_trading_cycle()
 """
 
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import pandas as pd
+import logging
+import math
 
+from config.logging_config import get_logger
 from database.database_manager import DatabaseManager
+from backend.utils.trading_context import get_effective_is_demo
 from backend.utils.data_provider import DataProvider
 from backend.risk.kelly_position_sizer import KellyPositionSizer
 from backend.risk.portfolio_heat_manager import PortfolioHeatManager
@@ -51,7 +54,15 @@ except ImportError as e:
 # ===== واجهة الاستراتيجية الموحدة =====
 from backend.strategies.base_strategy import BaseStrategy
 
-# ===== نظام السكالبينج V7 (المحرك الأساسي للتداول) =====
+# ===== نظام السكالبينج V8 (المحرك المحسّن) =====
+try:
+    from backend.strategies.scalping_v8_strategy import ScalpingV8Strategy, get_scalping_v8_strategy
+    SCALPING_V8_AVAILABLE = True
+except ImportError as e:
+    SCALPING_V8_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"⚠️ Scalping V8 Strategy not available: {e}")
+
+# ===== نظام السكالبينج V7 (احتياطي) =====
 try:
     from backend.strategies.scalping_v7_strategy import ScalpingV7Strategy, get_scalping_v7_strategy
     SCALPING_V7_AVAILABLE = True
@@ -78,7 +89,19 @@ from backend.core.position_manager import PositionManagerMixin
 from backend.core.scanner_mixin import ScannerMixin
 from backend.core.risk_manager_mixin import RiskManagerMixin
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+
+DEFAULT_SYMBOLS_POOL = [
+    'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'AVAXUSDT',
+    'NEARUSDT', 'SUIUSDT', 'ARBUSDT', 'APTUSDT',
+    'INJUSDT', 'LINKUSDT'
+]
+
+STABLE_BASE_ASSETS = {
+    'USDT', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'USDP', 'DAI', 'USDJ', 'USDD',
+    'PYUSD', 'EUR', 'EURC', 'AEUR'
+}
 
 
 class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
@@ -108,10 +131,10 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         
         # جلب إعدادات المستخدم
         self.user_settings = self._load_user_settings()
-        self.user_portfolio = self._load_user_portfolio()
         
         # تحديد نوع التداول (محفظتان منفصلتان للأدمن)
         self.is_demo_trading = self._determine_trading_mode()
+        self.user_portfolio = self._load_user_portfolio()
         self.can_trade = self.user_settings.get('trading_enabled', False)
         
         # ===== المكونات النشطة فقط =====
@@ -122,6 +145,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.heat_manager = PortfolioHeatManager(max_heat_pct=6.0)
         self.notification_service = get_trading_notification_service()
         self.ml_training_manager = MLTrainingManager()
+        self.ml_training_manager.start_cycle()
         # فلتر السيولة/المعرفة فوق الاستراتيجية الأساسية (V7)
         self.liquidity_filter = None
         try:
@@ -153,10 +177,17 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         # القانون: النظام لا يعرف أي استراتيجية يشغّل — يستخدم الواجهة فقط
         self.strategy: Optional[BaseStrategy] = None
         
-        if SCALPING_V7_AVAILABLE:
+        if SCALPING_V8_AVAILABLE:
+            try:
+                self.strategy = get_scalping_v8_strategy()
+                self.logger.info(f"🚀 Strategy loaded: ScalpingV8 (PRIMARY — PF=1.72 WR=62%)")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Scalping V8 Strategy init failed: {e}")
+        
+        if not self.strategy and SCALPING_V7_AVAILABLE:
             try:
                 self.strategy = get_scalping_v7_strategy()
-                self.logger.info(f"🚀 Strategy loaded: {self.strategy} (PRIMARY)")
+                self.logger.info(f"🚀 Strategy loaded: ScalpingV7 (FALLBACK)")
             except Exception as e:
                 self.logger.warning(f"⚠️ Scalping V7 Strategy init failed: {e}")
         
@@ -231,12 +262,13 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.logger.info(f"   🛡️ Risk Protection: Heat={self.heat_manager.max_heat_pct}% | DailyLimit={self.daily_state['max_daily_trades']} | MaxLoss={self.daily_state['max_daily_loss_pct']*100}%")
     
     def _load_user_settings(self) -> Dict:
-        """جلب إعدادات المستخدم من قاعدة البيانات"""
+        """جلب إعدادات المستخدم من قاعدة البيانات حسب المحفظة الفعلية."""
         try:
-            settings = self.db.get_trading_settings(self.user_id)
+            effective_is_demo = get_effective_is_demo(self.db, self.user_id)
+            settings = self.db.get_trading_settings(self.user_id, is_demo=effective_is_demo)
             return settings or {
                 'trading_enabled': False,
-                'trading_mode': 'real',
+                'trading_mode': 'demo' if effective_is_demo else 'real',
                 'risk_level': 'medium'
             }
         except Exception as e:
@@ -246,18 +278,19 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
     def _load_user_portfolio(self) -> Dict:
         """جلب محفظة المستخدم من الجدول الموحد portfolio"""
         try:
-            portfolio = self.db.get_user_portfolio(self.user_id)
+            portfolio = self.db.get_user_portfolio(self.user_id, is_demo=1 if self.is_demo_trading else 0)
             if portfolio and not portfolio.get('error'):
+                balance = float(portfolio.get('balance', 0.0) or 0.0)
                 return {
-                    'balance': portfolio.get('balance', 1000.0),
-                    'total_value': portfolio.get('balance', 1000.0),
-                    'available_balance': portfolio.get('balance', 1000.0),
+                    'balance': balance,
+                    'total_value': balance,
+                    'available_balance': balance,
                     'source': 'portfolio_unified'
                 }
-            return {'balance': 1000.0, 'total_value': 1000.0, 'available_balance': 1000.0, 'source': 'default'}
+            return {'balance': 0.0, 'total_value': 0.0, 'available_balance': 0.0, 'source': 'default'}
         except Exception as e:
             self.logger.error(f"Error loading unified portfolio: {e}")
-            return {'balance': 1000.0, 'total_value': 1000.0, 'available_balance': 1000.0, 'source': 'error_fallback'}
+            return {'balance': 0.0, 'total_value': 0.0, 'available_balance': 0.0, 'source': 'error_fallback'}
     
     def _determine_trading_mode(self) -> bool:
         """
@@ -265,15 +298,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         ✅ الأدمن يختار محفظة واحدة فقط (Demo أو Real)
         ✅ المستخدمون العاديون: حقيقي فقط
         """
-        user = self.db.get_user_by_id(self.user_id)
-        
-        if user and user.get('user_type') == 'admin':
-            trading_mode = self.user_settings.get('trading_mode', 'auto')
-            # الأدمن: يختار محفظة واحدة فقط
-            return trading_mode == 'demo'
-        
-        # المستخدم العادي: حقيقي فقط (لا يوجد تداول وهمي)
-        return False
+        return bool(get_effective_is_demo(self.db, self.user_id))
     
     # ===== Risk methods: see risk_manager_mixin.py =====
     # _calculate_position_size, _restore_daily_state_from_db, _reset_daily_state_if_needed
@@ -290,41 +315,200 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
     
     def _get_trading_symbols(self) -> List[str]:
         """
-        الحصول على قائمة العملات للتداول
+        الحصول على قائمة العملات للتداول من قاعدة البيانات
         
-        ===== الخوارزمية الذهبية V4 - مُحدّث فبراير 2026 =====
-        
-        ✅ Tier 1 - سيولة عالية وأداء مستقر:
-           ETHUSDT, BNBUSDT
-        
-        ✅ Tier 2 - تقلب متوسط مع فرص جيدة:
-           SOLUSDT, AVAXUSDT, NEARUSDT, SUIUSDT
-        
-        ✅ Tier 3 - فرص انعكاس وتنويع:
-           ARBUSDT, APTUSDT, INJUSDT, LINKUSDT
-        
-        المبادئ:
-        - تنويع عبر قطاعات مختلفة (L1, L2, DeFi)
-        - حجم تداول يومي > $50M
-        - القائمة السوداء الديناميكية تتولى استبعاد الأسوأ تلقائياً
+        ✅ يحمّل من successful_coins مع ترتيب محافظ وآمن
+        ✅ لا يغير منطق الاستراتيجية — فقط يحسن universe selection
         """
-        return [
-            # === Tier 1: سيولة عالية + أداء مستقر ===
-            'ETHUSDT',    # ETH - ثاني أكبر عملة، اتجاهات واضحة
-            'BNBUSDT',    # BNB - سيولة عالية، تقلب معتدل
-            
-            # === Tier 2: تقلب متوسط مع فرص جيدة ===
-            'SOLUSDT',    # SOL - L1 سريع، حجم تداول ضخم
-            'AVAXUSDT',   # AVAX - L1 مع تقلب جيد
-            'NEARUSDT',   # NEAR - AI + L1، زخم قوي
-            'SUIUSDT',    # SUI - L1 جديد، تقلب مناسب للتداول
-            
-            # === Tier 3: تنويع وفرص انعكاس ===
-            'ARBUSDT',    # ARB - L2 رائد
-            'APTUSDT',    # APT - L1 Move-based
-            'INJUSDT',    # INJ - DeFi derivatives
-            'LINKUSDT',   # LINK - Oracle leader
-        ]
+        try:
+            rows = self._load_successful_coin_rows()
+            if not rows:
+                self.logger.warning("⚠️ لا توجد عملات في DB - استخدام القائمة الافتراضية")
+                return DEFAULT_SYMBOLS_POOL.copy()
+
+            ranked_rows = self._rank_successful_coin_rows(rows)
+            if not ranked_rows:
+                self.logger.warning("⚠️ تعذر بناء ranked candidates - استخدام القائمة الافتراضية")
+                return DEFAULT_SYMBOLS_POOL.copy()
+
+            symbols = self._refine_trading_symbol_candidates(ranked_rows)
+            self.logger.info(
+                f"✅ تم اختيار {len(symbols)} عملة للتداول من successful_coins "
+                f"(candidates={len(ranked_rows)})"
+            )
+            return symbols
+        except Exception as e:
+            self.logger.error(f"❌ خطأ في تحميل العملات: {e}")
+            return DEFAULT_SYMBOLS_POOL.copy()
+
+    def _load_successful_coin_rows(self) -> List[tuple]:
+        with self.db.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT symbol, score, win_rate, total_trades, profit_pct, analysis_date
+                FROM successful_coins 
+                WHERE is_active = TRUE 
+                ORDER BY score DESC
+                LIMIT 50
+            """)
+            return cursor.fetchall()
+
+    def _rank_successful_coin_rows(self, rows: List[tuple]) -> List[tuple]:
+        ranked_rows = []
+        seen = set()
+
+        for row in rows:
+            raw_symbol = row[0]
+            symbol = self._normalize_trading_symbol(raw_symbol)
+            if not symbol or symbol in seen:
+                continue
+
+            score = self._safe_float(row[1], 0.0)
+            win_rate = self._safe_float(row[2], 0.0)
+            total_trades = max(0, int(self._safe_float(row[3], 0.0)))
+            profit_pct = self._safe_float(row[4], 0.0)
+            freshness_bonus = self._successful_coin_freshness_bonus(row[5])
+
+            composite_score = self._build_symbol_composite_score(
+                score=score,
+                win_rate=win_rate,
+                total_trades=total_trades,
+                profit_pct=profit_pct,
+                freshness_bonus=freshness_bonus,
+            )
+
+            ranked_rows.append((symbol, composite_score, score, win_rate, total_trades))
+            seen.add(symbol)
+
+        ranked_rows.sort(key=lambda item: item[1], reverse=True)
+        return ranked_rows
+
+    def _build_symbol_composite_score(self, score: float, win_rate: float,
+                                      total_trades: int, profit_pct: float,
+                                      freshness_bonus: float) -> float:
+        return (
+            (score * 0.55) +
+            (min(100.0, win_rate * 100.0) * 0.20) +
+            (min(12.0, math.log1p(total_trades) * 4.0)) +
+            (max(-8.0, min(8.0, profit_pct)) * 0.50) +
+            freshness_bonus
+        )
+
+    def _normalize_trading_symbol(self, symbol: Optional[str]) -> str:
+        """تطبيع الرمز إلى صيغة Binance الموحدة مثل ETHUSDT."""
+        if not symbol:
+            return ''
+        return str(symbol).upper().replace('/', '').replace('-', '').strip()
+
+    def _extract_base_asset(self, symbol: str) -> str:
+        normalized = self._normalize_trading_symbol(symbol)
+        for quote in ('USDT', 'BUSD', 'USDC', 'FDUSD', 'TUSD', 'USDP'):
+            if normalized.endswith(quote) and len(normalized) > len(quote):
+                return normalized[:-len(quote)]
+        return normalized
+
+    def _is_stable_like_symbol(self, symbol: str) -> bool:
+        base_asset = self._extract_base_asset(symbol)
+        return base_asset in STABLE_BASE_ASSETS
+
+    def _passes_movement_filter(self, symbol: str) -> bool:
+        provider = self._get_symbol_filter_data_provider()
+        try:
+            df = provider.get_historical_data(symbol, '1h', limit=96)
+            if df is None or len(df) < 48:
+                return True
+
+            metrics = self._calculate_symbol_movement_metrics(df)
+            if not metrics:
+                return True
+
+            range_pct = metrics['range_pct']
+            atr_pct = metrics['atr_pct']
+
+            if range_pct < 2.5:
+                self.logger.info(f"⏭️ Excluding {symbol}: low movement range={range_pct:.2f}%")
+                return False
+
+            if atr_pct is not None and atr_pct < 0.35:
+                self.logger.info(f"⏭️ Excluding {symbol}: low ATR={atr_pct:.2f}%")
+                return False
+
+            return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Movement filter skipped for {symbol}: {e}")
+            return True
+
+    def _get_symbol_filter_data_provider(self):
+        return getattr(self, 'data_provider', None) or DataProvider()
+
+    def _calculate_symbol_movement_metrics(self, df: pd.DataFrame) -> Optional[Dict[str, float]]:
+        recent = df.tail(48)
+        high = recent['high'].max()
+        low = recent['low'].min()
+        close = recent['close'].iloc[-1]
+
+        if close <= 0 or low <= 0:
+            return None
+
+        range_pct = ((high - low) / close) * 100.0
+        atr_pct = None
+        if {'high', 'low', 'close'}.issubset(df.columns):
+            tr = (df['high'] - df['low']).tail(24)
+            atr = tr.mean() if not tr.empty else 0
+            atr_pct = (atr / close) * 100.0 if close > 0 else 0.0
+
+        return {
+            'range_pct': range_pct,
+            'atr_pct': atr_pct,
+        }
+
+    def _refine_trading_symbol_candidates(self, ranked_rows: List[tuple]) -> List[str]:
+        selected: List[str] = []
+        fallback: List[str] = []
+
+        for symbol, *_ in ranked_rows[:24]:
+            fallback.append(symbol)
+
+            if self._is_stable_like_symbol(symbol):
+                self.logger.info(f"⏭️ Excluding {symbol}: stable-like base asset")
+                continue
+
+            if not self._passes_movement_filter(symbol):
+                continue
+
+            selected.append(symbol)
+            if len(selected) >= 18:
+                break
+
+        if len(selected) >= 8:
+            return selected
+
+        return fallback[:18] if fallback else DEFAULT_SYMBOLS_POOL.copy()
+
+    def _safe_float(self, value, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _successful_coin_freshness_bonus(self, analysis_date) -> float:
+        """مكافأة بسيطة للعملات التي تم تحليلها حديثاً بدون إفراط."""
+        if not analysis_date:
+            return 0.0
+        try:
+            raw = str(analysis_date).replace('Z', '+00:00')
+            analyzed_at = datetime.fromisoformat(raw)
+            if analyzed_at.tzinfo is not None:
+                analyzed_at = analyzed_at.replace(tzinfo=None)
+            age_hours = max(0.0, (datetime.now() - analyzed_at).total_seconds() / 3600)
+            if age_hours <= 12:
+                return 8.0
+            if age_hours <= 24:
+                return 5.0
+            if age_hours <= 72:
+                return 2.0
+            return 0.0
+        except Exception:
+            return 0.0
     
     def load_successful_coins_from_database(self) -> bool:
         """
@@ -334,26 +518,14 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             True إذا تم تحميل عملات بنجاح
         """
         try:
-            # جلب العملات الناجحة من جدول successful_coins
-            with self.db.get_connection() as conn:
-                cursor = conn.execute("""
-                    SELECT symbol, strategy, score
-                    FROM successful_coins 
-                    WHERE is_active = 1 
-                    ORDER BY score DESC
-                    LIMIT 20
-                """)
-                rows = cursor.fetchall()
-                
-                if rows:
-                    # تحديث قائمة العملات للتداول
-                    symbols = [row[0] for row in rows]
-                    self.config['symbols_pool'] = symbols
-                    self.logger.info(f"✅ تم تحميل {len(symbols)} عملة ناجحة من قاعدة البيانات")
-                    return True
-                else:
-                    self.logger.debug("⚠️ لا توجد عملات ناجحة في قاعدة البيانات")
-                    return False
+            symbols = self._get_trading_symbols()
+            if symbols:
+                self.config['symbols_pool'] = symbols
+                self.logger.info(f"✅ تم تحديث symbols_pool بعدد {len(symbols)} عملة")
+                return True
+
+            self.logger.debug("⚠️ لا توجد عملات ناجحة في قاعدة البيانات")
+            return False
                     
         except Exception as e:
             self.logger.error(f"❌ خطأ في تحميل العملات من قاعدة البيانات: {e}")
@@ -361,40 +533,14 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
     
     def load_successful_coins_from_file(self) -> bool:
         """
-        تحميل العملات الناجحة من ملف JSON (احتياطي)
+        DEPRECATED: لا يُستخدم — النظام يحمل من قاعدة البيانات فقط
+        تم الاحتفاظ به للتوافق الخلفي فقط
         
         Returns:
-            True إذا تم تحميل عملات بنجاح
+            False دائماً — استخدم load_successful_coins_from_database()
         """
-        import json
-        from pathlib import Path
-        
-        try:
-            # البحث عن ملف العملات الناجحة
-            file_path = Path(__file__).parent.parent.parent / 'data' / 'successful_coins.json'
-            
-            if not file_path.exists():
-                # محاولة المسار البديل
-                file_path = Path(__file__).parent.parent.parent / 'successful_coins.json'
-            
-            if file_path.exists():
-                with open(file_path, 'r') as f:
-                    data = json.load(f)
-                    
-                if data and 'coins' in data:
-                    symbols = [coin.get('symbol') for coin in data['coins'] if coin.get('symbol')]
-                    if symbols:
-                        self.config['symbols_pool'] = symbols
-                        self.logger.info(f"✅ تم تحميل {len(symbols)} عملة من الملف")
-                        return True
-            
-            # استخدام القائمة الافتراضية
-            self.logger.debug("⚠️ استخدام القائمة الافتراضية للعملات")
-            return len(self.config.get('symbols_pool', [])) > 0
-            
-        except Exception as e:
-            self.logger.error(f"❌ خطأ في تحميل العملات من الملف: {e}")
-            return False
+        self.logger.warning("⚠️ load_successful_coins_from_file deprecated — النظام يستخدم DB فقط")
+        return False
     
     def run_monitoring_only(self) -> Dict:
         """
@@ -495,13 +641,21 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 max_affordable = int(available_balance / position_size) if position_size > 0 else 0
                 effective_max = min(user_max_positions, max_affordable)
                 
+                self.logger.info(f"🔍 Scan check: open={len(open_positions)}, max={effective_max}, can_scan={len(open_positions) < effective_max}")
+                
                 if len(open_positions) < effective_max:
+                    self.logger.info(f"🚀 Starting scan for user {self.user_id}...")
                     new_entries = self._scan_for_entries()
+                    self.logger.info(f"✅ Scan complete: {len(new_entries)} entries found")
                     for entry in new_entries:
                         result['actions'].append(entry)
                         result['new_positions'] += 1
+                else:
+                    self.logger.info(f"⏸️ Max positions reached ({len(open_positions)}/{effective_max})")
             elif self.can_trade and (position_size_pct <= 0 or user_max_positions <= 0):
                 self.logger.warning(f"⚠️ User {self.user_id}: trading enabled but settings incomplete (size={position_size_pct}%, max={user_max_positions})")
+            else:
+                self.logger.debug(f"⏸️ Not scanning: can_trade={self.can_trade}, balance={available_balance}, size_pct={position_size_pct}, max_pos={user_max_positions}")
             
         except Exception as e:
             result['errors'].append(f"Cycle error: {e}")

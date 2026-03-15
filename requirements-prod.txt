@@ -19,6 +19,8 @@ python-multipart==0.0.20      # Form data parsing
 # ============================================================================
 slowapi==0.1.9                # Rate limiting for FastAPI
 limits==4.2                   # Rate limiting library
+Flask-Limiter==3.5.0          # Rate limiting for legacy Flask routes
+bcrypt==4.1.1                 # Password hashing for auth endpoints
 cryptography==46.0.3          # Encryption & security
 
 # ============================================================================
@@ -35,6 +37,9 @@ numpy==2.2.6                  # Numerical computing
 pandas==2.3.3                 # Data manipulation
 pandas-ta==0.4.71b0           # Technical analysis indicators
 scipy==1.16.3                 # Scientific computing
+scikit-learn==1.8.0           # ML preprocessing/classification
+joblib==1.5.3                 # Model/scaler persistence
+xgboost==3.2.0                # ML signal classifier backend
 
 # ============================================================================
 # 5. Backtesting
@@ -72,11 +77,18 @@ dnspython==2.8.0              # DNS support for email validation
 # 10. Configuration
 # ============================================================================
 python-dotenv==1.2.1          # Environment variables
+psycopg2-binary==2.9.10       # PostgreSQL driver
 
 # ============================================================================
-# 11. Legacy (Flask - قد يتم حذفه في المستقبل)
+# 11. Monitoring & System Health
+# ============================================================================
+psutil==7.2.2                 # System health monitor (CPU/MEM/Disk)
+
+# ============================================================================
+# 12. Legacy (Flask - قد يتم حذفه في المستقبل)
 # ============================================================================
 Flask==3.1.2                  # Flask framework (legacy)
+flask-cors==4.0.0             # CORS support for legacy Flask routes
 
 # ============================================================================
 # ملاحظات مهمة:

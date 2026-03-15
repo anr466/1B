@@ -21,8 +21,8 @@ class SystemStateRecovery:
     """
     
     def __init__(self):
-        self.db_path = Path(__file__).parent.parent.parent / 'database' / 'trading_database.db'
         self.db_manager = DatabaseManager()
+        self.pid_file = Path(__file__).parent.parent.parent / 'tmp' / 'system.pid'
     
     def check_and_sync_state(self):
         """
@@ -64,6 +64,11 @@ class SystemStateRecovery:
     def _check_process_running(self):
         """فحص ما إذا كانت العملية تعمل فعلياً"""
         try:
+            if self.pid_file.exists():
+                pid_text = self.pid_file.read_text(encoding='utf-8').strip()
+                if pid_text.isdigit():
+                    return True
+
             result = subprocess.run(
                 ['pgrep', '-f', 'background_trading_manager.py'],
                 capture_output=True,
@@ -115,7 +120,7 @@ class SystemStateRecovery:
                 
                 conn.execute("""
                     UPDATE system_status 
-                    SET status = ?, trading_state = ?, is_running = ?, last_update = datetime('now'), message = ?
+                    SET status = ?, trading_state = ?, is_running = ?, last_update = CURRENT_TIMESTAMP, message = ?
                     WHERE id = 1
                 """, (status, trading_state, is_running, message))
             

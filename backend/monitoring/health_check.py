@@ -5,7 +5,6 @@ Health Check Service - للتأكد من عمل جميع المكونات
 """
 
 import logging
-import sqlite3
 import psutil
 import time
 from typing import Dict, Any, Optional
@@ -20,33 +19,41 @@ class HealthCheckService:
     تفحص جميع المكونات وتُنبّه عند وجود مشاكل
     """
     
-    def __init__(self, db_path: str = "database/trading_database.db"):
-        self.db_path = db_path
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
         
     def check_all(self) -> Dict[str, Any]:
         """
         فحص شامل لجميع المكونات
         """
+        components = {
+            'backend': self.check_backend(),
+            'database': self.check_database(),
+            'binance_api': self.check_binance_api(),
+            'system_resources': self.check_system_resources()
+        }
+        statuses = [str(component.get('status', 'unknown')).lower() for component in components.values()]
+        if any(status == 'unhealthy' for status in statuses):
+            overall_status = 'unhealthy'
+        elif any(status in ('degraded', 'unknown') for status in statuses):
+            overall_status = 'degraded'
+        else:
+            overall_status = 'healthy'
         return {
             'timestamp': datetime.now().isoformat(),
-            'overall_status': 'healthy',  # healthy, degraded, unhealthy
-            'components': {
-                'backend': self.check_backend(),
-                'database': self.check_database(),
-                'binance_api': self.check_binance_api(),
-                'system_resources': self.check_system_resources()
-            }
+            'overall_status': overall_status,
+            'components': components
         }
     
     def check_backend(self) -> Dict[str, Any]:
         """فحص حالة Backend"""
         try:
-            # Backend يعمل إذا استطعنا تشغيل هذا الكود
+            uptime_seconds = self._get_uptime()
+            status = 'healthy' if uptime_seconds > 0 else 'degraded'
             return {
-                'status': 'healthy',
+                'status': status,
                 'message': 'Backend is running',
-                'uptime_seconds': self._get_uptime()
+                'uptime_seconds': uptime_seconds
             }
         except Exception as e:
             return {
@@ -58,27 +65,23 @@ class HealthCheckService:
         """فحص حالة قاعدة البيانات"""
         try:
             start_time = time.time()
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
             from database.database_manager import DatabaseManager
             db = DatabaseManager()
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
+                cursor.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"
+                )
                 table_count = cursor.fetchone()[0]
-            
-            # فحص حجم قاعدة البيانات
-            import os
-            db_size_mb = os.path.getsize(self.db_path) / (1024 * 1024)
-            
-            response_time = (time.time() - start_time) * 1000  # ms
-            
+
+            response_time = (time.time() - start_time) * 1000
             status = 'healthy' if response_time < 100 else 'degraded'
-            
+
             return {
                 'status': status,
                 'message': 'Database connected',
+                'engine': 'postgresql',
                 'tables': table_count,
-                'size_mb': round(db_size_mb, 2),
                 'response_time_ms': round(response_time, 2)
             }
             
@@ -153,8 +156,8 @@ class HealthCheckService:
     def _get_uptime(self) -> float:
         """حساب uptime للنظام (بالثواني)"""
         try:
-            import os
-            return time.time() - os.path.getctime('/proc/self')
+            boot_time = psutil.boot_time()
+            return max(0.0, time.time() - boot_time)
         except Exception:
             return 0.0
 

@@ -20,7 +20,7 @@ from config.logging_config import get_logger
 
 # استيراد خدمات OTP
 try:
-    from utils.firebase_sms_service import FirebaseSMSHandler
+    from backend.utils.firebase_sms_service import FirebaseSMSHandler
     sms_service = FirebaseSMSHandler()
 except ImportError:
     sms_service = None
@@ -54,7 +54,7 @@ def generate_otp():
 # ❌ DELETED: get_user_by_identifier() - Moved to unified service
 # Reason: Duplicate implementation
 # Replacement: backend/utils/user_lookup_service.py
-from backend.utils.user_lookup_service import get_user_by_identifier
+from backend.utils.user_lookup_service import get_user_by_identifier, get_user_by_id
 
 @login_otp_bp.route('/send-otp', methods=['POST'])
 def send_login_otp():
@@ -63,7 +63,7 @@ def send_login_otp():
         # Timeout: 10 ثوانِ للطلب
         request.environ.get('werkzeug.server.shutdown')
         
-        data = request.get_json(force=True) or {}
+        data = request.get_json(silent=True) or {}
         
         identifier = data.get('identifier', '').strip()  # إيميل أو يوزر
         password = data.get('password', '')
@@ -166,7 +166,7 @@ def send_login_otp():
             'message': f'تم إرسال رمز التحقق إلى {"هاتفك" if method == "sms" else "إيميلك"}',
             'method': method,
             'masked_target': masked_target,
-            'user_id': user['id'],
+            'userId': user['id'],
             'verification_options': verification_options,
             'expires_in': 300
         })
@@ -191,10 +191,10 @@ def send_login_otp():
 def verify_login_otp():
     """التحقق من OTP وإتمام تسجيل الدخول"""
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(silent=True) or {}
         
-        user_id = data.get('user_id')
-        otp_code = data.get('otp_code', '').strip()
+        user_id = data.get('userId') or data.get('user_id')
+        otp_code = (data.get('otp_code') or data.get('otp') or '').strip()
         
         if not user_id or not otp_code:
             return jsonify({
@@ -203,7 +203,10 @@ def verify_login_otp():
             }), 400
         
         # ✅ الحصول على بيانات المستخدم من Database
-        user = get_user_by_identifier(str(user_id))
+        try:
+            user = get_user_by_id(int(user_id))
+        except (TypeError, ValueError):
+            user = None
         
         if not user:
             return jsonify({
@@ -218,7 +221,7 @@ def verify_login_otp():
                 'error': 'خدمة OTP غير متاحة'
             }), 500
         
-        verified, result = otp_service.verify_email_otp(user['email'], otp_code)
+        verified, result = otp_service.verify_email_otp(user['email'], otp_code, purpose='login')
         
         if not verified:
             # إرجاع رسالة الخطأ من الخدمة الموحدة
@@ -252,14 +255,14 @@ def verify_login_otp():
                     'id': user['id'],
                     'username': user['username'],
                     'email': user['email'],
-                    'user_type': user.get('user_type', 'user')
+                    'userType': user.get('user_type', 'user')
                 },
                 'message': 'تم تسجيل الدخول بنجاح'
             })
         else:
             return jsonify({
                 'success': True,
-                'user_id': user['id'],
+                'userId': user['id'],
                 'username': user['username'],
                 'email': user['email'],
                 'message': 'تم تسجيل الدخول بنجاح'
@@ -276,8 +279,8 @@ def verify_login_otp():
 def resend_login_otp():
     """إعادة إرسال OTP"""
     try:
-        data = request.get_json(force=True) or {}
-        user_id = data.get('user_id')
+        data = request.get_json(silent=True) or {}
+        user_id = data.get('userId') or data.get('user_id')
         
         if not user_id:
             return jsonify({
@@ -286,7 +289,10 @@ def resend_login_otp():
             }), 400
         
         # ✅ الحصول على بيانات المستخدم
-        user = get_user_by_identifier(str(user_id))
+        try:
+            user = get_user_by_id(int(user_id))
+        except (TypeError, ValueError):
+            user = None
         
         if not user:
             return jsonify({

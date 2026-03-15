@@ -43,13 +43,21 @@ class AutoCleanupManager:
         else:
             # تحديد المسار تلقائياً
             self.project_root = Path(__file__).parent.parent.parent
+
+        self.environment = os.getenv('ENVIRONMENT', 'development').lower()
+        # افتراضيًا: مفعل في التطوير، ومعطل في الإنتاج إلا إذا تم تفعيله صراحة
+        enabled_default = '0' if self.environment == 'production' else '1'
+        self.cleanup_enabled = os.getenv('AUTO_CLEANUP_ENABLED', enabled_default) == '1'
+        # في الإنتاج: dry-run افتراضيًا لحماية الملفات والسجلات
+        dry_run_default = '1' if self.environment == 'production' else '0'
+        self.production_dry_run = os.getenv('AUTO_CLEANUP_DRY_RUN', dry_run_default) == '1'
         
         # إعدادات التنظيف
         self.config = {
             # النسخ الاحتياطية لقاعدة البيانات
             'database_backups': {
                 'path': self.project_root / 'database',
-                'patterns': ['*.db', '!trading_database.db'],  # كل .db ما عدا الرئيسي
+                'patterns': ['*.db'],  # PostgreSQL — all .db files are legacy artifacts
                 'keep_count': 1,  # يبقي نسخة واحدة فقط
                 'description': 'نسخ قاعدة البيانات الاحتياطية'
             },
@@ -64,7 +72,7 @@ class AutoCleanupManager:
             'operation_logs': {
                 'path': self.project_root / 'logs',
                 'patterns': ['*.log', '!error*.log'],
-                'keep_count': 1,
+                'keep_count': 5,
                 'description': 'سجلات العمليات'
             },
             # ملفات JSON المؤقتة
@@ -80,16 +88,20 @@ class AutoCleanupManager:
                 'patterns': ['__pycache__'],
                 'keep_count': 0,
                 'is_directory': True,
-                'description': 'ملفات Python المؤقتة'
+                'description': 'ملفات Python المؤقتة',
+                'enabled_in_production': False,
             },
             # ملفات .pyc
             'pyc_files': {
                 'path': self.project_root,
                 'patterns': ['*.pyc'],
                 'keep_count': 0,
-                'description': 'ملفات Python المترجمة'
+                'description': 'ملفات Python المترجمة',
+                'enabled_in_production': False,
             },
         }
+
+        self._apply_environment_policy()
         
         # إحصائيات التنظيف
         self.stats = {
@@ -108,7 +120,20 @@ class AutoCleanupManager:
         Returns:
             إحصائيات التنظيف
         """
-        logger.info("🧹 بدء التنظيف التلقائي...")
+        if not self.cleanup_enabled:
+            logger.info("ℹ️ Auto cleanup disabled by policy/environment")
+            return {
+                'files_deleted': 0,
+                'directories_deleted': 0,
+                'space_freed': 0,
+                'errors': [],
+                'details': {},
+                'dry_run': True,
+                'cleanup_enabled': False,
+            }
+
+        effective_dry_run = dry_run or self.production_dry_run
+        logger.info(f"🧹 بدء التنظيف التلقائي... (dry_run={effective_dry_run})")
         
         self.stats = {
             'files_deleted': 0,
@@ -119,17 +144,37 @@ class AutoCleanupManager:
         }
         
         for category, config in self.config.items():
-            result = self._cleanup_category(category, config, dry_run)
+            if self.environment == 'production' and config.get('enabled_in_production') is False:
+                self.stats['details'][category] = {'deleted': [], 'kept': [], 'errors': [], 'skipped': 'production_policy'}
+                continue
+
+            result = self._cleanup_category(category, config, effective_dry_run)
             self.stats['details'][category] = result
         
         # ملخص
-        if dry_run:
+        if effective_dry_run:
             logger.info(f"🔍 [معاينة] سيتم حذف {self.stats['files_deleted']} ملف")
         else:
             logger.info(f"✅ تم حذف {self.stats['files_deleted']} ملف")
             logger.info(f"💾 تم توفير {self.stats['space_freed'] / 1024 / 1024:.2f} MB")
+
+        self.stats['dry_run'] = effective_dry_run
+        self.stats['cleanup_enabled'] = self.cleanup_enabled
         
         return self.stats
+
+    def _apply_environment_policy(self):
+        """تطبيق سياسة أمان البيئة (خصوصًا الإنتاج)."""
+        if self.environment != 'production':
+            return
+
+        # في الإنتاج نرفع الاحتفاظ بالملفات المهمة
+        if 'error_logs' in self.config:
+            self.config['error_logs']['keep_count'] = max(7, self.config['error_logs'].get('keep_count', 1))
+        if 'operation_logs' in self.config:
+            self.config['operation_logs']['keep_count'] = max(7, self.config['operation_logs'].get('keep_count', 1))
+        if 'database_backups' in self.config:
+            self.config['database_backups']['keep_count'] = max(3, self.config['database_backups'].get('keep_count', 1))
     
     def _cleanup_category(self, category: str, config: Dict, dry_run: bool) -> Dict:
         """
@@ -245,7 +290,7 @@ class AutoCleanupManager:
         # البحث عن ملفات .db ما عدا الرئيسي
         db_files = []
         for f in db_path.glob('*.db'):
-            if f.name != 'trading_database.db':
+            if f.name.endswith('.db'):
                 db_files.append(f)
         
         # ترتيب حسب التاريخ
@@ -400,7 +445,7 @@ def cleanup_on_startup():
         manager = AutoCleanupManager()
         stats = manager.cleanup_all(dry_run=False)
         
-        if stats['files_deleted'] > 0:
+        if stats.get('files_deleted', 0) > 0:
             print(f"🧹 تنظيف تلقائي: حذف {stats['files_deleted']} ملف")
             print(f"💾 توفير: {stats['space_freed'] / 1024 / 1024:.2f} MB")
         

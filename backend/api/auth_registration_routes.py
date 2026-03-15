@@ -49,7 +49,7 @@ def register_registration_routes(bp, shared):
     def check_availability():
         """فحص توفر البريد الإلكتروني واسم المستخدم ورقم الجوال - مع Rate Limiting"""
         try:
-            data = request.get_json(force=True) or {}
+            data = request.get_json(silent=True) or {}
             email = (data.get('email') or '').strip().lower()
             username = (data.get('username') or '').strip().lower()
             phone = (data.get('phone') or '').strip()
@@ -63,9 +63,9 @@ def register_registration_routes(bp, shared):
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
-                        SELECT COUNT(*) FROM activity_log 
+                        SELECT COUNT(*) FROM activity_logs 
                         WHERE action = 'availability_check' 
-                        AND ip_address = ? 
+                        AND details LIKE ? 
                         AND created_at > datetime('now', '-1 minute')
                     """, (client_ip,))
                     request_count = cursor.fetchone()[0]
@@ -125,9 +125,9 @@ def register_registration_routes(bp, shared):
     def send_registration_otp():
         """إرسال OTP للتسجيل (بدون إنشاء حساب) - مع Rate Limiting ودعم SMS/Email"""
         try:
-            data = request.get_json(force=True)
+            data = request.get_json(silent=True) or {}
             email = data.get('email', '').strip().lower()
-            phone = data.get('phone', '').strip()
+            phone = (data.get('phone') or data.get('phoneNumber') or data.get('phone_number') or '').strip()
             method = data.get('method', 'sms')
             
             if not email:
@@ -151,17 +151,23 @@ def register_registration_routes(bp, shared):
             
             if otp_service:
                 try:
-                    target = email if method == 'email' else phone
-                    
-                    can_send, cooldown_msg = otp_service.can_send_otp(target)
+                    can_send, cooldown_msg = otp_service.can_send_otp(
+                        email,
+                        purpose='registration',
+                    )
                     if not can_send:
+                        if isinstance(cooldown_msg, (int, float)):
+                            cooldown_msg = f'يرجى الانتظار {int(cooldown_msg)} ثانية قبل إعادة الإرسال'
                         return jsonify({
                             'success': False,
                             'error': cooldown_msg,
                             'code': 'COOLDOWN'
                         }), 429
                     
-                    success, otp_code = otp_service.send_email_otp(email)
+                    success, otp_code = otp_service.send_email_otp(
+                        email,
+                        purpose='registration',
+                    )
                     if not success:
                         return jsonify({'success': False, 'error': 'فشل في إرسال رمز التحقق'}), 500
                     
@@ -207,7 +213,7 @@ def register_registration_routes(bp, shared):
         """تسجيل مستخدم جديد (دعم الهاتف والإيميل)"""
         try:
             try:
-                data = request.get_json(force=True)
+                data = request.get_json(silent=True)
             except Exception as json_error:
                 return jsonify({'success': False, 'error': 'JSON غير صحيح', 'code': 'INVALID_JSON'}), 400
             
@@ -239,6 +245,7 @@ def register_registration_routes(bp, shared):
             username = data.get('username', '').strip()
             full_name = data.get('fullName') or data.get('full_name', '').strip()
             phone_number = data.get('phoneNumber') or data.get('phone_number') or data.get('phone')
+            normalized_phone = ''.join(ch for ch in str(phone_number or '').strip() if ch.isdigit())
             id_token = data.get('idToken')
             verification_method = data.get('verificationMethod', 'email')
             
@@ -278,53 +285,65 @@ def register_registration_routes(bp, shared):
             password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             user_id = None
-            is_verified = 1 if is_phone_verified else 0
+            is_verified = bool(is_phone_verified)
             
             try:
                 with db_manager.get_write_connection() as conn:
                     cursor = conn.cursor()
                     
                     try:
-                        cursor.execute("SELECT id FROM users WHERE email = ? OR username = ?", (email, username))
+                        duplicate_query = """
+                            SELECT id FROM users
+                            WHERE LOWER(email) = LOWER(?)
+                               OR LOWER(username) = LOWER(?)
+                        """
+                        duplicate_params = [email, username]
+
+                        if normalized_phone:
+                            if getattr(db_manager, 'is_postgres', lambda: False)():
+                                duplicate_query += """
+                                   OR REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = ?
+                                """
+                            else:
+                                duplicate_query += """
+                                   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = ?
+                                """
+                            duplicate_params.append(normalized_phone)
+
+                        duplicate_query += " LIMIT 1"
+                        cursor.execute(duplicate_query, tuple(duplicate_params))
                         if cursor.fetchone():
                             conn.rollback()
-                            return jsonify({'success': False, 'error': 'المستخدم موجود مسبقاً'}), 409
+                            return jsonify({'success': False, 'error': 'المستخدم موجود مسبقاً بنفس البريد أو اسم المستخدم أو رقم الهاتف'}), 409
                         
-                        cursor.execute("""
+                        user_insert_cursor = conn.execute("""
                             INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
                                 is_phone_verified, preferred_verification_method, created_at, user_type)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'user')
-                        """, (username, email, password_hash, phone_number, full_name, is_verified, 1 if is_phone_verified else 0, verification_method))
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'user')
+                        """, (username, email, password_hash, phone_number, full_name, is_verified, bool(is_phone_verified), verification_method))
                         
-                        user_id = cursor.lastrowid
+                        user_id = user_insert_cursor.lastrowid
                         logger.info(f"🔹 User ID created: {user_id}")
                         
                         cursor.execute("""
                             INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount, 
-                                stop_loss_pct, take_profit_pct, max_positions, risk_level, 
+                                position_size_percentage, stop_loss_pct, take_profit_pct, max_positions, risk_level, 
                                 max_daily_loss_pct, trading_mode)
-                            VALUES (?, 0, 0, 100.0, 2.0, 5.0, 5, 'medium', 10.0, 'auto')
+                            VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
                         """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO portfolio (user_id, total_balance, available_balance, 
                                 invested_balance, total_profit_loss, total_profit_loss_percentage, is_demo)
-                            VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
-                        """, (user_id,))
-                        
-                        cursor.execute("""
-                            INSERT INTO user_onboarding (user_id, step, shown_at)
-                            VALUES (?, 'welcome', datetime('now'))
+                            VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
                         """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO user_notification_settings (
-                                user_id, trade_notifications, price_alerts, system_notifications,
-                                marketing_notifications, push_enabled, email_enabled, sms_enabled,
-                                notify_new_deal, notify_deal_profit, notify_deal_loss,
-                                notify_daily_profit, notify_daily_loss, notify_low_balance
-                            ) VALUES (?, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1)
-                        """, (user_id,))
+                                user_id, settings_data
+                            ) VALUES (?, ?)
+                            ON CONFLICT DO NOTHING
+                        """, (user_id, '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}'))
                         
                         conn.commit()
                         logger.info(f"✅ Database commit successful for user {user_id}")
@@ -333,11 +352,23 @@ def register_registration_routes(bp, shared):
                         conn.rollback()
                         logger.error(f"❌ Transaction error, rollback executed: {transaction_error}")
                         return jsonify({'success': False, 'error': 'فشل في إنشاء الحساب'}), 500
+
+                try:
+                    with db_manager.get_write_connection() as onboarding_conn:
+                        onboarding_conn.execute("""
+                            INSERT INTO user_onboarding (user_id, step, shown_at)
+                            VALUES (?, 'welcome', CURRENT_TIMESTAMP)
+                        """, (user_id,))
+                except Exception as onboarding_error:
+                    logger.warning(f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}")
                 
                 otp_sent = False
                 if not is_phone_verified and otp_service:
                     try:
-                        otp_sent, otp_code = otp_service.send_email_otp(email)
+                        otp_sent, otp_code = otp_service.send_email_otp(
+                            email,
+                            purpose='registration',
+                        )
                         if otp_sent:
                             logger.info(f"✅ تم إرسال OTP إلى {email}")
                     except Exception as otp_error:
@@ -358,7 +389,7 @@ def register_registration_routes(bp, shared):
                     except Exception as audit_error:
                         logger.warning(f"⚠️ فشل تسجيل العملية الأمنية (المستخدم موجود في DB): {audit_error}")
                 
-                if TOKEN_SYSTEM_AVAILABLE and user_id and generate_tokens:
+                if TOKEN_SYSTEM_AVAILABLE and user_id and generate_tokens and is_verified:
                     tokens = generate_tokens(user_id, username, 'user')
                     
                     return jsonify({
@@ -375,6 +406,14 @@ def register_registration_routes(bp, shared):
                             'phone_verified': bool(is_phone_verified)
                         },
                         'message': 'تم إنشاء الحساب بنجاح'
+                    })
+                elif user_id:
+                    return jsonify({
+                        'success': True,
+                        'requires_verification': True,
+                        'user_id': user_id,
+                        'email': email,
+                        'message': 'تم إنشاء الحساب. يرجى التحقق من البريد الإلكتروني لإكمال التفعيل'
                     })
                 else:
                     return jsonify({
@@ -395,13 +434,13 @@ def register_registration_routes(bp, shared):
     def verify_registration_otp():
         """التحقق من OTP وإنشاء الحساب - مع تحقق شامل"""
         try:
-            data = request.get_json(force=True)
+            data = request.get_json(silent=True) or {}
             email = data.get('email', '').strip().lower()
-            otp_code = data.get('otp_code', '').strip()
+            otp_code = (data.get('otp_code') or data.get('otp') or '').strip()
             username = normalize_username(data.get('username', ''))
             password = data.get('password', '')
-            phone_number = data.get('phone') or data.get('phoneNumber')
-            full_name = sanitize_input(data.get('fullName') or data.get('full_name', ''))
+            phone_number = data.get('phone') or data.get('phoneNumber') or data.get('phone_number')
+            full_name = sanitize_input(data.get('fullName') or data.get('full_name') or data.get('name', ''))
             
             if not email or not otp_code or not username or not password:
                 return jsonify({'success': False, 'error': 'بيانات ناقصة'}), 400
@@ -420,7 +459,11 @@ def register_registration_routes(bp, shared):
             
             if otp_service:
                 try:
-                    verified, result = otp_service.verify_email_otp(email, otp_code)
+                    verified, result = otp_service.verify_email_otp(
+                        email,
+                        otp_code,
+                        purpose='registration',
+                    )
                     if not verified:
                         error_msg = result.get('error', 'رمز التحقق غير صحيح')
                         remaining = result.get('remaining_attempts')
@@ -443,46 +486,61 @@ def register_registration_routes(bp, shared):
                     cursor = conn.cursor()
                     
                     try:
-                        cursor.execute("SELECT id FROM users WHERE email = ? OR LOWER(username) = ?", (email, username))
-                        if cursor.fetchone():
-                            conn.rollback()
-                            return jsonify({'success': False, 'error': 'المستخدم موجود مسبقاً'}), 409
-                        
                         cursor.execute("""
-                            INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
-                                is_phone_verified, preferred_verification_method, created_at, user_type)
-                            VALUES (?, ?, ?, ?, ?, 1, 0, 'email', datetime('now'), 'user')
-                        """, (username, email, password_hash, phone_number, full_name))
-                        
-                        user_id = cursor.lastrowid
-                        logger.info(f"🔹 User ID created via OTP: {user_id}")
-                        
-                        cursor.execute("""
-                            INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount, 
-                                stop_loss_pct, take_profit_pct, max_positions, risk_level, 
-                                max_daily_loss_pct, trading_mode)
-                            VALUES (?, 0, 0, 100.0, 2.0, 5.0, 5, 'medium', 10.0, 'auto')
-                        """, (user_id,))
-                        
-                        cursor.execute("""
-                            INSERT INTO portfolio (user_id, total_balance, available_balance, 
-                                invested_balance, total_profit_loss, total_profit_loss_percentage, is_demo)
-                            VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
-                        """, (user_id,))
-                        
-                        cursor.execute("""
-                            INSERT INTO user_onboarding (user_id, step, shown_at)
-                            VALUES (?, 'welcome', datetime('now'))
-                        """, (user_id,))
+                            SELECT id, COALESCE(email_verified, FALSE) AS email_verified
+                            FROM users
+                            WHERE email = ? OR LOWER(username) = ?
+                            LIMIT 1
+                        """, (email, username))
+                        existing_user = cursor.fetchone()
+                        if existing_user:
+                            if bool(existing_user['email_verified']):
+                                conn.rollback()
+                                return jsonify({'success': False, 'error': 'المستخدم موجود مسبقاً'}), 409
+
+                            user_id = existing_user['id']
+                            cursor.execute("""
+                                UPDATE users
+                                SET username = ?,
+                                    email = ?,
+                                    password_hash = ?,
+                                    phone_number = ?,
+                                    name = ?,
+                                    email_verified = TRUE,
+                                    is_phone_verified = FALSE,
+                                    preferred_verification_method = 'email'
+                                WHERE id = ?
+                            """, (username, email, password_hash, phone_number, full_name, user_id))
+                            logger.info(f"🔹 Existing pending user activated via OTP: {user_id}")
+                        else:
+                            user_insert_cursor = conn.execute("""
+                                INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
+                                    is_phone_verified, preferred_verification_method, created_at, user_type)
+                                VALUES (?, ?, ?, ?, ?, TRUE, FALSE, 'email', CURRENT_TIMESTAMP, 'user')
+                            """, (username, email, password_hash, phone_number, full_name))
+                            
+                            user_id = user_insert_cursor.lastrowid
+                            logger.info(f"🔹 User ID created via OTP: {user_id}")
+                            
+                            cursor.execute("""
+                                INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount, 
+                                    position_size_percentage, stop_loss_pct, take_profit_pct, max_positions, risk_level, 
+                                    max_daily_loss_pct, trading_mode)
+                                VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
+                            """, (user_id,))
+                            
+                            cursor.execute("""
+                                INSERT INTO portfolio (user_id, total_balance, available_balance, 
+                                    invested_balance, total_profit_loss, total_profit_loss_percentage, is_demo)
+                                VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
+                            """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO user_notification_settings (
-                                user_id, trade_notifications, price_alerts, system_notifications,
-                                marketing_notifications, push_enabled, email_enabled, sms_enabled,
-                                notify_new_deal, notify_deal_profit, notify_deal_loss,
-                                notify_daily_profit, notify_daily_loss, notify_low_balance
-                            ) VALUES (?, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1)
-                        """, (user_id,))
+                                user_id, settings_data
+                            ) VALUES (?, ?)
+                            ON CONFLICT DO NOTHING
+                        """, (user_id, '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}'))
                         
                         cursor.execute("""
                             DELETE FROM verification_codes 
@@ -496,8 +554,32 @@ def register_registration_routes(bp, shared):
                         conn.rollback()
                         logger.error(f"❌ Transaction error in OTP registration: {e}")
                         return jsonify({'success': False, 'error': 'خطأ في إنشاء الحساب'}), 500
+
+                try:
+                    with db_manager.get_write_connection() as onboarding_conn:
+                        onboarding_conn.execute("""
+                            INSERT INTO user_onboarding (user_id, step, shown_at)
+                            VALUES (?, 'welcome', CURRENT_TIMESTAMP)
+                        """, (user_id,))
+                except Exception as onboarding_error:
+                    logger.warning(f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}")
                 
                 logger.info(f"✅ تم إنشاء مستخدم جديد: {email}")
+                user_payload = {
+                    'id': user_id,
+                    'username': username,
+                    'email': email,
+                    'name': full_name,
+                    'full_name': full_name,
+                    'phone_number': phone_number,
+                    'user_type': 'user',
+                    'trading_mode': 'demo',
+                    'trading_enabled': 0,
+                    'has_binance_keys': 0,
+                    'is_active': 1,
+                    'email_verified': 1,
+                    'biometric_enabled': 0,
+                }
                 
                 if TOKEN_SYSTEM_AVAILABLE and user_id and generate_tokens:
                     tokens = generate_tokens(user_id, username, 'user')
@@ -505,6 +587,7 @@ def register_registration_routes(bp, shared):
                         'success': True,
                         'message': 'تم إنشاء حسابك بنجاح',
                         'user_id': user_id,
+                        'user': user_payload,
                         'access_token': tokens['access_token'],
                         'refresh_token': tokens['refresh_token']
                     }), 201
@@ -512,7 +595,8 @@ def register_registration_routes(bp, shared):
                     return jsonify({
                         'success': True,
                         'message': 'تم إنشاء حسابك بنجاح',
-                        'user_id': user_id
+                        'user_id': user_id,
+                        'user': user_payload
                     }), 201
                             
             except Exception as e:
@@ -526,7 +610,7 @@ def register_registration_routes(bp, shared):
     def register_with_phone():
         """التسجيل عبر رقم الهاتف (بعد التحقق من Firebase)"""
         try:
-            data = request.get_json(force=True)
+            data = request.get_json(silent=True)
             phone = data.get('phone', '').strip()
             username = data.get('username', '').strip()
             password = data.get('password', '')
@@ -544,30 +628,36 @@ def register_registration_routes(bp, shared):
                     cursor = conn.cursor()
                     
                     try:
-                        cursor.execute("SELECT id FROM users WHERE phone = ? OR username = ?", (phone, username))
+                        cursor.execute("SELECT id FROM users WHERE phone_number = ? OR username = ?", (phone, username))
                         if cursor.fetchone():
                             conn.rollback()
                             return jsonify({'success': False, 'error': 'رقم الهاتف أو اسم المستخدم مسجل مسبقاً'}), 409
                         
-                        cursor.execute("""
+                        user_insert_cursor = conn.execute("""
                             INSERT INTO users (
-                                username, email, phone, password_hash, full_name,
-                                is_verified, user_type, is_active, created_at
-                            ) VALUES (?, ?, ?, ?, ?, 1, 'user', 1, ?)
-                        """, (username, email, phone, password_hash, full_name, 
+                                username, email, phone_number, password_hash, name,
+                                email_verified, is_phone_verified, preferred_verification_method,
+                                user_type, is_active, created_at
+                            ) VALUES (?, ?, ?, ?, ?, TRUE, TRUE, 'sms', 'user', TRUE, ?)
+                        """, (username, email, phone, password_hash, full_name,
                               time.strftime('%Y-%m-%d %H:%M:%S')))
                         
-                        user_id = cursor.lastrowid
+                        user_id = user_insert_cursor.lastrowid
                         
                         cursor.execute("""
-                            INSERT OR IGNORE INTO user_settings (user_id, is_demo, trading_enabled)
-                            VALUES (?, 1, 0)
+                            INSERT INTO user_settings (
+                                user_id, is_demo, trading_enabled, trade_amount,
+                                position_size_percentage, stop_loss_pct, take_profit_pct,
+                                max_positions, risk_level, max_daily_loss_pct, trading_mode
+                            ) VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
+                            ON CONFLICT (user_id, is_demo) DO NOTHING
                         """, (user_id,))
                         
                         cursor.execute("""
-                            INSERT OR IGNORE INTO portfolio 
+                            INSERT INTO portfolio 
                             (user_id, total_balance, available_balance, initial_balance, is_demo, updated_at)
-                            VALUES (?, 1000.0, 1000.0, 1000.0, 1, CURRENT_TIMESTAMP)
+                            VALUES (?, 0.0, 0.0, 0.0, FALSE, CURRENT_TIMESTAMP)
+                            ON CONFLICT (user_id, is_demo) DO NOTHING
                         """, (user_id,))
                         
                         conn.commit()

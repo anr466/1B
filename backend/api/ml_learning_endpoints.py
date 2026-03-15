@@ -266,9 +266,9 @@ def trigger_health_check():
         try:
             with db.get_connection() as conn:
                 trades = conn.execute("""
-                    SELECT * FROM user_trades
-                    WHERE user_id = ? AND status = 'closed'
-                    ORDER BY closed_at DESC
+                    SELECT * FROM active_positions
+                    WHERE user_id = ? AND is_active = 0
+                    ORDER BY COALESCE(closed_at, updated_at) DESC
                     LIMIT 50
                 """, (user_id,)).fetchall()
                 

@@ -35,8 +35,16 @@ def register_fcm_token():
                 'error': 'لا توجد بيانات'
             }), 400
         
-        # ✅ FIX: Use user_id from auth token as fallback when client sends null
-        user_id = data.get('user_id') or g.user_id
+        auth_user_id = getattr(g, 'user_id', None) or getattr(g, 'current_user_id', None)
+        requested_user_id = data.get('user_id')
+        # 🔒 Security: never allow client to write token for another user
+        if requested_user_id and str(requested_user_id) != str(auth_user_id):
+            return jsonify({
+                'success': False,
+                'error': 'غير مصرح بتسجيل التوكن لمستخدم آخر'
+            }), 403
+
+        user_id = auth_user_id
         fcm_token = data.get('fcm_token', '').strip()
         platform = data.get('platform', 'android').strip()
         
@@ -71,16 +79,17 @@ def register_user_fcm_token(user_id: str, fcm_token: str, platform: str = 'andro
     """تسجيل FCM Token في قاعدة البيانات"""
     try:
         with db_manager.get_write_connection() as conn:
-            # حذف التوكن القديم للمستخدم إذا وجد
+            # حذف التوكن القديم للمستخدم أو نفس التوكن المرتبط بحساب آخر
+            # (نقل الجهاز بين حسابات يجب ألا يفشل بسبب UNIQUE constraint)
             conn.execute("""
                 DELETE FROM fcm_tokens 
-                WHERE user_id = ?
-            """, (user_id,))
+                WHERE user_id = ? OR fcm_token = ?
+            """, (user_id, fcm_token))
             
             # إضافة التوكن الجديد
             conn.execute("""
                 INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at)
-                VALUES (?, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             """, (user_id, fcm_token, platform))
             
             conn.commit()

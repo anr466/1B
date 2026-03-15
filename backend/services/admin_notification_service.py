@@ -15,7 +15,6 @@ import os
 import sys
 import json
 import logging
-import sqlite3
 import requests
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -39,8 +38,7 @@ class AdminNotificationService:
     خدمة إرسال إشعارات فورية للأدمن
     """
     
-    def __init__(self, db_path: str = "database/trading_database.db"):
-        self.db_path = db_path
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
         
         # إعدادات الإشعارات (تُحمّل من قاعدة البيانات أو متغيرات البيئة)
@@ -313,11 +311,10 @@ class AdminNotificationService:
                 fcm_data.update({k: str(v) for k, v in data.items() if v is not None})
             
             # إرسال الإشعار
-            success = self.firebase_service.send_notification_to_user(
+            success = self.firebase_service.send_to_user(
                 user_id=admin_user_id,
                 title=title,
-                message=message,
-                notification_type=notification_type,
+                body=message,
                 data=fcm_data
             )
             
@@ -434,6 +431,33 @@ class AdminNotificationService:
     def update_settings(self, settings: Dict) -> bool:
         """تحديث إعدادات الإشعارات"""
         try:
+            if not isinstance(settings, dict):
+                raise TypeError(f"settings must be dict, got {type(settings)}")
+
+            def _pick_str(key: str, current_value: Optional[str]) -> Optional[str]:
+                """Keep existing sensitive value when payload sends empty string/null."""
+                raw_value = settings.get(key, current_value)
+                if raw_value is None:
+                    return current_value
+                if isinstance(raw_value, str):
+                    normalized = raw_value.strip()
+                    return normalized if normalized else current_value
+                return str(raw_value).strip() or current_value
+
+            def _pick_bool(key: str, current_value: bool) -> bool:
+                """Normalize boolean settings with safe fallback."""
+                raw_value = settings.get(key, current_value)
+                if isinstance(raw_value, bool):
+                    return raw_value
+                if isinstance(raw_value, str):
+                    return raw_value.strip().lower() in {'1', 'true', 'yes', 'on'}
+                return bool(raw_value)
+
+            telegram_bot_token = _pick_str('telegram_bot_token', self.telegram_bot_token)
+            telegram_chat_id = _pick_str('telegram_chat_id', self.telegram_chat_id)
+            admin_email = _pick_str('admin_email', self.admin_email)
+            webhook_url = _pick_str('webhook_url', self.webhook_url)
+
             # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
             from database.database_manager import DatabaseManager
             db = DatabaseManager()
@@ -456,17 +480,17 @@ class AdminNotificationService:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
-                    settings.get('telegram_enabled', self.telegram_enabled),
-                    settings.get('telegram_bot_token', self.telegram_bot_token),
-                    settings.get('telegram_chat_id', self.telegram_chat_id),
-                    settings.get('email_enabled', self.email_enabled),
-                    settings.get('admin_email', self.admin_email),
-                    settings.get('webhook_enabled', self.webhook_enabled),
-                    settings.get('webhook_url', self.webhook_url),
-                    settings.get('push_enabled', self.push_enabled),
-                    settings.get('notify_on_error', self.notify_on_error),
-                    settings.get('notify_on_trade', self.notify_on_trade),
-                    settings.get('notify_on_warning', self.notify_on_warning)
+                    _pick_bool('telegram_enabled', self.telegram_enabled),
+                    telegram_bot_token,
+                    telegram_chat_id,
+                    _pick_bool('email_enabled', self.email_enabled),
+                    admin_email,
+                    _pick_bool('webhook_enabled', self.webhook_enabled),
+                    webhook_url,
+                    _pick_bool('push_enabled', self.push_enabled),
+                    _pick_bool('notify_on_error', self.notify_on_error),
+                    _pick_bool('notify_on_trade', self.notify_on_trade),
+                    _pick_bool('notify_on_warning', self.notify_on_warning)
                 ))
             
             # إعادة تحميل الإعدادات

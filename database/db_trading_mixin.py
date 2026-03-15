@@ -4,7 +4,6 @@ Database Trading Mixin — extracted from database_manager.py (God Object split)
 Methods: successful coins, active positions, signals, GroupB position management
 """
 
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
@@ -22,12 +21,12 @@ class DbTradingMixin:
             self.logger.warning("لا توجد بيانات عملات للحفظ بعد التطبيع")
             return
         
-        MAX_COINS = 25
+        MAX_COINS = 50
         
         with self.get_write_connection() as conn:
             existing_rows = conn.execute("""
                 SELECT symbol, score FROM successful_coins 
-                WHERE is_active = 1
+                WHERE is_active = TRUE
                 ORDER BY score DESC
             """).fetchall()
             
@@ -50,7 +49,7 @@ class DbTradingMixin:
                 removed_symbols = [c[0] for c in removed_coins]
                 placeholders = ','.join(['?' for _ in removed_symbols])
                 conn.execute(f"""
-                    UPDATE successful_coins SET is_active = 0 
+                    UPDATE successful_coins SET is_active = FALSE 
                     WHERE symbol IN ({placeholders})
                 """, removed_symbols)
                 self.logger.info(f"🔄 تم إلغاء تفعيل {len(removed_symbols)} عملة ضعيفة")
@@ -152,12 +151,11 @@ class DbTradingMixin:
     def get_successful_coins(self) -> List[Dict[str, Any]]:
         """الحصول على العملات الناجحة الحالية"""
         with self.get_connection() as conn:
-            conn.row_factory = sqlite3.Row
             rows = conn.execute("""
                 SELECT symbol, strategy, timeframe, score, profit_pct, win_rate,
                        total_trades, market_trend, analysis_date, is_active
                 FROM successful_coins 
-                WHERE is_active = 1 
+                WHERE is_active = TRUE 
                 ORDER BY score DESC
             """).fetchall()
             
@@ -184,7 +182,7 @@ class DbTradingMixin:
             try:
                 conn.execute("""
                     DELETE FROM successful_coins 
-                    WHERE is_active = 0 
+                    WHERE is_active = FALSE 
                     AND datetime(analysis_date) < datetime('now', '-7 days')
                 """)
             except Exception as e:
@@ -202,7 +200,7 @@ class DbTradingMixin:
             try:
                 conn.execute("""
                     DELETE FROM active_positions 
-                    WHERE is_active = 0 
+                    WHERE is_active = FALSE 
                     AND datetime(updated_at) < datetime('now', '-30 days')
                 """)
             except Exception as e:
@@ -291,8 +289,7 @@ class DbTradingMixin:
         """الحصول على جميع الصفقات المفتوحة للمستخدم مع trailing_sl_price"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute("""
+                    rows = conn.execute("""
                     SELECT * FROM active_positions 
                     WHERE user_id = ? AND is_active = TRUE
                     ORDER BY created_at DESC
@@ -308,8 +305,7 @@ class DbTradingMixin:
         """الحصول على جميع الصفقات المفتوحة للمستخدم"""
         try:
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute("""
+                    rows = conn.execute("""
                     SELECT * FROM active_positions 
                     WHERE user_id = ? AND is_active = TRUE
                     ORDER BY created_at DESC
@@ -324,13 +320,12 @@ class DbTradingMixin:
     def get_user_trades_paginated(self, user_id: int, limit: int = 50, offset: int = 0,
                                    status: str = 'all', date_from: str = None, 
                                    date_to: str = None, is_demo: Optional[int] = None) -> Dict[str, Any]:
-        """جلب صفقات المستخدم مع Pagination"""
+        """جلب صفقات المستخدم مع Pagination — يقرأ من active_positions (المصدر الوحيد للبيانات)"""
         try:
             limit = min(limit, 200)
             
             with self.get_connection() as conn:
-                conn.row_factory = sqlite3.Row
-                
+                    
                 where_clauses = ['user_id = ?']
                 params = [user_id]
                 
@@ -338,27 +333,40 @@ class DbTradingMixin:
                     where_clauses.append('is_demo = ?')
                     params.append(is_demo)
                 
-                if status != 'all':
-                    where_clauses.append('status = ?')
-                    params.append(status)
+                if status == 'open':
+                    where_clauses.append('is_active = TRUE')
+                elif status == 'closed':
+                    where_clauses.append('is_active = FALSE')
                 
                 if date_from:
-                    where_clauses.append('entry_time >= ?')
+                    where_clauses.append('COALESCE(entry_date, created_at::text) >= ?')
                     params.append(date_from)
                 
                 if date_to:
-                    where_clauses.append('entry_time <= ?')
+                    where_clauses.append('COALESCE(entry_date, created_at::text) <= ?')
                     params.append(date_to)
                 
                 where_sql = ' AND '.join(where_clauses)
                 
-                count_query = f"SELECT COUNT(*) FROM user_trades WHERE {where_sql}"
+                count_query = f"SELECT COUNT(*) FROM active_positions WHERE {where_sql}"
                 total = conn.execute(count_query, params).fetchone()[0]
                 
                 query = f"""
-                    SELECT * FROM user_trades 
+                    SELECT
+                        id, user_id, symbol, strategy, is_demo,
+                        entry_price, exit_price, quantity,
+                        profit_loss,
+                        profit_pct AS profit_loss_percentage,
+                        CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
+                        COALESCE(entry_date, created_at::text) AS entry_time,
+                        closed_at AS exit_time,
+                        CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
+                        stop_loss, take_profit, timeframe,
+                        exit_reason, ml_confidence,
+                        created_at, updated_at
+                    FROM active_positions
                     WHERE {where_sql}
-                    ORDER BY entry_time DESC
+                    ORDER BY COALESCE(entry_date, created_at::text) DESC
                     LIMIT ? OFFSET ?
                 """
                 params.extend([limit, offset])
@@ -443,17 +451,30 @@ class DbTradingMixin:
         """حفظ الإشارات الحالية من المجموعة B"""
         with self.get_write_connection() as conn:
             for signal in signals:
+                confidence = signal.get('confidence', 0.0)
+                try:
+                    confidence = float(confidence or 0.0)
+                except (TypeError, ValueError):
+                    confidence = 0.0
+
+                if confidence > 1.0:
+                    confidence = confidence / 100.0
+
+                confidence = max(0.0, min(confidence, 1.0))
+                is_processed = bool(signal.get('is_processed', True))
+
                 conn.execute("""
                     INSERT OR REPLACE INTO trading_signals 
                     (symbol, strategy, timeframe, signal_type, price, confidence, generated_at, is_processed)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, FALSE)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
                 """, (
                     signal['symbol'],
                     signal['strategy'],
                     signal['timeframe'],
                     signal['signal_type'],
                     signal['price'],
-                    signal.get('confidence', 0.0)
+                    confidence,
+                    1 if is_processed else 0
                 ))
         
         self.logger.info(f"تم حفظ {len(signals)} إشارة")
@@ -469,8 +490,8 @@ class DbTradingMixin:
                 return []
             
             active_trades = conn.execute("""
-                SELECT COUNT(*) as count FROM user_trades 
-                WHERE user_id = ? AND status = 'active'
+                SELECT COUNT(*) as count FROM active_positions
+                WHERE user_id = ? AND is_active = TRUE
             """, (user_id,)).fetchone()['count']
             
             if active_trades >= settings['max_positions']:
@@ -497,15 +518,16 @@ class DbTradingMixin:
         """جلب الصفقات المفتوحة للمستخدم حسب الوضع"""
         try:
             with self.get_connection() as conn:
+                bool_true = True if getattr(self, 'is_postgres', lambda: False)() else 1
                 query = """
                     SELECT * FROM active_positions 
-                    WHERE user_id = ? AND is_active = 1
+                    WHERE user_id = ? AND is_active = TRUE
                 """
                 params = [user_id]
                 
                 if is_demo is not None:
                     query += " AND is_demo = ?"
-                    params.append(1 if is_demo else 0)
+                    params.append(bool(is_demo) if getattr(self, 'is_postgres', lambda: False)() else (1 if is_demo else 0))
                 
                 query += " ORDER BY created_at DESC"
                 
@@ -516,6 +538,64 @@ class DbTradingMixin:
             self.logger.error(f"خطأ في جلب الصفقات المفتوحة: {e}")
             return []
 
+    def add_position_on_conn(self, conn, user_id: int, symbol: str, entry_price: float,
+                             quantity: float, position_size: float, signal_type: str,
+                             is_demo: int = 1, order_id: str = None,
+                             position_type: str = 'long', stop_loss_price: float = None,
+                             take_profit_price: float = None, timeframe: str = '1h',
+                             signal_metadata: str = None,
+                             entry_commission: float = None) -> Optional[int]:
+        """إضافة صفقة جديدة على اتصال كتابة خارجي (للمعاملات الذرية)."""
+        if stop_loss_price is None:
+            if position_type == 'short':
+                stop_loss_price = entry_price * 1.01
+            else:
+                stop_loss_price = entry_price * 0.99
+
+        # V7/V8 trailing-only: لا نضع TP افتراضي إذا لم يُرسل
+        if take_profit_price is None:
+            take_profit_price = 0
+
+        if entry_commission is None:
+            entry_commission = position_size * 0.001 if bool(is_demo) else 0
+
+        try:
+            cursor = conn.execute("""
+                INSERT INTO active_positions
+                (user_id, symbol, entry_price, quantity, strategy,
+                 stop_loss, take_profit, is_demo, order_id, entry_commission,
+                 position_size, position_type, timeframe, entry_date,
+                 is_active, created_at, highest_price, signal_metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, ?, ?)
+            """, (
+                user_id,
+                symbol,
+                entry_price,
+                quantity,
+                signal_type,
+                stop_loss_price,
+                take_profit_price,
+                is_demo,
+                order_id,
+                entry_commission,
+                position_size,
+                position_type,
+                timeframe,
+                entry_price,
+                signal_metadata,
+            ))
+        except Exception as _integrity_err:
+            if 'unique' not in str(_integrity_err).lower() and 'duplicate' not in str(_integrity_err).lower():
+                raise
+            self.logger.warning(
+                f"⚠️ Skipped duplicate open position: {symbol} user={user_id} "
+                f"strategy={signal_type} is_demo={is_demo} (UNIQUE constraint)"
+            )
+            return None
+
+        self.logger.info(f"تم فتح صفقة {position_type.upper()}: {symbol} للمستخدم {user_id}")
+        return cursor.lastrowid
+
     def add_position(self, user_id: int, symbol: str, entry_price: float,
                     quantity: float, position_size: float, signal_type: str,
                     is_demo: int = 1, order_id: str = None,
@@ -524,115 +604,238 @@ class DbTradingMixin:
                     signal_metadata: str = None) -> Optional[int]:
         """إضافة صفقة جديدة"""
         try:
-            if stop_loss_price is None:
-                if position_type == 'short':
-                    stop_loss_price = entry_price * 1.01
-                else:
-                    stop_loss_price = entry_price * 0.99
-            
-            # ✅ FIX: لا نضع TP افتراضي — V7 يستخدم trailing-only بدون TP ثابت
-            # إذا لم يُحدد TP، يبقى 0 (الخروج يعتمد على trailing/SL فقط)
-            if take_profit_price is None:
-                take_profit_price = 0
-            
-            entry_commission = 0
-            if is_demo == 1:
-                entry_commission = position_size * 0.001
-            
             with self.get_write_connection() as conn:
-                cursor = conn.execute("""
-                    INSERT INTO active_positions 
-                    (user_id, symbol, entry_price, quantity, strategy,
-                     stop_loss, take_profit, is_demo, order_id, entry_commission,
-                     position_size, position_type, timeframe, entry_date, 
-                     is_active, created_at, highest_price, signal_metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, ?, ?)
-                """, (user_id, symbol, entry_price, quantity, signal_type, 
-                      stop_loss_price, take_profit_price, is_demo, order_id, 
-                      entry_commission, position_size, position_type, timeframe,
-                      entry_price, signal_metadata))
-                
-                # get_write_connection يعمل commit تلقائياً
-                self.logger.info(f"تم فتح صفقة {position_type.upper()}: {symbol} للمستخدم {user_id}")
-                return cursor.lastrowid
+                return self.add_position_on_conn(
+                    conn=conn,
+                    user_id=user_id,
+                    symbol=symbol,
+                    entry_price=entry_price,
+                    quantity=quantity,
+                    position_size=position_size,
+                    signal_type=signal_type,
+                    is_demo=is_demo,
+                    order_id=order_id,
+                    position_type=position_type,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                    timeframe=timeframe,
+                    signal_metadata=signal_metadata,
+                )
         except Exception as e:
-            self.logger.error(f"خطأ في فتح صفقة: {e}")
+            error_text = str(e)
+            if 'UNIQUE constraint failed: active_positions.user_id, active_positions.symbol, active_positions.strategy' in error_text:
+                # توافق مع schema قديم: UNIQUE(user_id, symbol, strategy) حتى مع الصفقات المغلقة.
+                # الحل المؤقت: إعادة استخدام الصف المغلق بنفس المفتاح بدلاً من فشل فتح الصفقة.
+                try:
+                    with self.get_write_connection() as conn:
+                        existing = conn.execute(
+                            """
+                            SELECT id, is_active FROM active_positions
+                            WHERE user_id = ? AND symbol = ? AND strategy = ?
+                            LIMIT 1
+                            """,
+                            (user_id, symbol, signal_type)
+                        ).fetchone()
+
+                        if existing and int(existing['is_active'] or 0) == 0:
+                            reused_id = int(existing['id'])
+                            conn.execute(
+                                """
+                                UPDATE active_positions
+                                SET entry_price = ?,
+                                    quantity = ?,
+                                    stop_loss = ?,
+                                    take_profit = ?,
+                                    is_demo = ?,
+                                    order_id = ?,
+                                    entry_commission = ?,
+                                    exit_commission = 0,
+                                    position_size = ?,
+                                    position_type = ?,
+                                    timeframe = ?,
+                                    entry_date = CURRENT_TIMESTAMP,
+                                    is_active = 1,
+                                    created_at = CURRENT_TIMESTAMP,
+                                    updated_at = CURRENT_TIMESTAMP,
+                                    highest_price = ?,
+                                    signal_metadata = ?,
+                                    exit_reason = NULL,
+                                    exit_price = NULL,
+                                    profit_loss = NULL,
+                                    profit_pct = NULL,
+                                    closed_at = NULL,
+                                    exit_order_id = NULL
+                                WHERE id = ?
+                                """,
+                                (
+                                    entry_price,
+                                    quantity,
+                                    stop_loss_price,
+                                    take_profit_price,
+                                    is_demo,
+                                    order_id,
+                                    entry_commission,
+                                    position_size,
+                                    position_type,
+                                    timeframe,
+                                    entry_price,
+                                    signal_metadata,
+                                    reused_id,
+                                )
+                            )
+                            conn.commit()
+                            self.logger.warning(
+                                f"⚠️ Reused inactive active_positions row id={reused_id} "
+                                f"for {symbol}/{signal_type} due to legacy UNIQUE constraint"
+                            )
+                            return reused_id
+                except Exception as fallback_error:
+                    self.logger.error(f"فشل fallback فتح الصفقة بعد UNIQUE conflict: {fallback_error}")
+
+            self.logger.error(
+                f"خطأ Integrity عند فتح صفقة {symbol}/{signal_type} للمستخدم {user_id}: {error_text}"
+            )
             return None
+        except Exception as e:
+            self.logger.error(
+                f"خطأ في فتح صفقة {symbol}/{signal_type} للمستخدم {user_id}: {e}"
+            )
+            return None
+
+    def close_position_on_conn(self, conn, position_id: int, exit_price: float,
+                              exit_reason: str, pnl: float, exit_commission: float = 0,
+                              exit_order_id: str = None) -> bool:
+        """إغلاق صفقة على اتصال خارجي (للعمليات الذرية)"""
+        position = conn.execute(
+            "SELECT * FROM active_positions WHERE id = ?", (position_id,)
+        ).fetchone()
+
+        if position:
+            pos = dict(position)
+            entry_price = pos.get('entry_price', 0)
+            quantity = pos.get('quantity', 0)
+            initial_investment = entry_price * quantity
+            pnl_pct = (pnl / initial_investment * 100) if initial_investment > 0 else 0
+        else:
+            pnl_pct = 0
+
+        conn.execute("""
+            UPDATE active_positions
+            SET is_active = 0, exit_price = ?, exit_reason = ?,
+                profit_loss = ?, profit_pct = ?, exit_commission = ?, exit_order_id = ?,
+                closed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (exit_price, exit_reason, pnl, pnl_pct, exit_commission, exit_order_id, position_id))
+
+        self.logger.info(f"تم إغلاق الصفقة {position_id}: {exit_reason}")
+        return True
 
     def close_position(self, position_id: int, exit_price: float,
                       exit_reason: str, pnl: float, exit_commission: float = 0,
                       exit_order_id: str = None) -> bool:
-        """إغلاق صفقة"""
+        """إغلاق صفقة (standalone — يفتح اتصال خاص)"""
         try:
             with self.get_write_connection() as conn:
-                position = conn.execute(
-                    "SELECT * FROM active_positions WHERE id = ?", (position_id,)
-                ).fetchone()
-                
-                conn.execute("""
-                    UPDATE active_positions 
-                    SET is_active = 0, exit_price = ?, exit_reason = ?,
-                        profit_loss = ?, exit_commission = ?, exit_order_id = ?,
-                        closed_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (exit_price, exit_reason, pnl, exit_commission, exit_order_id, position_id))
-                
-                if position:
-                    pos = dict(position)
-                    entry_price = pos.get('entry_price', 0)
-                    quantity = pos.get('quantity', 0)
-                    initial_investment = entry_price * quantity
-                    pnl_pct = (pnl / initial_investment * 100) if initial_investment > 0 else 0
-                    
-                    conn.execute("""
-                        INSERT INTO user_trades 
-                        (user_id, symbol, strategy, timeframe, side, entry_price, quantity,
-                         stop_loss, take_profit, status, is_demo, entry_time,
-                         exit_price, profit_loss, profit_loss_percentage, exit_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    """, (
-                        pos.get('user_id'),
-                        pos.get('symbol'),
-                        pos.get('strategy', 'SCALP_V7'),
-                        pos.get('timeframe', '1h'),
-                        pos.get('position_type', 'long').upper(),
-                        entry_price,
-                        quantity,
-                        pos.get('stop_loss'),
-                        pos.get('take_profit'),
-                        pos.get('is_demo', 1),
-                        pos.get('created_at'),
-                        exit_price,
-                        pnl,
-                        pnl_pct,
-                    ))
-                
-                conn.commit()
-                self.logger.info(f"تم إغلاق الصفقة {position_id}: {exit_reason} (synced to user_trades)")
+                self.close_position_on_conn(conn, position_id, exit_price, exit_reason, pnl,
+                                            exit_commission, exit_order_id)
                 return True
         except Exception as e:
             self.logger.error(f"خطأ في إغلاق صفقة: {e}")
             return False
 
+    def update_user_balance_on_conn(self, conn, user_id: int, new_balance: float, is_demo: bool = True) -> bool:
+        """تحديث رصيد المحفظة على اتصال خارجي (للعمليات الذرية)"""
+        is_demo_int = 1 if is_demo else 0
+        invested_row = conn.execute("""
+            SELECT COALESCE(SUM(position_size), 0) as invested
+            FROM active_positions
+            WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
+        """, (user_id, is_demo_int)).fetchone()
+        invested_balance = invested_row[0] if invested_row else 0
+
+        total_balance = new_balance + invested_balance
+
+        # حساب إجمالي الربح/الخسارة من الصفقات المغلقة
+        stats_row = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
+            FROM active_positions
+            WHERE user_id = ? AND is_demo = ?
+        """, (user_id, is_demo_int)).fetchone()
+        
+        total_pnl = stats_row[0] if stats_row else 0
+        total_trades = stats_row[1] if stats_row else 0
+        winning_trades = stats_row[2] if stats_row else 0
+        losing_trades = stats_row[3] if stats_row else 0
+        
+        # حساب نسبة نمو المحفظة
+        initial_balance_row = conn.execute("""
+            SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?
+        """, (user_id, is_demo_int)).fetchone()
+        initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
+        portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
+
+        conn.execute("""
+            UPDATE portfolio
+            SET total_balance = ?, available_balance = ?, invested_balance = ?,
+                total_profit_loss = ?, total_profit_loss_percentage = ?,
+                total_trades = ?, winning_trades = ?, losing_trades = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND is_demo = ?
+        """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
+              total_trades, winning_trades, losing_trades, user_id, is_demo_int))
+
+        return True
+
     def update_user_balance(self, user_id: int, new_balance: float, is_demo: bool = True) -> bool:
-        """تحديث رصيد المحفظة للمستخدم"""
+        """تحديث رصيد المحفظة للمستخدم (standalone — يفتح اتصال خاص)"""
         try:
             is_demo_int = 1 if is_demo else 0
             with self.get_write_connection() as conn:
                 invested_row = conn.execute("""
                     SELECT COALESCE(SUM(position_size), 0) as invested
                     FROM active_positions
-                    WHERE user_id = ? AND is_active = 1 AND is_demo = ?
+                    WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
                 """, (user_id, is_demo_int)).fetchone()
                 invested_balance = invested_row[0] if invested_row else 0
                 
                 total_balance = new_balance + invested_balance
                 
+                # حساب إجمالي الربح/الخسارة من الصفقات المغلقة
+                stats_row = conn.execute("""
+                    SELECT
+                        COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
+                        COUNT(*) as total_trades,
+                        SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
+                        SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
+                    FROM active_positions
+                    WHERE user_id = ? AND is_demo = ?
+                """, (user_id, is_demo_int)).fetchone()
+                
+                total_pnl = stats_row[0] if stats_row else 0
+                total_trades = stats_row[1] if stats_row else 0
+                winning_trades = stats_row[2] if stats_row else 0
+                losing_trades = stats_row[3] if stats_row else 0
+                
+                # حساب نسبة نمو المحفظة
+                initial_balance_row = conn.execute("""
+                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?
+                """, (user_id, is_demo_int)).fetchone()
+                initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
+                portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
+                
                 conn.execute("""
                     UPDATE portfolio 
-                    SET total_balance = ?, available_balance = ?, updated_at = CURRENT_TIMESTAMP
+                    SET total_balance = ?, available_balance = ?, invested_balance = ?,
+                        total_profit_loss = ?, total_profit_loss_percentage = ?,
+                        total_trades = ?, winning_trades = ?, losing_trades = ?,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND is_demo = ?
-                """, (total_balance, new_balance, user_id, is_demo_int))
+                """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
+                      total_trades, winning_trades, losing_trades, user_id, is_demo_int))
                 
                 return True
         except Exception as e:

@@ -51,12 +51,14 @@ def get_trading_state():
     """
     try:
         state = tsm.get_state()
+        state['is_running'] = state.get('trading_active', False)
         return jsonify(state)
     except Exception as e:
         logger.error(f"❌ get_trading_state error: {e}")
         return jsonify({
             'success': False,
             'trading_state': 'ERROR',
+            'is_running': False,
             'message': str(e),
         }), 500
 
@@ -79,6 +81,18 @@ def start_trading():
         data = request.get_json(silent=True) or {}
         mode = data.get('mode', 'PAPER')
         initiated_by = f"admin:{getattr(g, 'user_id', 'unknown')}"
+
+        # تنظيف السجلات القديمة عند بدء التداول
+        try:
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+            with db.get_write_connection() as conn:
+                cursor = conn.execute("DELETE FROM activity_logs WHERE created_at < datetime('now', '-1 day')")
+                deleted_count = cursor.rowcount
+                if deleted_count > 0:
+                    logger.info(f"🗑️ تم تنظيف {deleted_count} سجل نشاط قديم عند بدء التداول")
+        except Exception as cleanup_err:
+            logger.warning(f"⚠️ فشل تنظيف السجلات: {cleanup_err}")
 
         logger.info(f"🚀 Start trading requested by {initiated_by}, mode={mode}")
         state = tsm.start(initiated_by=initiated_by, mode=mode)

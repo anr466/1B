@@ -7,6 +7,7 @@ ML Signal Classifier - مصنف إشارات التداول باستخدام XGB
 
 import os
 import json
+import warnings
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -18,6 +19,7 @@ try:
     from sklearn.model_selection import train_test_split, cross_val_score
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
     from sklearn.preprocessing import StandardScaler
+    from sklearn.exceptions import InconsistentVersionWarning
     import joblib
     ML_AVAILABLE = True
 except ImportError:
@@ -211,16 +213,36 @@ class MLSignalClassifier:
         """تحميل النموذج المحفوظ"""
         if os.path.exists(self.model_path):
             try:
-                self.model = xgb.XGBClassifier()
-                self.model.load_model(self.model_path)
-                
-                if os.path.exists(self.scaler_path):
-                    self.scaler = joblib.load(self.scaler_path)
+                with warnings.catch_warnings():
+                    warnings.simplefilter('error', InconsistentVersionWarning)
+
+                    self.model = xgb.XGBClassifier()
+                    self.model.load_model(self.model_path)
+
+                    if os.path.exists(self.scaler_path):
+                        self.scaler = joblib.load(self.scaler_path)
                 
                 logger.info("✅ تم تحميل النموذج المحفوظ")
+            except InconsistentVersionWarning as e:
+                logger.warning(f"⚠️ نموذج ML محفوظ بإصدار مختلف: {e}. سيتم إعادة تهيئة ملفات النموذج.")
+                self._archive_incompatible_artifacts()
+                self.model = None
+                self.scaler = StandardScaler()
             except Exception as e:
                 logger.warning(f"⚠️ فشل تحميل النموذج: {e}")
                 self.model = None
+
+    def _archive_incompatible_artifacts(self):
+        """أرشفة ملفات النموذج/المُقيّس غير المتوافقة لتفادي تحذيرات التحميل."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        for path in [self.model_path, self.scaler_path]:
+            try:
+                if path and os.path.exists(path):
+                    archived = f"{path}.incompatible_{timestamp}.bak"
+                    os.replace(path, archived)
+                    logger.info(f"🗄️ تم أرشفة ملف غير متوافق: {archived}")
+            except Exception as archive_error:
+                logger.warning(f"⚠️ تعذر أرشفة ملف ML غير متوافق ({path}): {archive_error}")
     
     def _save_model(self):
         """حفظ النموذج"""

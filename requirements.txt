@@ -22,6 +22,7 @@ python-multipart==0.0.6
 # sqlite3  # Built-in with Python (no need to install)
 sqlalchemy==2.0.23
 alembic==1.12.1
+psycopg2-binary==2.9.10
 
 # ==================== Authentication & Security ====================
 pyjwt==2.10.1
@@ -30,6 +31,8 @@ cryptography==41.0.7
 python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
+email-validator==2.3.0
+dnspython==2.8.0
 
 # ==================== API & HTTP ====================
 requests==2.31.0

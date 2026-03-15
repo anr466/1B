@@ -53,7 +53,7 @@ class DataProvider:
     
     def __init__(self, api_key: str = None, api_secret: str = None, 
                 use_testnet: bool = False, cache_dir: str = None,
-                cache_ttl: int = 3600, rate_limit_per_minute: int = 10):
+                cache_ttl: int = 3600, rate_limit_per_minute: int = 60):
         """
         تهيئة مزود البيانات
         
@@ -64,7 +64,7 @@ class DataProvider:
             cache_dir: مسار دليل التخزين المؤقت (اختياري)
             cache_ttl: فترة صلاحية التخزين المؤقت بالثواني (افتراضي: ساعة واحدة)
 
-            rate_limit_per_minute: حد الطلبات لكل دقيقة (افتراضي: 10)
+            rate_limit_per_minute: حد الطلبات لكل دقيقة (افتراضي: 60)
         """
         self.api_key = api_key
         self.api_secret = api_secret
@@ -82,6 +82,18 @@ class DataProvider:
             logger.debug(f"تأخير في إنشاء عميل Binance: {e}")
             self.client = None
         
+        # إعدادات الاتصال البديل
+        self._connection_errors = []
+        self._last_successful_connection = None
+        self._fallback_mode = False
+        
+        # إعدادات إعادة الاتصال التلقائي
+        self._auto_reconnect_enabled = True
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 10
+        self._reconnect_delay = 5  # ثواني
+        self._last_reconnect_check = None
+        
         # إدارة معدل الطلبات
         self.rate_limit_per_minute = rate_limit_per_minute
         self.request_count = 0
@@ -89,10 +101,16 @@ class DataProvider:
         
         # إعداد التخزين المؤقت
         if cache_dir is None:
-            cache_dir = ".cache"
+            _project_root = Path(__file__).parent.parent.parent
+            cache_dir = _project_root / ".cache"
         self.cache_dir = Path(cache_dir)
         self.cache_ttl = cache_ttl
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            import tempfile
+            self.cache_dir = Path(tempfile.gettempdir()) / "trading_ai_cache"
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # قائمة مؤقتة لأزواج التداول الشائعة للتقليل من استدعاءات API
         self.common_pairs = [
@@ -243,6 +261,10 @@ class DataProvider:
         """
         # التحقق من معدل الطلبات
         self._manage_rate_limit()
+        
+        # فحص الاتصال وإعادة الاتصال التلقائي إذا لزم الأمر
+        if not self.check_and_reconnect():
+            logger.warning("⚠️ Connection issue, trying with cached data...")
         
         # إنشاء مفتاح التخزين المؤقت
         cache_key = self._get_cache_key(
@@ -599,6 +621,10 @@ class DataProvider:
         # التحقق من معدل الطلبات
         self._manage_rate_limit()
         
+        # فحص الاتصال وإعادة الاتصال التلقائي إذا لزم الأمر
+        if not self.check_and_reconnect():
+            logger.warning("⚠️ Connection issue, returning cached/default prices...")
+        
         try:
             # جلب الأسعار من Binance API مع Retry Logic
             if RETRY_AVAILABLE:
@@ -614,6 +640,228 @@ class DataProvider:
         except Exception as e:
             logger.error(f"فشل في جلب السعر الحالي: {str(e)}")
             return {} if symbol is None else 0.0
+
+    def check_connection(self) -> Dict:
+        """
+        فحص حالة الاتصال بـ Binance مع تشخيص كامل
+        
+        Returns:
+            Dict: حالة الاتصال مع تفاصيل المشكلة
+        """
+        result = {
+            'connected': False,
+            'latency_ms': None,
+            'error': None,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        try:
+            start = time.time()
+            # جرب الاتصال البسيط
+            self.client.ping()
+            latency = (time.time() - start) * 1000
+            
+            result['connected'] = True
+            result['latency_ms'] = round(latency, 2)
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if 'resolve' in error_msg or 'nodename' in error_msg:
+                result['error'] = 'DNS_ERROR'
+                result['error_detail'] = 'فشل في حل اسم النطاق api.binance.com - تحقق من الاتصال بالإنترنت أو إعدادات DNS'
+            elif 'connection' in error_msg:
+                result['error'] = 'CONNECTION_ERROR'
+                result['error_detail'] = 'فشل في الاتصال بـ Binance - تحقق من الاتصال بالإنترنت'
+            elif 'timeout' in error_msg:
+                result['error'] = 'TIMEOUT'
+                result['error_detail'] = 'انتهت مهلة الاتصال - الشبكة بطيئة أو معطلة'
+            elif '429' in error_msg:
+                result['error'] = 'RATE_LIMIT'
+                result['error_detail'] = 'تم تجاوز حد الطلبات - انتظر قليلاً'
+            elif '401' in error_msg or '403' in error_msg:
+                result['error'] = 'AUTH_ERROR'
+                result['error_detail'] = 'خطأ في المصادقة - تحقق من مفاتيح API'
+            else:
+                result['error'] = 'UNKNOWN'
+                result['error_detail'] = str(e)
+        
+        return result
+    
+    def get_connection_status(self) -> Dict:
+        """
+        الحصول على حالة الاتصال الشاملة مع جميع Circuit Breakers
+        
+        Returns:
+            Dict: حالة شاملة للاتصال
+        """
+        status = self.check_connection()
+        
+        # إضافة حالة Circuit Breakers
+        if CIRCUIT_BREAKER_AVAILABLE:
+            try:
+                breakers = circuit_breaker_manager.get_all_states()
+                status['circuit_breakers'] = breakers
+                
+                # تحديد إذا كان أي circuit مفتوح
+                open_breakers = [name for name, state in breakers.items() 
+                               if state.get('state') == 'open']
+                if open_breakers:
+                    status['circuit_breakers_open'] = open_breakers
+                    status['connected'] = False
+                    status['error'] = 'CIRCUIT_OPEN'
+                    status['error_detail'] = f'الدوائر التالية مفتوحة: {", ".join(open_breakers)}'
+            except Exception as e:
+                logger.warning(f"فشل في جلب حالة Circuit Breakers: {e}")
+        
+        return status
+    
+    def _record_connection_error(self, error: str):
+        """تسجيل خطأ الاتصال ومحاولة إعادة الاتصال"""
+        self._connection_errors.append({
+            'timestamp': datetime.now(),
+            'error': error
+        })
+        
+        # الاحتفاظ بآخر 10 أخطاء
+        if len(self._connection_errors) > 10:
+            self._connection_errors = self._connection_errors[-10:]
+        
+        # إذا فشلنا عدة مرات متتالية، نعلم أننا في وضع الفشل
+        recent_errors = len(self._connection_errors)
+        if recent_errors >= 5:
+            self._fallback_mode = True
+            logger.warning(f"⚠️ وضع الفشل مفعل بعد {recent_errors} أخطاء متتالية")
+        
+        logger.error(f"❌ خطأ في الاتصال بـ Binance: {error}")
+    
+    def _on_successful_connection(self):
+        """تسجيل اتصال ناجح"""
+        self._last_successful_connection = datetime.now()
+        self._connection_errors = []
+        self._fallback_mode = False
+        logger.info("✅ استعادة الاتصال بـ Binance")
+    
+    def retry_connection(self) -> Dict:
+        """
+        محاولة إعادة الاتصال مع Binance
+        
+        Returns:
+            Dict: نتيجة محاولة إعادة الاتصال
+        """
+        result = {
+            'success': False,
+            'message': '',
+            'latency_ms': None
+        }
+        
+        try:
+            start = time.time()
+            self.client.ping()
+            latency = (time.time() - start) * 1000
+            
+            result['success'] = True
+            result['latency_ms'] = round(latency, 2)
+            result['message'] = 'تم استعادة الاتصال بنجاح'
+            
+            self._on_successful_connection()
+            
+            # إعادة تعيين Circuit Breakers
+            if CIRCUIT_BREAKER_AVAILABLE:
+                circuit_breaker_manager.reset_all()
+                result['message'] = 'تم استعادة الاتصال وإعادة تعيين الدوائر'
+                
+        except Exception as e:
+            result['message'] = f'فشل إعادة الاتصال: {str(e)}'
+        
+        return result
+    
+    def _attempt_auto_reconnect(self) -> bool:
+        """
+        محاولة إعادة الاتصال التلقائي مع Exponential Backoff
+        
+        Returns:
+            bool: True إذا نجح الاتصال
+        """
+        if not self._auto_reconnect_enabled:
+            return False
+        
+        if self._reconnect_attempts >= self._max_reconnect_attempts:
+            logger.warning(f"⚠️ reached max reconnect attempts ({self._max_reconnect_attempts})")
+            return False
+        
+        # حساب التأخير مع Exponential Backoff
+        delay = min(self._reconnect_delay * (2 ** self._reconnect_attempts), 60)
+        self._reconnect_attempts += 1
+        
+        logger.info(f"🔄 Attempting auto-reconnect {self._reconnect_attempts}/{self._max_reconnect_attempts} in {delay}s...")
+        time.sleep(delay)
+        
+        try:
+            if self.client:
+                self.client.ping()
+                self._on_successful_connection()
+                self._reconnect_attempts = 0
+                logger.info("✅ Auto-reconnect successful!")
+                return True
+        except Exception as e:
+            logger.warning(f"❌ Auto-reconnect failed: {e}")
+        
+        return False
+    
+    def handle_rate_limit(self, retry_after: int = None) -> None:
+        """
+        معالجة تجاوز حد الطلبات مع انتظار ذكي
+        
+        Args:
+            retry_after: عدد الثواني للانتظار (اختياري)
+        """
+        wait_time = retry_after if retry_after else 60
+        
+        # استخدام انتظار تدريجي لتجنب تجميد النظام
+        logger.warning(f"⚠️ Rate limit exceeded. Waiting {wait_time}s...")
+        
+        # تقسيم الانتظار إلى فترات أصغر مع فحص الحالة
+        chunks = min(wait_time, 10)
+        chunk_time = wait_time / chunks
+        
+        for i in range(int(chunks)):
+            time.sleep(chunk_time)
+            # فحص إذا كان يمكن الاستمرار
+            if self.request_count < self.rate_limit_per_minute / 2:
+                logger.info("✅ Rate limit recovered early")
+                break
+        
+        # إعادة تعيين عداد الوقت
+        self.minute_start_time = time.time()
+        self.request_count = 0
+    
+    def check_and_reconnect(self) -> bool:
+        """
+        فحص الاتصال والمحاولة إذا كان هناك مشكلة
+        
+        Returns:
+            bool: True إذا كان الاتصال نشط
+        """
+        if not self.client:
+            return self._attempt_auto_reconnect()
+        
+        try:
+            self.client.ping()
+            if self._reconnect_attempts > 0:
+                self._reconnect_attempts = 0
+                self._on_successful_connection()
+            return True
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # فحص نوع الخطأ
+            if '429' in error_msg:
+                self.handle_rate_limit()
+            elif 'timeout' in error_msg or 'connection' in error_msg or 'resolve' in error_msg:
+                return self._attempt_auto_reconnect()
+            
+            return False
     
     def clear_cache(self, older_than: int = None) -> int:
         """
@@ -644,7 +892,7 @@ class DataProvider:
 # دالة مساعدة لإنشاء مزود بيانات
 def create_data_provider(api_key: str = None, api_secret: str = None,
                         use_testnet: bool = False, cache_dir: str = None,
-                        cache_ttl: int = 3600, rate_limit_per_minute: int = 10) -> DataProvider:
+                        cache_ttl: int = 3600, rate_limit_per_minute: int = 60) -> DataProvider:
     """
     إنشاء مزود بيانات جديد
     
@@ -655,7 +903,7 @@ def create_data_provider(api_key: str = None, api_secret: str = None,
         cache_dir: مسار دليل التخزين المؤقت (اختياري)
         cache_ttl: فترة صلاحية التخزين المؤقت بالثواني (افتراضي: ساعة واحدة)
 
-        rate_limit_per_minute: حد الطلبات لكل دقيقة (افتراضي: 10)
+        rate_limit_per_minute: حد الطلبات لكل دقيقة (افتراضي: 60)
         
     Returns:
         DataProvider: مزود البيانات

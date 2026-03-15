@@ -4,6 +4,7 @@
 
 from flask import Blueprint, request, jsonify
 import logging
+import os
 from datetime import datetime
 
 client_logs_bp = Blueprint('client_logs', __name__)
@@ -12,8 +13,12 @@ client_logs_bp = Blueprint('client_logs', __name__)
 client_logger = logging.getLogger('client_logs')
 client_logger.setLevel(logging.DEBUG)
 
+# استخدام مجلد logs داخل المشروع
+_LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
+os.makedirs(_LOGS_DIR, exist_ok=True)
+
 # إضافة handler لحفظ سجلات العملاء في ملف منفصل
-client_handler = logging.FileHandler('logs/client_logs.log')
+client_handler = logging.FileHandler(os.path.join(_LOGS_DIR, 'client_logs.log'))
 client_handler.setLevel(logging.DEBUG)
 
 # تنسيق موحد للسجلات
@@ -74,7 +79,7 @@ def receive_client_logs():
         if level in ['ERROR', 'CRITICAL']:
             main_logger.error(f"📱 CLIENT ERROR: {log_message}")
         
-        return jsonify({'success': True}), 200
+        return jsonify({'success': True, 'data': {'accepted': True}}), 200
         
     except Exception as e:
         main_logger.error(f"❌ Error receiving client logs: {e}")

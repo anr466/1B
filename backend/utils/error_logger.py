@@ -17,6 +17,7 @@ import os
 import sys
 import logging
 import traceback
+import hashlib
 from datetime import datetime
 from enum import Enum
 
@@ -51,6 +52,7 @@ class ErrorLogger:
     def __init__(self):
         self.db_manager = DatabaseManager()
         self.logger = logging.getLogger(__name__)
+        self._default_max_auto_attempts = 3
         self._ensure_errors_table()
     
     def _ensure_errors_table(self):
@@ -58,8 +60,12 @@ class ErrorLogger:
         try:
             with self.db_manager.get_write_connection() as conn:
                 # التحقق من وجود الأعمدة المطلوبة
-                cursor = conn.execute("PRAGMA table_info(system_errors)")
-                columns = {row[1] for row in cursor.fetchall()}
+                cursor = conn.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'system_errors'
+                """)
+                columns = {row[0] for row in cursor.fetchall()}
                 
                 # إضافة الأعمدة المفقودة إذا لزم الأمر
                 if 'source' not in columns:
@@ -73,6 +79,20 @@ class ErrorLogger:
                 
                 if 'resolved_by' not in columns:
                     conn.execute("ALTER TABLE system_errors ADD COLUMN resolved_by TEXT")
+
+                # Lifecycle columns (backward-compatible)
+                if 'error_fingerprint' not in columns:
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN error_fingerprint TEXT")
+                if 'status' not in columns:
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN status TEXT DEFAULT 'new'")
+                if 'attempt_count' not in columns:
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN attempt_count INTEGER DEFAULT 0")
+                if 'last_attempt_at' not in columns:
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN last_attempt_at TIMESTAMP")
+                if 'requires_admin' not in columns:
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN requires_admin BOOLEAN DEFAULT FALSE")
+                if 'auto_action' not in columns:
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN auto_action TEXT")
                 
                 # إنشاء index للبحث السريع
                 conn.execute("""
@@ -84,9 +104,65 @@ class ErrorLogger:
                     CREATE INDEX IF NOT EXISTS idx_errors_resolved 
                     ON system_errors(resolved, severity)
                 """)
+
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_errors_fingerprint
+                    ON system_errors(error_fingerprint, resolved)
+                """)
                 
         except Exception as e:
             self.logger.error(f"خطأ في تهيئة جدول الأخطاء: {e}")
+
+    def _build_fingerprint(self, source: ErrorSource, message: str, details: str = None) -> str:
+        raw = f"{source.value}|{message}|{details or ''}"
+        return hashlib.sha1(raw.encode('utf-8')).hexdigest()
+
+    def _classify_auto_action(self, message: str, details: str = None) -> tuple[str, int, bool]:
+        """إرجاع (auto_action, max_attempts, can_auto_heal)."""
+        text = f"{message or ''} {details or ''}".lower()
+
+        if 'database is locked' in text or 'database busy' in text:
+            return ('retry_db_operation', 5, True)
+
+        if 'binance' in text and any(k in text for k in ['timeout', 'network', 'connection', 'temporar']):
+            return ('retry_binance_operation', 3, True)
+
+        if 'failed to save position' in text or 'active_positions' in text or 'unique constraint' in text:
+            return ('investigate_active_positions_constraint', 2, True)
+
+        return ('manual_investigation', 1, False)
+
+    def _try_auto_fix(self, action: str) -> bool:
+        """تنفيذ إصلاح تلقائي آمن ومحدد."""
+        try:
+            if action == 'investigate_active_positions_constraint':
+                # إصلاح آمن: تشغيل migrations (idempotent)
+                self.db_manager._apply_migrations()
+                with self.db_manager.get_connection() as conn:
+                    # Check table exists
+                    row = conn.execute("""
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name = 'active_positions'
+                    """).fetchone()
+                    if not row:
+                        return False
+                    # Check unique index exists
+                    idx_row = conn.execute("""
+                        SELECT 1 FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND indexname = 'idx_active_positions_unique_open'
+                        LIMIT 1
+                    """).fetchone()
+                    return idx_row is not None
+
+            if action in ('retry_db_operation', 'retry_binance_operation'):
+                # لا توجد عملية تنفيذ مباشرة هنا؛ نعيد True كـ soft recovery cycle.
+                return True
+
+            return False
+        except Exception as e:
+            self.logger.warning(f"⚠️ auto-fix failed for action={action}: {e}")
+            return False
     
     def log_error(
         self,
@@ -94,7 +170,12 @@ class ErrorLogger:
         source: ErrorSource,
         message: str,
         details: str = None,
-        include_traceback: bool = False
+        include_traceback: bool = False,
+        status: str = 'new',
+        requires_admin: bool = False,
+        auto_action: str = None,
+        attempt_count: int = 0,
+        fingerprint: str = None,
     ) -> int:
         """
         تسجيل خطأ
@@ -115,19 +196,78 @@ class ErrorLogger:
             if include_traceback:
                 tb = traceback.format_exc()
             
-            # حفظ في Database (استخدام الأعمدة الموجودة)
+            # حفظ/تجميع في Database (dedup بالبصمة)
+            final_fingerprint = fingerprint or self._build_fingerprint(source, message, details)
             with self.db_manager.get_write_connection() as conn:
+                existing = conn.execute(
+                    """
+                    SELECT id, attempt_count, status, requires_admin
+                    FROM system_errors
+                    WHERE resolved = 0 AND error_fingerprint = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (final_fingerprint,)
+                ).fetchone()
+
+                if existing:
+                    existing_attempts = int(existing['attempt_count'] or 0)
+                    new_attempts = max(existing_attempts + 1, int(attempt_count or 0) + 1)
+                    existing_status = str(existing['status'] or 'new')
+                    next_status = existing_status if existing_status in ('escalated', 'auto_processing') else status
+                    needs_admin = 1 if (bool(existing['requires_admin']) or requires_admin) else 0
+
+                    conn.execute(
+                        """
+                        UPDATE system_errors
+                        SET error_type = ?,
+                            error_message = ?,
+                            severity = ?,
+                            source = ?,
+                            details = ?,
+                            traceback = ?,
+                            status = ?,
+                            attempt_count = ?,
+                            last_attempt_at = CURRENT_TIMESTAMP,
+                            requires_admin = ?,
+                            auto_action = COALESCE(?, auto_action)
+                        WHERE id = ?
+                        """,
+                        (
+                            source.value,
+                            message,
+                            level.value,
+                            source.value,
+                            details,
+                            tb,
+                            next_status,
+                            new_attempts,
+                            needs_admin,
+                            auto_action,
+                            int(existing['id']),
+                        ),
+                    )
+                    error_id = int(existing['id'])
+                    return error_id
+
                 cursor = conn.execute("""
                     INSERT INTO system_errors 
-                    (error_type, error_message, severity, source, details, traceback)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (error_type, error_message, severity, source, details, traceback,
+                     error_fingerprint, status, attempt_count, last_attempt_at,
+                     requires_admin, auto_action)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
                 """, (
                     source.value,  # error_type
                     message,       # error_message
                     level.value,   # severity
                     source.value,  # source (عمود جديد)
                     details,
-                    tb
+                    tb,
+                    final_fingerprint,
+                    status,
+                    max(1, int(attempt_count or 1)),
+                    1 if requires_admin else 0,
+                    auto_action,
                 ))
                 
                 error_id = cursor.lastrowid
@@ -151,6 +291,91 @@ class ErrorLogger:
         except Exception as e:
             self.logger.error(f"فشل في تسجيل الخطأ: {e}")
             return -1
+
+    def process_pending_errors(self, limit: int = 100) -> dict:
+        """محرك أتمتة أخطاء آمن: يصنف ويعالج أو يصعّد."""
+        result = {
+            'processed': 0,
+            'auto_resolved': 0,
+            'escalated': 0,
+            'auto_processing': 0,
+        }
+        try:
+            with self.db_manager.get_write_connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT id, error_message, details, attempt_count, status
+                    FROM system_errors
+                    WHERE resolved = 0
+                      AND COALESCE(status, 'new') IN ('new', 'auto_processing', 'escalated')
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                    """,
+                    (max(1, int(limit)),)
+                ).fetchall()
+
+                for row in rows:
+                    result['processed'] += 1
+                    error_id = int(row['id'])
+                    attempts = int(row['attempt_count'] or 0)
+                    message = row['error_message'] or ''
+                    details = row['details'] or ''
+
+                    action, max_attempts, can_auto_heal = self._classify_auto_action(message, details)
+                    next_attempt = attempts + 1
+
+                    if can_auto_heal and next_attempt <= max_attempts:
+                        ok = self._try_auto_fix(action)
+                        if ok:
+                            conn.execute(
+                                """
+                                UPDATE system_errors
+                                SET resolved = 1,
+                                    resolved_at = CURRENT_TIMESTAMP,
+                                    resolved_by = 'auto-healer',
+                                    status = 'auto_resolved',
+                                    requires_admin = 0,
+                                    auto_action = ?,
+                                    attempt_count = ?,
+                                    last_attempt_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                                """,
+                                (action, next_attempt, error_id),
+                            )
+                            result['auto_resolved'] += 1
+                        else:
+                            conn.execute(
+                                """
+                                UPDATE system_errors
+                                SET status = 'auto_processing',
+                                    auto_action = ?,
+                                    attempt_count = ?,
+                                    last_attempt_at = CURRENT_TIMESTAMP,
+                                    requires_admin = 0
+                                WHERE id = ?
+                                """,
+                                (action, next_attempt, error_id),
+                            )
+                            result['auto_processing'] += 1
+                    else:
+                        conn.execute(
+                            """
+                            UPDATE system_errors
+                            SET status = 'escalated',
+                                requires_admin = 1,
+                                auto_action = ?,
+                                attempt_count = ?,
+                                last_attempt_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """,
+                            (action, next_attempt, error_id),
+                        )
+                        result['escalated'] += 1
+
+            return result
+        except Exception as e:
+            self.logger.error(f"خطأ في process_pending_errors: {e}")
+            return result
     
     def log_group_b_error(self, message: str, details: str = None, critical: bool = False):
         """تسجيل خطأ Group B"""

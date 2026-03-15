@@ -89,6 +89,11 @@ SECURE_ACTIONS = {
     },
 }
 
+DEDICATED_ACCOUNT_ACTIONS = {
+    'change_password': 'استخدم مسار تغيير كلمة المرور المخصص',
+    'change_email': 'استخدم مسار تغيير البريد الإلكتروني المخصص',
+}
+
 # ==================== OTP Storage (DB-backed) ====================
 
 def _save_pending_verification(user_id, action, otp, expires_at, method, new_value=None, old_password=None):
@@ -96,9 +101,16 @@ def _save_pending_verification(user_id, action, otp, expires_at, method, new_val
     db = DatabaseManager()
     with db.get_write_connection() as conn:
         conn.execute("""
-            INSERT OR REPLACE INTO pending_verifications
+            INSERT INTO pending_verifications
             (user_id, action, otp, expires_at, method, new_value, old_password, attempts)
             VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            ON CONFLICT (user_id, action) DO UPDATE SET
+                otp = EXCLUDED.otp,
+                expires_at = EXCLUDED.expires_at,
+                method = EXCLUDED.method,
+                new_value = EXCLUDED.new_value,
+                old_password = EXCLUDED.old_password,
+                attempts = EXCLUDED.attempts
         """, (user_id, action, otp, expires_at.isoformat(), method, new_value, old_password))
 
 def _get_pending_verification(user_id, action):
@@ -161,33 +173,23 @@ from backend.utils.user_lookup_service import get_user_by_id
 
 from backend.utils.password_utils import verify_password, hash_password
 
-# تخزين OTP للتحقق (في الذاكرة)
-otp_storage = {}
 
 def send_otp_email(email, otp_code, action_name):
     """إرسال OTP عبر الإيميل باستخدام SimpleEmailOTPService
     Returns: (success: bool, actual_code: str) - the actual OTP code sent to the user
     """
     try:
-        if OTP_SERVICE_AVAILABLE and otp_service:
-            success, service_code = otp_service.send_email_otp(email, purpose=action_name)
-            if success:
-                logger.info(f"✅ تم إرسال OTP إلى {email} للعملية: {action_name}")
-                return True, service_code
-            else:
-                logger.error(f"❌ فشل إرسال OTP إلى {email}")
-                return False, None
-        else:
-            otp_storage[email] = {
-                'code': otp_code,
-                'expires': datetime.now() + timedelta(minutes=10),
-                'action': action_name,
-            }
-            logger.warning(f"⚠️ OTP Service غير متاح، استخدام التخزين المحلي")
-            logger.info(f"✅ تم حفظ OTP في الذاكرة: {email}")
-            logger.debug(f"🔑 OTP Code: {otp_code}")
-            return True, otp_code
-        
+        if not (OTP_SERVICE_AVAILABLE and otp_service):
+            logger.error("❌ OTP email service unavailable")
+            return False, None
+
+        success, service_code = otp_service.send_email_otp(email, purpose=action_name)
+        if success:
+            logger.info(f"✅ تم إرسال OTP إلى {email} للعملية: {action_name}")
+            return True, service_code
+
+        logger.error(f"❌ فشل إرسال OTP إلى {email}")
+        return False, None
     except Exception as e:
         logger.error(f"خطأ في إرسال OTP: {e}")
         return False, None
@@ -195,30 +197,17 @@ def send_otp_email(email, otp_code, action_name):
 def send_otp_sms(phone, otp_code, action_name):
     """إرسال OTP عبر SMS باستخدام Firebase"""
     try:
-        # حفظ OTP في التخزين المحلي
-        otp_storage[phone] = {
-            'otp': otp_code,
-            'created_at': datetime.now(),
-            'expires_at': datetime.now() + timedelta(minutes=10),
-            'attempts': 0,
-        }
-        
-        # محاولة إرسال SMS عبر Firebase
-        try:
-            from utils.firebase_sms_service import send_sms_otp
-            result = send_sms_otp(phone, otp_code, action_name)
-            if result:
-                logger.info(f"📱 تم إرسال OTP عبر Firebase SMS إلى {phone}")
-                return True
-        except ImportError:
-            logger.warning("⚠️ خدمة Firebase SMS غير متاحة - استخدام المحاكاة")
-        except Exception as sms_error:
-            logger.warning(f"⚠️ فشل إرسال SMS: {sms_error} - استخدام المحاكاة")
-        
-        # Fallback: محاكاة الإرسال (للتطوير)
-        logger.info(f"📱 [محاكاة] تم حفظ OTP للجوال {phone} للعملية: {action_name}")
-        logger.info(f"📱 [DEV] OTP Code: {otp_code}")  # للتطوير فقط
-        return True
+        from backend.utils.firebase_sms_service import send_sms_otp
+        result = send_sms_otp(phone, otp_code, action_name)
+        if result:
+            logger.info(f"📱 تم إرسال OTP عبر Firebase SMS إلى {phone}")
+            return True
+
+        logger.error(f"❌ فشل إرسال OTP عبر SMS إلى {phone}")
+        return False
+    except ImportError:
+        logger.error("❌ Firebase SMS service unavailable")
+        return False
     except Exception as e:
         logger.error(f"خطأ في إرسال SMS: {e}")
         return False
@@ -279,15 +268,15 @@ def request_verification():
     """
     try:
         user_id = g.user_id
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         if not data:
             return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
         
         action = data.get('action')
         method = data.get('method', 'sms')  # ✅ الافتراضي: SMS
-        new_value = data.get('new_value')
-        old_password = data.get('old_password')
+        new_value = data.get('newValue') if 'newValue' in data else data.get('new_value')
+        old_password = data.get('oldPassword') if 'oldPassword' in data else data.get('old_password')
         
         # التحقق من نوع العملية
         if action not in SECURE_ACTIONS:
@@ -298,6 +287,12 @@ def request_verification():
             }), 400
         
         action_config = SECURE_ACTIONS[action]
+
+        if action in DEDICATED_ACCOUNT_ACTIONS:
+            return jsonify({
+                'success': False,
+                'error': DEDICATED_ACCOUNT_ACTIONS[action]
+            }), 400
         
         # التحقق من طريقة التحقق المسموحة
         if method not in action_config['verification_options']:
@@ -326,7 +321,7 @@ def request_verification():
                 return jsonify({'success': False, 'error': 'لا يوجد إيميل مسجل'}), 400
             masked_target = target[:2] + '***@' + target.split('@')[1] if '@' in target else target
         else:  # sms
-            target = user['phone']
+            target = user.get('phone') or user.get('phone_number')
             if not target:
                 return jsonify({'success': False, 'error': 'لا يوجد رقم جوال مسجل'}), 400
             masked_target = target[:4] + '****' + target[-4:] if len(target) > 8 else target
@@ -336,7 +331,7 @@ def request_verification():
         expires_at = datetime.now() + timedelta(minutes=10)
         
         # حفظ التحقق المعلق في DB
-        _save_pending_verification(user_id, action, otp_code, expires_at, method, new_value, old_password)
+        _save_pending_verification(user_id, action, otp_code, expires_at, method, new_value, None)
         
         # إرسال OTP
         if method == 'email':
@@ -385,17 +380,23 @@ def verify_and_execute():
     """
     try:
         user_id = g.user_id
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         if not data:
             return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
         
         action = data.get('action')
-        otp_code = data.get('otp', '').strip()
-        new_value = data.get('new_value')
+        otp_code = (data.get('otp_code') or data.get('otp') or '').strip()
+        new_value = data.get('newValue') if 'newValue' in data else data.get('new_value')
         
         if not action or not otp_code:
             return jsonify({'success': False, 'error': 'العملية ورمز OTP مطلوبان'}), 400
+
+        if action in DEDICATED_ACCOUNT_ACTIONS:
+            return jsonify({
+                'success': False,
+                'error': DEDICATED_ACCOUNT_ACTIONS[action]
+            }), 400
         
         # التحقق من وجود طلب معلق
         pending = _get_pending_verification(user_id, action)
@@ -456,6 +457,12 @@ def get_verification_options(action):
             }), 400
         
         action_config = SECURE_ACTIONS[action]
+
+        if action in DEDICATED_ACCOUNT_ACTIONS:
+            return jsonify({
+                'success': False,
+                'error': DEDICATED_ACCOUNT_ACTIONS[action]
+            }), 400
         user = get_user_by_id(user_id)
         
         if not user:
@@ -465,8 +472,9 @@ def get_verification_options(action):
         # ✅ SMS أولاً (الافتراضي)
         available_options = []
         
-        if 'sms' in action_config['verification_options'] and user.get('phone'):
-            phone = user['phone']
+        phone_value = user.get('phone') or user.get('phone_number')
+        if 'sms' in action_config['verification_options'] and phone_value:
+            phone = phone_value
             masked = phone[:4] + '****' + phone[-4:] if len(phone) > 8 else phone
             available_options.append({
                 'method': 'sms',
@@ -502,10 +510,23 @@ def cancel_verification(action):
     """إلغاء طلب تحقق معلق"""
     try:
         user_id = g.user_id
+
+        if action not in SECURE_ACTIONS:
+            return jsonify({
+                'success': False,
+                'error': 'نوع العملية غير مدعوم',
+                'supported_actions': list(SECURE_ACTIONS.keys())
+            }), 400
         
-        pending = _get_pending_verification(user_id, action)
+        try:
+            pending = _get_pending_verification(user_id, action)
+        except Exception:
+            pending = None
         if pending:
-            _delete_pending_verification(user_id, action)
+            try:
+                _delete_pending_verification(user_id, action)
+            except Exception:
+                pass
             return jsonify({'success': True, 'message': 'تم إلغاء طلب التحقق'})
         
         return jsonify({'success': True, 'message': 'لا يوجد طلب معلق'})
@@ -628,8 +649,13 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                 
                 # حفظ أو تحديث المفاتيح
                 cursor.execute("""
-                    INSERT OR REPLACE INTO user_binance_keys (user_id, api_key, secret_key, created_at)
-                    VALUES (?, ?, ?, datetime('now'))
+                    INSERT INTO user_binance_keys (user_id, api_key, api_secret, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        api_key = EXCLUDED.api_key,
+                        api_secret = EXCLUDED.api_secret,
+                        is_active = EXCLUDED.is_active,
+                        updated_at = EXCLUDED.updated_at
                 """, (user_id, api_key, secret_key))
                 return {'success': True, 'message': 'تم حفظ مفاتيح Binance بنجاح'}
             

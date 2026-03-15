@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 import json
 import logging
 
+from backend.utils.trading_context import get_effective_is_demo, get_trading_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +26,74 @@ def register_mobile_trades_routes(bp, shared):
     CACHE_AVAILABLE = shared.get('CACHE_AVAILABLE', False)
     response_cache = shared.get('response_cache', None)
 
+    def _resolve_trade_context(db, user_id, requested_mode=None):
+        """Resolve demo mode and canonical owner via centralized trading context rules."""
+        trading_context = get_trading_context(db, user_id, requested_mode=requested_mode)
+        return trading_context['is_demo'], trading_context['portfolio_owner_id']
+
     # ==================== سجل الصفقات (Trade History) ====================
+
+    @bp.route('/trade/<int:trade_id>', methods=['GET'])
+    @require_auth
+    @rate_limit_data
+    def get_trade_by_id(trade_id):
+        """
+        جلب صفقة واحدة بواسطة الـ ID
+        يستخدم للتنقل من الإشعارات إلى تفاصيل الصفقة
+        """
+        try:
+            user_id = g.user_id
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT
+                        id, user_id, symbol,
+                        CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
+                        quantity,
+                        entry_price,
+                        exit_price,
+                        CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
+                        profit_loss,
+                        profit_pct,
+                        strategy,
+                        COALESCE(entry_date, created_at::text) AS opened_at,
+                        closed_at
+                    FROM active_positions
+                    WHERE id = ? AND user_id = ?
+                """, (trade_id, user_id))
+                
+                row = cursor.fetchone()
+                
+                if not row:
+                    return error_response('الصفقة غير موجودة', 'NOT_FOUND', 404)
+                
+                trade = {
+                    'id': row[0],
+                    'userId': row[1],
+                    'symbol': row[2],
+                    'side': row[3],
+                    'quantity': float(row[4]) if row[4] else None,
+                    'entryPrice': float(row[5]) if row[5] else None,
+                    'exitPrice': float(row[6]) if row[6] else None,
+                    'pnl': float(row[8]) if row[8] else None,
+                    'pnlPercentage': float(row[9]) if row[9] else None,
+                    'status': row[7],
+                    'orderType': None,
+                    'strategy': row[10],
+                    'openedAt': row[11],
+                    'closedAt': row[12],
+                    'createdAt': row[11],
+                    'updatedAt': row[12]
+                }
+                
+                return success_response(trade)
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في جلب الصفقة {trade_id}: {e}")
+            return error_response('خطأ في جلب البيانات', 'ERROR', 500)
 
     @bp.route('/trades/<int:user_id>', methods=['GET'])
     @require_auth
@@ -91,27 +160,7 @@ def register_mobile_trades_routes(bp, shared):
             offset = (page - 1) * limit
             
             requested_mode = request.args.get('mode', None)
-            
-            user_data = db.get_user_by_id(user_id)
-            is_admin = user_data.get('user_type') == 'admin' if user_data else False
-            is_demo = None
-            
-            if is_admin:
-                if requested_mode:
-                    is_demo = 1 if requested_mode == 'demo' else 0
-                else:
-                    settings = db.get_trading_settings(user_id)
-                    if settings:
-                        trading_mode = settings.get('trading_mode', 'auto')
-                        if trading_mode == 'demo':
-                            is_demo = 1
-                        elif trading_mode == 'real':
-                            is_demo = 0
-                        else:  # auto
-                            keys = db.get_binance_keys(user_id)
-                            is_demo = 0 if keys else 1
-            else:
-                is_demo = 0
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
             
             cache_key = f"trades_{user_id}_{page}_{limit}_{status}_{date_from}_{date_to}_{requested_mode}"
             if CACHE_AVAILABLE:
@@ -122,7 +171,7 @@ def register_mobile_trades_routes(bp, shared):
                     return jsonify(response_data), status_code
             
             trades_data = db.get_user_trades_paginated(
-                user_id=user_id,
+                user_id=portfolio_owner_id,
                 limit=limit,
                 offset=offset,
                 status=status,
@@ -151,7 +200,12 @@ def register_mobile_trades_routes(bp, shared):
                         'status': trade.get('status', 'unknown'),
                         'entryTime': trade.get('entry_time'),
                         'exitTime': trade.get('exit_time'),
-                        'strategyName': trade.get('strategy', 'unknown')
+                        'strategyName': trade.get('strategy', 'unknown'),
+                        'timeframe': trade.get('timeframe'),
+                        'stopLoss': float(trade['stop_loss']) if trade.get('stop_loss') else None,
+                        'takeProfit': float(trade['take_profit']) if trade.get('take_profit') else None,
+                        'exitReason': trade.get('exit_reason'),
+                        'mlConfidence': float(trade['ml_confidence']) if trade.get('ml_confidence') else None,
                     })
             
             total_count = trades_data.get('total', 0) or 0
@@ -199,30 +253,10 @@ def register_mobile_trades_routes(bp, shared):
             db = DatabaseManager()
             
             requested_mode = request.args.get('mode', None)
-            
-            user_data = db.get_user_by_id(user_id)
-            is_admin = user_data.get('user_type') == 'admin' if user_data else False
-            is_demo = None
-            
-            if is_admin:
-                if requested_mode:
-                    is_demo = 1 if requested_mode == 'demo' else 0
-                else:
-                    settings = db.get_trading_settings(user_id)
-                    if settings:
-                        trading_mode = settings.get('trading_mode', 'auto')
-                        if trading_mode == 'demo':
-                            is_demo = 1
-                        elif trading_mode == 'real':
-                            is_demo = 0
-                        else:
-                            keys = db.get_binance_keys(user_id)
-                            is_demo = 0 if keys else 1
-            else:
-                is_demo = 0
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
             
             is_demo_bool = bool(is_demo) if is_demo is not None else None
-            positions = db.get_user_active_positions(user_id, is_demo=is_demo_bool)
+            positions = db.get_user_active_positions(portfolio_owner_id, is_demo=is_demo_bool)
             
             formatted_positions = []
             total_unrealized_pnl = 0
@@ -300,38 +334,32 @@ def register_mobile_trades_routes(bp, shared):
                 return jsonify(response_data), status_code
             
             days = request.args.get('days', 90, type=int)
-            is_admin = request.args.get('is_admin', 'false').lower() == 'true'
-            trading_mode = request.args.get('trading_mode', 'auto')
+            requested_mode = request.args.get('trading_mode', None) or request.args.get('mode', None)
             
-            if is_admin:
-                is_demo = 1 if trading_mode == 'demo' else 0
-            else:
-                user_settings = db_manager.get_trading_settings(user_id)
-                if user_settings:
-                    user_trading_mode = user_settings.get('trading_mode', 'demo')
-                    is_demo = 1 if user_trading_mode == 'demo' else 0
-                else:
-                    is_demo = 0
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
+            is_admin = (db.get_user_by_id(user_id) or {}).get('user_type') == 'admin'
             
             logger.info(f"📊 جلب البيانات اليومية للمستخدم {user_id} (is_demo={is_demo}, days={days})")
             
             query = """
-                SELECT DATE(exit_time) as date,
+                SELECT DATE(closed_at) as date,
                        SUM(profit_loss) as total_pnl,
                        COUNT(*) as trades_count,
                        SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                        SUM(CASE WHEN profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
-                FROM user_trades
-                WHERE user_id = ? 
+                FROM active_positions
+                WHERE user_id = ?
                   AND is_demo = ?
-                  AND exit_time IS NOT NULL
-                  AND status = 'closed'
-                  AND exit_time >= datetime('now', '-' || ? || ' days')
-                GROUP BY DATE(exit_time)
+                  AND closed_at IS NOT NULL
+                  AND is_active = FALSE
+                  AND closed_at >= (CURRENT_TIMESTAMP - (?::text || ' days')::interval)
+                GROUP BY DATE(closed_at)
                 ORDER BY date DESC
             """
             
-            results = db_manager.execute_query(query, (user_id, is_demo, days))
+            results = db_manager.execute_query(query, (portfolio_owner_id, is_demo, days))
             
             daily_data = []
             for row in results:
@@ -379,31 +407,37 @@ def register_mobile_trades_routes(bp, shared):
                 return jsonify(response_data), status_code
             
             days = request.args.get('days', 30, type=int)
-            mode = request.args.get('mode', 'demo')
-            is_demo = 1 if mode == 'demo' else 0
+            requested_mode = request.args.get('mode', None)
+            
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
             
             with db_manager.get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT date, total_balance, daily_pnl, daily_pnl_percentage
-                    FROM portfolio_growth_history
-                    WHERE user_id = ? AND is_demo = ?
-                    AND date >= date('now', '-' || ? || ' days')
-                    ORDER BY date ASC
-                """, (user_id, is_demo, days)).fetchall()
+                try:
+                    rows = conn.execute("""
+                        SELECT date, total_balance, daily_pnl, daily_pnl_percentage
+                        FROM portfolio_growth_history
+                        WHERE user_id = ? AND is_demo = ?
+                        AND date >= CURRENT_DATE - (?::integer)
+                        ORDER BY date ASC
+                    """, (portfolio_owner_id, is_demo, days)).fetchall()
+                except Exception:
+                    rows = []
                 
                 growth_data = []
                 for row in rows:
                     growth_data.append({
-                        'date': row['date'],
-                        'totalBalance': float(row['total_balance'] or 0),
-                        'dailyPnl': float(row['daily_pnl'] or 0),
-                        'dailyPnlPercentage': float(row['daily_pnl_percentage'] or 0),
+                        'date': row[0],
+                        'totalBalance': float(row[1] or 0),
+                        'dailyPnl': float(row[2] or 0),
+                        'dailyPnlPercentage': float(row[3] or 0),
                     })
             
             result = {
                 'growth': growth_data,
                 'period': days,
-                'mode': mode
+                'mode': 'demo' if is_demo == 1 else 'real'
             }
             
             response_data, status_code = success_response(result, 'تم جلب بيانات نمو المحفظة')
@@ -420,19 +454,31 @@ def register_mobile_trades_routes(bp, shared):
     def get_admin_demo_portfolio_growth(admin_id):
         """جلب بيانات نمو محفظة الأدمن التجريبية"""
         try:
-            admin_id = int(admin_id)
+            if getattr(g, 'current_user_type', None) != 'admin':
+                response_data, status_code = error_response('غير مصرح بالوصول', 'UNAUTHORIZED', 403)
+                return jsonify(response_data), status_code
+
+            admin_id = g.current_user_id
             days = request.args.get('days', 30, type=int)
             
             with db_manager.get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT date, total_balance, daily_pnl, daily_pnl_percentage
-                    FROM portfolio_growth_history
-                    WHERE user_id = ? AND is_demo = 1
-                    AND date >= date('now', '-' || ? || ' days')
-                    ORDER BY date ASC
-                """, (admin_id, days)).fetchall()
+                try:
+                    rows = conn.execute("""
+                        SELECT date, total_balance, daily_pnl, daily_pnl_percentage
+                        FROM portfolio_growth_history
+                        WHERE user_id = ? AND is_demo = TRUE
+                        AND date >= CURRENT_DATE - (?::integer)
+                        ORDER BY date ASC
+                    """, (admin_id, days)).fetchall()
+                except Exception:
+                    rows = []
                 
-                growth_data = [dict(row) for row in rows]
+                growth_data = [{
+                    'date': row[0],
+                    'totalBalance': float(row[1] or 0),
+                    'dailyPnl': float(row[2] or 0),
+                    'dailyPnlPercentage': float(row[3] or 0),
+                } for row in rows]
             
             result = {
                 'growth': growth_data,
@@ -451,6 +497,7 @@ def register_mobile_trades_routes(bp, shared):
     # ============ Favorite Trades & Distribution ============
 
     @bp.route('/trades/favorite', methods=['POST'])
+    @require_auth
     def toggle_trade_favorite():
         """تبديل حالة المفضلة لصفقة"""
         try:
@@ -466,16 +513,20 @@ def register_mobile_trades_routes(bp, shared):
             
             with db_manager.get_write_connection() as conn:
                 trade = conn.execute(
-                    "SELECT id, user_id FROM user_trades WHERE id = ?",
+                    "SELECT id, user_id FROM active_positions WHERE id = ?",
                     (trade_id,)
                 ).fetchone()
                 
                 if not trade:
                     return jsonify({'success': False, 'error': 'الصفقة غير موجودة'}), 404
+
+                if trade[1] != g.current_user_id:
+                    logger.warning(f"⚠️ Unauthorized favorite toggle: user {g.current_user_id} tried trade {trade_id} owned by {trade[1]}")
+                    return jsonify({'success': False, 'error': 'غير مصرح بتعديل صفقة مستخدم آخر'}), 403
                 
                 conn.execute(
-                    "UPDATE user_trades SET is_favorite = ? WHERE id = ?",
-                    (1 if is_favorite else 0, trade_id)
+                    "UPDATE active_positions SET is_favorite = ? WHERE id = ?",
+                    (True if is_favorite else False, trade_id)
                 )
                 
                 logger.info(f"✅ Trade {trade_id} favorite: {is_favorite}")
@@ -490,45 +541,71 @@ def register_mobile_trades_routes(bp, shared):
             return jsonify({'success': False, 'error': 'خطأ في الخادم'}), 500
 
     @bp.route('/trades/favorites/<int:user_id>', methods=['GET'])
+    @require_auth
     def get_favorite_trades(user_id):
         """جلب الصفقات المفضلة"""
         try:
-            mode = request.args.get('mode', 'demo')
-            is_demo = mode == 'demo'
+            if not verify_user_access(user_id):
+                return jsonify({'success': False, 'error': 'Unauthorized access to another user\'s data'}), 403
+
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
             
             with db_manager.get_connection() as conn:
-                trades = conn.execute("""
-                    SELECT id, symbol, entry_price, exit_price, quantity,
-                           profit_loss, profit_loss_percentage, status,
-                           entry_time, exit_time, strategy, is_favorite
-                    FROM user_trades
-                    WHERE user_id = ? AND is_demo = ? AND is_favorite = 1
-                    ORDER BY exit_time DESC
-                """, (user_id, 1 if is_demo else 0)).fetchall()
+                try:
+                    cursor = conn.execute("""
+                        SELECT id, symbol, entry_price, exit_price, quantity,
+                               profit_loss, profit_pct AS profit_loss_percentage,
+                               CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
+                               COALESCE(entry_date, created_at::text) AS entry_time,
+                               closed_at AS exit_time, strategy, is_favorite
+                        FROM active_positions
+                        WHERE user_id = ? AND is_demo = ? AND is_favorite = TRUE
+                        ORDER BY COALESCE(closed_at, updated_at) DESC
+                    """, (portfolio_owner_id, is_demo))
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    cursor = conn.execute("""
+                        SELECT id, symbol, entry_price, exit_price, quantity,
+                               profit_loss, profit_pct AS profit_loss_percentage,
+                               CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
+                               COALESCE(entry_date, created_at::text) AS entry_time,
+                               closed_at AS exit_time, strategy, FALSE as is_favorite
+                        FROM active_positions
+                        WHERE user_id = ? AND is_demo = ?
+                        ORDER BY COALESCE(closed_at, updated_at) DESC
+                    """, (portfolio_owner_id, is_demo))
+                trades = cursor.fetchall()
+                cols = [c[0] for c in cursor.description] if cursor.description else []
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'trades': [dict(zip([c[0] for c in conn.description], row)) for row in trades],
+                        'trades': [dict(zip(cols, row)) for row in trades],
                         'total': len(trades)
                     }
                 })
                 
         except Exception as e:
             logger.error(f"❌ خطأ في جلب المفضلة: {e}")
-            return jsonify({'success': False, 'data': {'trades': [], 'total': 0}}), 500
+            return jsonify({'success': False, 'error': str(e)}), 500
 
     @bp.route('/trades/distribution/<int:user_id>', methods=['GET'])
     @require_auth
     def get_trades_distribution(user_id):
         """جلب توزيع الصفقات"""
         try:
-            mode = request.args.get('mode', 'demo')
-            is_demo = mode == 'demo'
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
             
             with db_manager.get_connection() as conn:
                 stats = conn.execute("""
-                    SELECT 
+                    SELECT
                         COUNT(*) as total_trades,
                         SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                         SUM(CASE WHEN profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades,
@@ -537,27 +614,27 @@ def register_mobile_trades_routes(bp, shared):
                         AVG(profit_loss) as avg_profit,
                         MAX(profit_loss) as best_trade,
                         MIN(profit_loss) as worst_trade
-                    FROM user_trades
-                    WHERE user_id = ? AND is_demo = ? AND status = 'closed'
-                """, (user_id, 1 if is_demo else 0)).fetchone()
+                    FROM active_positions
+                    WHERE user_id = ? AND is_demo = ? AND is_active = 0
+                """, (portfolio_owner_id, is_demo)).fetchone()
                 
                 by_symbol = conn.execute("""
                     SELECT symbol, COUNT(*) as count, SUM(profit_loss) as total
-                    FROM user_trades
-                    WHERE user_id = ? AND is_demo = ? AND status = 'closed'
+                    FROM active_positions
+                    WHERE user_id = ? AND is_demo = ? AND is_active = 0
                     GROUP BY symbol
                     ORDER BY total DESC
                     LIMIT 10
-                """, (user_id, 1 if is_demo else 0)).fetchall()
+                """, (portfolio_owner_id, is_demo)).fetchall()
                 
                 by_strategy = conn.execute("""
                     SELECT strategy, COUNT(*) as count, AVG(profit_loss) as avg
-                    FROM user_trades
-                    WHERE user_id = ? AND is_demo = ? AND status = 'closed'
+                    FROM active_positions
+                    WHERE user_id = ? AND is_demo = ? AND is_active = 0
                     GROUP BY strategy
                     ORDER BY count DESC
                     LIMIT 5
-                """, (user_id, 1 if is_demo else 0)).fetchall()
+                """, (portfolio_owner_id, is_demo)).fetchall()
                 
                 distribution = {
                     'total_trades': stats[0] or 0,
@@ -585,7 +662,7 @@ def register_mobile_trades_routes(bp, shared):
                 
         except Exception as e:
             logger.error(f"❌ خطأ في جلب التوزيع: {e}")
-            return jsonify({'success': False, 'data': {'distribution': {}, 'total_trades': 0}}), 500
+            return jsonify({'success': False, 'error': str(e)}), 500
 
     # ============ Dashboard ============
 
@@ -608,41 +685,53 @@ def register_mobile_trades_routes(bp, shared):
                 'system_status': {}
             }
             
+            is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
+            
             with db.get_connection() as conn:
-                balance_row = conn.execute(
-                    "SELECT total_balance FROM user_binance_balance WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
-                    (user_id,)
+                portfolio_balance_row = conn.execute(
+                    "SELECT available_balance FROM portfolio WHERE user_id = ? AND is_demo = ? ORDER BY updated_at DESC LIMIT 1",
+                    (portfolio_owner_id, is_demo)
                 ).fetchone()
-                
-                dashboard_data['portfolio']['balance'] = balance_row[0] if balance_row else 0
+
+                # fallback: في real mode فقط، يمكن استخدام آخر رصيد Binance إن لم تتوفر محفظة
+                if portfolio_balance_row is not None:
+                    dashboard_data['portfolio']['balance'] = portfolio_balance_row[0] or 0
+                elif is_demo == 0:
+                    balance_row = conn.execute(
+                        "SELECT total_balance FROM user_binance_balance WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
+                        (user_id,)
+                    ).fetchone()
+                    dashboard_data['portfolio']['balance'] = balance_row[0] if balance_row else 0
+                else:
+                    dashboard_data['portfolio']['balance'] = 0
                 
                 trades_stats = conn.execute("""
-                    SELECT 
-                        COUNT(*) as total_trades,
-                        SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
-                        SUM(CASE WHEN profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades,
-                        SUM(profit_loss) as total_pnl
-                    FROM user_trades 
-                    WHERE user_id = ? AND status = 'closed'
-                """, (user_id,)).fetchone()
+                    SELECT
+                        SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as total_trades,
+                        SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
+                        SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades,
+                        SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END) as total_pnl
+                    FROM active_positions
+                    WHERE user_id = ? AND is_demo = ?
+                """, (portfolio_owner_id, is_demo)).fetchone()
                 
                 dashboard_data['stats'] = {
                     'total_trades': trades_stats[0] or 0,
                     'winning_trades': trades_stats[1] or 0,
                     'losing_trades': trades_stats[2] or 0,
                     'total_pnl': round(trades_stats[3] or 0, 2),
-                    'win_rate': round((trades_stats[1] / trades_stats[0] * 100), 2) if trades_stats[0] > 0 else 0
+                    'win_rate': round((((trades_stats[1] or 0) / (trades_stats[0] or 0)) * 100), 2) if (trades_stats[0] or 0) > 0 else 0
                 }
                 
                 positions = conn.execute("""
                     SELECT 
                         id, symbol, position_type, entry_price, quantity,
-                        stop_loss, take_profit, entry_date as created_at
+                        stop_loss, take_profit, COALESCE(entry_date, created_at::text) as created_at
                     FROM active_positions 
-                    WHERE user_id = ? AND is_active = 1
-                    ORDER BY entry_date DESC
+                    WHERE user_id = ? AND is_demo = ? AND is_active = TRUE
+                    ORDER BY COALESCE(entry_date, created_at::text) DESC
                     LIMIT 5
-                """, (user_id,)).fetchall()
+                """, (portfolio_owner_id, is_demo)).fetchall()
                 
                 dashboard_data['active_positions'] = [
                     {
@@ -659,27 +748,42 @@ def register_mobile_trades_routes(bp, shared):
                 ]
                 
                 settings_row = conn.execute(
-                    "SELECT trading_mode, risk_level FROM user_settings WHERE user_id = ?",
-                    (user_id,)
+                    "SELECT trading_mode, risk_level FROM user_settings WHERE user_id = ? AND is_demo = ? LIMIT 1",
+                    (user_id, is_demo)
                 ).fetchone()
                 
                 if settings_row:
                     dashboard_data['settings'] = {
-                        'trading_mode': settings_row[0] or 'auto',
+                        'trading_mode': settings_row[0] if settings_row[0] in ('demo', 'real') else 'demo',
                         'risk_level': settings_row[1] or 'medium'
                     }
             
+            # Read system status from DB directly
             try:
-                from backend.core.unified_system_manager import get_unified_manager
-                manager = get_unified_manager()
-                status = manager.get_status()
-                if status.get('success'):
-                    dashboard_data['system_status'] = {
-                        'is_running': status['data'].get('is_running', False),
-                        'status': status['data'].get('status', 'unknown')
-                    }
+                with db.get_connection() as conn:
+                    status_row = conn.execute("""
+                        SELECT trading_state, is_running, status, message
+                        FROM system_status WHERE id=1
+                    """).fetchone()
+                    
+                    if status_row:
+                        dashboard_data['system_status'] = {
+                            'trading_state': status_row[0],
+                            'is_running': bool(status_row[1]),
+                            'status': status_row[2] or 'unknown',
+                            'message': status_row[3]
+                        }
+                    else:
+                        dashboard_data['system_status'] = {
+                            'is_running': False,
+                            'status': 'unknown'
+                        }
             except Exception as sys_error:
-                logger.warning(f"⚠️ Could not get system status: {sys_error}")
+                logger.warning(f"⚠️ Could not get system status from DB: {sys_error}")
+                dashboard_data['system_status'] = {
+                    'is_running': False,
+                    'status': 'error'
+                }
             
             logger.info(f"✅ Dashboard data fetched for user {user_id}")
             return jsonify({

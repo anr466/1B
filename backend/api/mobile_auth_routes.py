@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import jwt
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +86,20 @@ def register_mobile_auth_routes(bp, shared):
                 response_data, status_code = error_response('بيانات بيومترية غير صحيحة', 'INVALID_DATA', 400)
                 return jsonify(response_data), status_code
 
-            # تخزين بيانات المصادقة البيومترية
+            # تخزين بصمة مُشفرة (Hash only) وعدم حفظ البيانات الخام
+            biometric_hash = hashlib.sha256(biometric_data.encode('utf-8')).hexdigest()
             try:
                 with db_manager.get_write_connection() as conn:
                     conn.execute("""
-                        INSERT OR REPLACE INTO biometric_auth 
-                        (user_id, type, data, created_at)
-                        VALUES (?, ?, ?, datetime('now'))
-                    """, (user_id, biometric_type, biometric_data))
+                        INSERT INTO biometric_auth 
+                        (user_id, biometric_hash, device_id, is_active, created_at, updated_at)
+                        VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            biometric_hash = EXCLUDED.biometric_hash,
+                            device_id = EXCLUDED.device_id,
+                            is_active = EXCLUDED.is_active,
+                            updated_at = EXCLUDED.updated_at
+                    """, (user_id, biometric_hash, f"mobile:{biometric_type}"))
                     conn.commit()
             except Exception as db_error:
                 logger.error(f"❌ خطأ في حفظ البيانات البيومترية: {db_error}")
@@ -161,9 +168,13 @@ def register_mobile_auth_routes(bp, shared):
             try:
                 with db_manager.get_write_connection() as conn:
                     conn.execute("""
-                        INSERT OR REPLACE INTO user_devices
+                        INSERT INTO user_devices
                         (user_id, device_id, device_name, device_type, fcm_token, created_at)
-                        VALUES (?, ?, ?, ?, ?, datetime('now'))
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id, device_id) DO UPDATE SET
+                            device_name = EXCLUDED.device_name,
+                            device_type = EXCLUDED.device_type,
+                            fcm_token = EXCLUDED.fcm_token
                     """, (user_id, device_id, device_name, device_type, fcm_token))
                     conn.commit()
             except Exception as db_error:
@@ -216,9 +227,14 @@ def register_mobile_auth_routes(bp, shared):
             try:
                 # ✅ استخدام get_write_connection لتجنب database lock
                 with db_manager.get_write_connection() as conn:
+                    # توحيد التخزين في جدول fcm_tokens (المستخدم + التوكن فريد)
                     conn.execute(
-                        "UPDATE user_settings SET fcm_token = ? WHERE user_id = ?",
-                        (fcm_token, user_id)
+                        "DELETE FROM fcm_tokens WHERE user_id = ? OR fcm_token = ?",
+                        (user_id, fcm_token)
+                    )
+                    conn.execute(
+                        "INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                        (user_id, fcm_token, 'android')
                     )
                     conn.commit()
             except Exception as db_error:
@@ -247,7 +263,7 @@ def register_mobile_auth_routes(bp, shared):
         try:
             from backend.api.auth_endpoints import otp_service
 
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
@@ -279,12 +295,12 @@ def register_mobile_auth_routes(bp, shared):
             from backend.api.auth_endpoints import otp_service, get_user_by_email
             from backend.services.auth_service import AuthService
 
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
             email = data.get('email', '').strip().lower()
-            otp_code = data.get('otp', '').strip()
+            otp_code = (data.get('otp_code') or data.get('otp') or '').strip()
             username = data.get('username', '').strip()
             password = data.get('password', '').strip()
 
@@ -308,10 +324,15 @@ def register_mobile_auth_routes(bp, shared):
 
                     if user_data and user_data.get('success'):
                         logger.info(f"✅ Account created: user_id={user_data['user']['id']}")
+                        user_payload = {
+                            **(user_data.get('user') or {}),
+                            'email_verified': True,
+                            'user_type': (user_data.get('user') or {}).get('user_type', 'user'),
+                        }
                         return jsonify({
                             'success': True,
                             'message': 'تم إنشاء الحساب بنجاح',
-                            'user': user_data['user'],
+                            'user': user_payload,
                             'token': user_data.get('token')
                         })
                     else:
@@ -333,7 +354,7 @@ def register_mobile_auth_routes(bp, shared):
         try:
             from backend.api.auth_endpoints import otp_service
 
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
@@ -366,12 +387,12 @@ def register_mobile_auth_routes(bp, shared):
         try:
             from backend.api.auth_endpoints import otp_service
 
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
             email = data.get('email', '').strip().lower()
-            otp_code = data.get('otp', '').strip()
+            otp_code = (data.get('otp_code') or data.get('otp') or '').strip()
 
             logger.info(f"📱 Mobile verify OTP: email={email}")
 
@@ -408,7 +429,7 @@ def register_mobile_auth_routes(bp, shared):
         try:
             from backend.api.auth_endpoints import otp_service
 
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
@@ -450,13 +471,13 @@ def register_mobile_auth_routes(bp, shared):
         try:
             from backend.api.auth_endpoints import otp_service, get_user_by_email, sms_service
 
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
             email = data.get('email', '').strip().lower()
             method = data.get('method', 'sms')  # ✅ الافتراضي: SMS
-            phone = (data.get('phone') or '').strip()
+            phone = (data.get('phone') or data.get('phoneNumber') or data.get('phone_number') or '').strip()
             logger.info(f"📱 Mobile forgot password: email={email}, method={method}")
 
             if not email:
@@ -593,8 +614,8 @@ def register_mobile_auth_routes(bp, shared):
             if not data:
                 return jsonify({'success': False, 'error': 'لا توجد بيانات'}), 400
 
-            reset_token = data.get('reset_token', '').strip()
-            new_password = data.get('new_password', '').strip()
+            reset_token = (data.get('reset_token') or data.get('resetToken') or '').strip()
+            new_password = (data.get('new_password') or data.get('newPassword') or '').strip()
 
             logger.info(f"📱 Mobile reset password request")
 
@@ -638,6 +659,7 @@ def register_mobile_auth_routes(bp, shared):
     # ============================================
 
     @bp.route('/auth/verify-phone-token', methods=['POST'])
+    @require_auth
     def mobile_verify_phone_token():
         """التحقق من Firebase Phone Token - نسخة mobile"""
         try:
@@ -650,6 +672,10 @@ def register_mobile_auth_routes(bp, shared):
             id_token = data.get('id_token', '').strip()
             phone_number = data.get('phone_number', '').strip()
             user_id = data.get('user_id')
+            auth_user_id = getattr(g, 'current_user_id', None) or getattr(g, 'user_id', None)
+
+            if user_id and str(user_id) != str(auth_user_id):
+                return jsonify({'success': False, 'error': 'غير مصرح بتحديث مستخدم آخر'}), 403
 
             logger.info(f"📱 Mobile verify phone token: phone={phone_number}")
 
@@ -660,9 +686,8 @@ def register_mobile_auth_routes(bp, shared):
 
             if verified:
                 # تحديث حالة المستخدم في قاعدة البيانات
-                if user_id:
-                    handler = get_sms_handler()
-                    handler.update_user_verification_status(user_id, result['phone_number'])
+                handler = get_sms_handler()
+                handler.update_user_verification_status(auth_user_id, result['phone_number'])
 
                 logger.info(f"✅ Phone verified: {result['phone_number']}")
                 return jsonify({
