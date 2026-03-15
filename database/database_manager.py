@@ -673,7 +673,9 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                     )
                 """)
                 conn.execute("""
-                    CREATE UNIQUE INDEX
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_user_devices_user_device
+                    ON user_devices(user_id, device_id)
+                """)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS pending_verifications (
                         id BIGSERIAL PRIMARY KEY,

@@ -1148,9 +1148,9 @@ def reset_demo_account():
             portfolio_row = cursor.fetchone()
             initial_balance = float(portfolio_row[0] or 0) if portfolio_row else 0.0
             
-            # حذف الصفقات الوهمية للأدمن فقط
+            # حذف سجل الصفقات الوهمية للأدمن فقط
             cursor.execute("""
-                DELETE FROM active_positions 
+                DELETE FROM user_trades
                 WHERE user_id = ? AND is_demo = TRUE
             """, (admin_id,))
             deleted_counts['trades'] = cursor.rowcount
@@ -1241,19 +1241,32 @@ def reset_demo_account():
                         deleted_counts[f'file_{f}'] = True
                         logger.info(f"🗑️ تم مسح {f}")
                 
-                # مسح أنماط التعلم من DB
-                cursor.execute("DELETE FROM ml_patterns")
-                deleted_counts['patterns'] = cursor.rowcount
-                
-                # مسح سجلات التعلم
-                cursor.execute("DELETE FROM trade_learning_log")
-                deleted_counts['trade_learning_log'] = cursor.rowcount
-                
-                cursor.execute("DELETE FROM signal_learning")
-                deleted_counts['signal_learning'] = cursor.rowcount
-                
-                cursor.execute("DELETE FROM learning_validation_log")
-                deleted_counts['learning_validation_log'] = cursor.rowcount
+                # مسح بيانات ML من DB باتصال كتابة مستقل
+                with db.get_write_connection() as ml_conn:
+                    ml_cursor = ml_conn.cursor()
+                    try:
+                        ml_cursor.execute("DELETE FROM ml_patterns")
+                        deleted_counts['patterns'] = ml_cursor.rowcount
+                    except Exception:
+                        deleted_counts['patterns'] = 0
+
+                    try:
+                        ml_cursor.execute("DELETE FROM trade_learning_log")
+                        deleted_counts['trade_learning_log'] = ml_cursor.rowcount
+                    except Exception:
+                        deleted_counts['trade_learning_log'] = 0
+
+                    try:
+                        ml_cursor.execute("DELETE FROM signal_learning")
+                        deleted_counts['signal_learning'] = ml_cursor.rowcount
+                    except Exception:
+                        deleted_counts['signal_learning'] = 0
+
+                    try:
+                        ml_cursor.execute("DELETE FROM learning_validation_log")
+                        deleted_counts['learning_validation_log'] = ml_cursor.rowcount
+                    except Exception:
+                        deleted_counts['learning_validation_log'] = 0
                     
             except Exception as ml_err:
                 logger.warning(f"⚠️ فشل مسح بيانات ML: {ml_err}")
@@ -1278,7 +1291,18 @@ def reset_demo_account():
                 'deleted_trades': deleted_counts.get('trades', 0),
                 'deleted_positions': deleted_counts.get('positions', 0),
                 'deleted_history': deleted_counts.get('history', 0),
-                'ml_reset': bool(deleted_counts.get('file_training_data.pkl') or deleted_counts.get('file_scaler.pkl') or deleted_counts.get('file_signal_model.json')),
+                'ml_reset': bool(
+                    reset_ml and (
+                        deleted_counts.get('file_training_data.pkl')
+                        or deleted_counts.get('file_scaler.pkl')
+                        or deleted_counts.get('file_signal_model.json')
+                        or deleted_counts.get('patterns', 0) > 0
+                        or deleted_counts.get('trade_learning_log', 0) > 0
+                        or deleted_counts.get('signal_learning', 0) > 0
+                        or deleted_counts.get('learning_validation_log', 0) > 0
+                    )
+                ),
+                'ml_reset_requested': bool(reset_ml),
                 'patterns_reset': deleted_counts.get('patterns', 0),
                 'trade_learning_log': deleted_counts.get('trade_learning_log', 0),
                 'signal_learning': deleted_counts.get('signal_learning', 0),

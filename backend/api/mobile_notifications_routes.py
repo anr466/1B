@@ -260,8 +260,19 @@ def register_mobile_notifications_routes(bp, shared):
             # Flutter wraps payload as {'settings': {...}} — unwrap if present
             settings = body.get('settings', body) if isinstance(body.get('settings'), dict) else body
 
-            # الحقول المطلوبة — اختيارية عند وجود أي حقل واحد على الأقل
-            if not any(k in settings for k in ['pushEnabled', 'tradeNotifications', 'priceAlerts']):
+            # يجب أن يحتوي الطلب على حقل معروف واحد على الأقل من إعدادات الإشعارات
+            supported_fields = {
+                'pushEnabled', 'tradeNotifications', 'priceAlerts', 'errorNotifications',
+                'dailySummary', 'notifyNewDeal', 'notifyDealProfit', 'notifyDealLoss',
+                'notifyDailyProfit', 'notifyDailyLoss', 'notifyLowBalance',
+                'notifySecurityAlerts', 'notifySystemStatus', 'notifyMaintenance',
+                'quietHoursEnabled', 'quietHoursStart', 'quietHoursEnd',
+                'notifyLargeProfit', 'notifyLargeLoss', 'profitThreshold',
+                'lossThreshold', 'weeklySummary', 'monthlyReport',
+                'cumulativeLossAlertEnabled', 'cumulativeLossThresholdUsd',
+                'endOfDayReportEnabled', 'endOfDayReportTime'
+            }
+            if not any(k in supported_fields for k in settings.keys()):
                 return error_response('يجب تقديم حقل واحد على الأقل من إعدادات الإشعارات', 400)
 
             # التحقق من صحة الحدود المالية

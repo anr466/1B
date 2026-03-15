@@ -241,7 +241,7 @@ def register_admin_users_routes(bp, shared):
                         position_size_percentage, stop_loss_pct, take_profit_pct,
                         max_positions, risk_level, max_daily_loss_pct, trading_mode,
                         created_at, updated_at
-                    ) VALUES (?, 0, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, (user_id,))
 
                 conn.execute("""
@@ -249,7 +249,7 @@ def register_admin_users_routes(bp, shared):
                         user_id, total_balance, available_balance, invested_balance,
                         total_profit_loss, total_profit_loss_percentage, initial_balance,
                         is_demo, created_at, updated_at
-                    ) VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, (user_id,))
 
                 if is_admin_user:
@@ -259,14 +259,14 @@ def register_admin_users_routes(bp, shared):
                             position_size_percentage, stop_loss_pct, take_profit_pct,
                             max_positions, risk_level, max_daily_loss_pct, trading_mode,
                             created_at, updated_at
-                        ) VALUES (?, 1, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'demo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (?, TRUE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'demo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id,))
                     conn.execute("""
                         INSERT INTO portfolio (
                             user_id, total_balance, available_balance, invested_balance,
                             total_profit_loss, total_profit_loss_percentage, initial_balance,
                             is_demo, created_at, updated_at
-                        ) VALUES (?, 10000.0, 10000.0, 0.0, 0.0, 0.0, 10000.0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (?, 10000.0, 10000.0, 0.0, 0.0, 0.0, 10000.0, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id,))
 
                 if audit_logger:
@@ -479,7 +479,7 @@ def register_admin_users_routes(bp, shared):
         try:
             db = DatabaseManager()
             with db.get_write_connection() as conn:
-                conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+                conn.execute("UPDATE users SET is_active = FALSE WHERE id = ?", (user_id,))
 
                 if audit_logger:
                     audit_logger.log(

@@ -522,63 +522,70 @@ class BackgroundTradingManager:
 
     def _get_active_trading_users(self) -> list:
         """
-        جلب المستخدمين النشطين للتداول
-        
-        يشمل:
-        - مستخدمين لديهم trading_enabled=1
-        - أو لديهم صفقات مفتوحة (للمراقبة حتى لو التداول معطل)
-        - يجب أن يكون لديهم مفاتيح Binance نشطة
+        جلب المستخدمين النشطين للتداول/المراقبة بشكل متوافق مع PostgreSQL.
+
+        القواعد:
+        - المصدر الوحيد للحالة هو DB (users/user_settings/user_binance_keys/active_positions)
+        - تضمين المستخدم إذا كان:
+          1) trading_enabled=True ومؤهل للتنفيذ
+             - regular: يتطلب مفاتيح Binance نشطة
+             - admin (demo): يسمح بدون مفاتيح Binance
+          2) أو لديه صفقات مفتوحة للمراقبة فقط
+        - لا ازدواجية: كل مستخدم يظهر مرة واحدة فقط
         """
         try:
             with self.db_manager.get_connection() as conn:
-                demo_false = False if self.db_manager.is_postgres() else 0
-                demo_true = True if self.db_manager.is_postgres() else 1
                 active_true = True if self.db_manager.is_postgres() else 1
-                cursor = conn.execute("""
-                    SELECT DISTINCT
-                        u.id,
-                        u.username,
-                        u.user_type,
-                        COALESCE(us.trading_enabled, FALSE) as trading_enabled,
-                        (SELECT COUNT(*) FROM active_positions ap 
-                         WHERE ap.user_id = u.id AND ap.is_active = ?) as open_positions_count,
-                        CASE WHEN ubk.id IS NOT NULL AND ubk.is_active = ? THEN 1 ELSE 0 END as has_binance_keys
-                    FROM users u
-                    LEFT JOIN user_settings us ON u.id = us.user_id AND (
-                        us.is_demo = ?
-                        OR (u.user_type = 'admin' AND us.is_demo = ? AND us.trading_mode = 'demo')
-                    )
-                    LEFT JOIN user_binance_keys ubk ON u.id = ubk.user_id AND ubk.is_active = ?
-                    WHERE u.is_active = ?
-                    AND (
-                        (us.trading_enabled = ? AND ((ubk.id IS NOT NULL AND ubk.is_active = ?) OR (u.user_type = 'admin' AND us.trading_mode = 'demo')))
-                        OR EXISTS (
-                            SELECT 1 FROM active_positions ap 
-                            WHERE ap.user_id = u.id AND ap.is_active = ?
-                        )
-                    )
-                    ORDER BY u.id
-                """, (
-                    active_true,
-                    active_true,
-                    demo_false,
-                    demo_true,
-                    active_true,
-                    active_true,
-                    active_true,
-                    active_true,
-                    active_true,
-                ))
-                
+
+                user_rows = conn.execute("""
+                    SELECT id, username, user_type
+                    FROM users
+                    WHERE is_active = ?
+                    ORDER BY id
+                """, (active_true,)).fetchall()
+
+                key_rows = conn.execute("""
+                    SELECT user_id
+                    FROM user_binance_keys
+                    WHERE is_active = ?
+                """, (active_true,)).fetchall()
+                users_with_keys = {row[0] for row in key_rows}
+
+                open_positions_rows = conn.execute("""
+                    SELECT user_id, COUNT(*) AS open_count
+                    FROM active_positions
+                    WHERE is_active = ?
+                    GROUP BY user_id
+                """, (active_true,)).fetchall()
+                open_positions_map = {row[0]: int(row[1] or 0) for row in open_positions_rows}
+
                 users = []
-                for row in cursor.fetchall():
+                for row in user_rows:
+                    user_id = row[0]
+                    user_type = row[2]
+                    settings = self.db_manager.get_trading_settings(user_id) or {}
+
+                    trading_enabled = bool(settings.get('trading_enabled', False))
+                    trading_mode = str(settings.get('trading_mode') or 'real').lower()
+                    has_open_positions = open_positions_map.get(user_id, 0) > 0
+                    has_binance_keys = user_id in users_with_keys
+
+                    eligible_for_execution = (
+                        has_binance_keys
+                        or (user_type == 'admin' and trading_mode == 'demo')
+                    )
+                    include_user = (trading_enabled and eligible_for_execution) or has_open_positions
+
+                    if not include_user:
+                        continue
+
                     users.append({
-                        'id': row[0],
+                        'id': user_id,
                         'username': row[1],
-                        'user_type': row[2],
-                        'trading_enabled': bool(row[3]),
-                        'has_open_positions': row[4] > 0,
-                        'has_binance_keys': bool(row[5])
+                        'user_type': user_type,
+                        'trading_enabled': trading_enabled,
+                        'has_open_positions': has_open_positions,
+                        'has_binance_keys': has_binance_keys
                     })
 
                 logger.debug(f"📋 وجدنا {len(users)} مستخدم نشط للتداول/المراقبة")

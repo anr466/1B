@@ -26,6 +26,7 @@ import subprocess
 import time
 import uuid
 import json
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -208,6 +209,13 @@ class TradingStateMachine:
                 trading_state, process_alive, pid, message
             )
 
+            # Keep UI-facing message aligned with canonical state
+            if trading_state == STOPPED:
+                if (not message) or ('يعمل' in str(message) and not process_alive):
+                    message = 'النظام متوقف'
+            elif trading_state == RUNNING and not message:
+                message = 'النظام يعمل'
+
             # Count open positions
             open_positions = self._count_open_positions()
 
@@ -224,6 +232,13 @@ class TradingStateMachine:
 
             # Get subsystem activity from JSON state file (if exists)
             subsystems = self._get_subsystem_status()
+            if trading_state != RUNNING and subsystems:
+                if 'group_b' in subsystems:
+                    subsystems['group_b']['status'] = 'idle'
+                if 'ml' in subsystems:
+                    subsystems['ml']['status'] = 'idle'
+                if 'heartbeat' in subsystems:
+                    subsystems['heartbeat']['status'] = 'stopped'
 
             return {
                 'success': True,
@@ -298,6 +313,26 @@ class TradingStateMachine:
                     logger.warning(f"⚠️ Cannot start from state {current_state}")
                     return self.get_state()
 
+                # Containerized deployment safety:
+                # if a trading process is already alive (e.g. worker service),
+                # adopt it instead of trying to spawn a duplicate process.
+                existing_pid = self._find_trading_process()
+                if existing_pid:
+                    self._transition(
+                        conn,
+                        RUNNING,
+                        pid=existing_pid,
+                        started_at=datetime.now().isoformat(),
+                        message=f'النظام يعمل (PID: {existing_pid}) - تمت المزامنة'
+                    )
+                    conn.commit()
+                    self._log_transition(
+                        current_state, RUNNING, initiated_by, None,
+                        f'Adopted existing process PID={existing_pid}'
+                    )
+                    logger.info(f"✅ Adopted existing trading process PID={existing_pid}")
+                    return self.get_state()
+
                 # Transition to STARTING
                 session_id = str(uuid.uuid4())[:8]
                 self._transition(conn, STARTING, session_id=session_id,
@@ -347,15 +382,33 @@ class TradingStateMachine:
 
             except Exception as start_error:
                 logger.error(f"❌ Failed to start process: {start_error}")
+                # Fallback safety:
+                # if another process became alive during start race, recover to RUNNING.
+                recovered_pid = self._find_trading_process()
+                if recovered_pid:
+                    with self.db.get_write_connection() as conn:
+                        self._transition(
+                            conn,
+                            RUNNING,
+                            pid=recovered_pid,
+                            started_at=datetime.now().isoformat(),
+                            message=f'النظام يعمل (PID: {recovered_pid}) - تمت المزامنة بعد تعثر البدء'
+                        )
+                        conn.commit()
+                    self._log_transition(
+                        STARTING, RUNNING, 'system', session_id,
+                        f'recovered via existing PID={recovered_pid} after start error'
+                    )
+                    logger.info(f"✅ Recovered start flow using existing process PID={recovered_pid}")
+                else:
+                    # Transition to ERROR
+                    with self.db.get_write_connection() as conn:
+                        self._transition(conn, ERROR,
+                                        message=f'فشل التشغيل: {str(start_error)[:100]}')
+                        conn.commit()
 
-                # Transition to ERROR
-                with self.db.get_write_connection() as conn:
-                    self._transition(conn, ERROR,
-                                    message=f'فشل التشغيل: {str(start_error)[:100]}')
-                    conn.commit()
-
-                self._log_transition(STARTING, ERROR, 'system', session_id,
-                                    f'فشل التشغيل: {start_error}')
+                    self._log_transition(STARTING, ERROR, 'system', session_id,
+                                        f'فشل التشغيل: {start_error}')
 
             return self.get_state()
 
@@ -693,22 +746,23 @@ class TradingStateMachine:
                     except Exception:
                         pass
 
-            result = subprocess.run(
-                ['pgrep', '-f', 'background_trading_manager.py'],
-                capture_output=True, text=True, timeout=3
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
-                for pid_text in pids:
-                    if pid_text.strip().isdigit():
-                        pid = int(pid_text.strip())
-                        if self._is_process_alive(pid):
-                            try:
-                                self.pid_file.parent.mkdir(parents=True, exist_ok=True)
-                                self.pid_file.write_text(str(pid), encoding='utf-8')
-                            except Exception:
-                                pass
-                            return pid
+            if shutil.which('pgrep'):
+                result = subprocess.run(
+                    ['pgrep', '-f', 'background_trading_manager.py'],
+                    capture_output=True, text=True, timeout=3
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid_text in pids:
+                        if pid_text.strip().isdigit():
+                            pid = int(pid_text.strip())
+                            if self._is_process_alive(pid):
+                                try:
+                                    self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+                                    self.pid_file.write_text(str(pid), encoding='utf-8')
+                                except Exception:
+                                    pass
+                                return pid
         except Exception:
             pass
         return None
@@ -717,13 +771,16 @@ class TradingStateMachine:
         """Check if a specific PID is alive."""
         try:
             os.kill(pid, 0)
-            # Verify it's our process
-            result = subprocess.run(
-                ['ps', '-p', str(pid), '-o', 'command='],
-                capture_output=True, text=True, timeout=2
-            )
-            return 'background_trading_manager' in result.stdout
-        except (OSError, subprocess.TimeoutExpired):
+            proc_cmdline = Path(f'/proc/{pid}/cmdline')
+            if proc_cmdline.exists():
+                try:
+                    raw = proc_cmdline.read_bytes()
+                    cmdline = raw.decode('utf-8', errors='ignore').replace('\x00', ' ')
+                    return 'background_trading_manager.py' in cmdline
+                except Exception:
+                    return True
+            return True
+        except OSError:
             return False
 
     def _start_process(self) -> int:
@@ -749,6 +806,11 @@ class TradingStateMachine:
             start_new_session=True,
             env=env
         )
+        try:
+            self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+            self.pid_file.write_text(str(process.pid), encoding='utf-8')
+        except Exception:
+            pass
         logger.info(f"📋 Process launched PID={process.pid}, logs → logs/trading_process_*.log")
         return process.pid
 

@@ -49,3 +49,4 @@ Smart memory update → Git commit + push
 - DRY: Single source
 - All layers sync
 - Git sync
+- git add -A && git commit -m "chore: sync local updates" && git push && docker compose up -d --build
