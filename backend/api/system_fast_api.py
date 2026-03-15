@@ -178,6 +178,11 @@ def get_status():
         heartbeat_data = subsystems.get('heartbeat', {}) or raw_state.get('heartbeat', {}) or {}
 
         result_data = dict(canonical_state)
+        trading_state = str(result_data.get('trading_state') or result_data.get('state') or 'STOPPED').upper()
+        result_data['trading_state'] = trading_state
+        result_data['state'] = trading_state
+        result_data['status'] = 'running' if trading_state == 'RUNNING' else 'stopped'
+        result_data['is_running'] = trading_state == 'RUNNING'
 
         heartbeat_seconds_ago = heartbeat_data.get('seconds_ago')
         if heartbeat_seconds_ago is None:

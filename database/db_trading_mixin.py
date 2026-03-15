@@ -289,7 +289,7 @@ class DbTradingMixin:
         """الحصول على جميع الصفقات المفتوحة للمستخدم مع trailing_sl_price"""
         try:
             with self.get_connection() as conn:
-                    rows = conn.execute("""
+                rows = conn.execute("""
                     SELECT * FROM active_positions 
                     WHERE user_id = ? AND is_active = TRUE
                     ORDER BY created_at DESC
@@ -305,7 +305,7 @@ class DbTradingMixin:
         """الحصول على جميع الصفقات المفتوحة للمستخدم"""
         try:
             with self.get_connection() as conn:
-                    rows = conn.execute("""
+                rows = conn.execute("""
                     SELECT * FROM active_positions 
                     WHERE user_id = ? AND is_active = TRUE
                     ORDER BY created_at DESC

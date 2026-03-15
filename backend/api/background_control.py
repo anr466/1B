@@ -200,7 +200,7 @@ def get_background_status():
         try:
             with db.get_connection() as conn:
                 status_row = conn.execute("""
-                    SELECT status, is_running, last_update, message
+                    SELECT trading_state, status, is_running, last_update, message
                     FROM system_status
                     WHERE id = 1
                 """).fetchone()
@@ -214,7 +214,8 @@ def get_background_status():
                 if process_running and not db_status.get('is_running'):
                     conn.execute("""
                         UPDATE system_status 
-                        SET status = 'running', is_running = 1, last_update = CURRENT_TIMESTAMP,
+                        SET trading_state = 'RUNNING',
+                            status = 'running', is_running = 1, last_update = CURRENT_TIMESTAMP,
                             message = 'النظام يعمل (تم المزامنة)'
                         WHERE id = 1
                     """)
@@ -222,7 +223,8 @@ def get_background_status():
                 elif not process_running and db_status.get('is_running'):
                     conn.execute("""
                         UPDATE system_status 
-                        SET status = 'stopped', is_running = 0, last_update = CURRENT_TIMESTAMP,
+                        SET trading_state = 'STOPPED',
+                            status = 'stopped', is_running = 0, last_update = CURRENT_TIMESTAMP,
                             message = 'النظام متوقف (تم المزامنة)'
                         WHERE id = 1
                     """)

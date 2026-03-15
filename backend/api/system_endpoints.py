@@ -38,18 +38,24 @@ def get_system_status():
                     'error': 'system_status_record_not_found'
                 }), 404
 
+            trading_state = str(system_status[6] or '').upper() if system_status[6] is not None else ''
+            effective_running = trading_state == 'RUNNING'
+            if not trading_state:
+                effective_running = bool(system_status[2])
+                trading_state = 'RUNNING' if effective_running else 'STOPPED'
+
             return jsonify({
                 'success': True,
                 'data': {
-                    'status': system_status[0],
+                    'status': 'running' if effective_running else 'stopped',
                     'lastUpdate': system_status[1],
-                    'tradingActive': bool(system_status[2]),
+                    'tradingActive': effective_running,
                     'totalUsers': system_status[3],
                     'activeTrades': system_status[4],
                     'totalTrades': system_status[5],
                     'serverStatus': system_status[0],
-                    'trading_state': system_status[6],
-                    'tradingState': system_status[6],
+                    'trading_state': trading_state,
+                    'tradingState': trading_state,
                 }
             })
     

@@ -318,13 +318,14 @@ class TradingNotificationService:
                 cursor = conn.cursor()
                 
                 # فحص إذا أُرسل إشعار مشابه في الفترة المحددة
+                cooldown = max(1, int(cooldown_minutes))
                 cursor.execute("""
                     SELECT COUNT(*) FROM notification_history
                     WHERE user_id = ? 
                     AND type = ?
                     AND data LIKE ?
-                    AND created_at > datetime('now', ? || ' minutes')
-                """, (user_id, notification_type, f'%{unique_key}%', f'-{cooldown_minutes}'))
+                    AND created_at > (CURRENT_TIMESTAMP - (? * INTERVAL '1 minute'))
+                """, (user_id, notification_type, f'%{unique_key}%', cooldown))
                 
                 count = cursor.fetchone()[0]
                 
@@ -492,7 +493,7 @@ class TradingNotificationService:
                     WHERE user_id = ? 
                     AND type = 'trailing_stop_activated'
                     AND data LIKE ?
-                    AND created_at > datetime('now', '-30 minutes')
+                    AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 minutes')
                 """, (user_id, f'%{symbol}%'))
                 
                 recent_count = cursor.fetchone()[0]

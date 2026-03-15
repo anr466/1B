@@ -66,7 +66,7 @@ def register_registration_routes(bp, shared):
                         SELECT COUNT(*) FROM activity_logs 
                         WHERE action = 'availability_check' 
                         AND details LIKE ? 
-                        AND created_at > datetime('now', '-1 minute')
+                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '1 minute')
                     """, (client_ip,))
                     request_count = cursor.fetchone()[0]
                     

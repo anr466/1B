@@ -51,7 +51,7 @@ class NotificationService:
                 cursor.execute("""
                     INSERT INTO notifications 
                     (user_id, title, message, type, is_read, created_at, data)
-                    VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, ?)
+                    VALUES (?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP, ?)
                 """, (
                     user_id,
                     title,
@@ -86,7 +86,7 @@ class NotificationService:
                         SELECT id, user_id, type, title, message, data, priority, status, created_at
                         FROM notification_history
                         WHERE user_id = ? AND status IN ('pending', 'sent')
-                        AND datetime(created_at) > datetime(?)
+                        AND created_at > ?
                         ORDER BY created_at DESC
                         LIMIT ?
                     """, (user_id, last_check, limit))
@@ -201,7 +201,7 @@ class NotificationService:
                         COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority
                     FROM notification_history
                     WHERE user_id = ?
-                    AND datetime(created_at) > datetime('now', '-30 days')
+                    AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
                 """, (user_id,))
                 
                 row = cursor.fetchone()

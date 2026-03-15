@@ -59,7 +59,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.request import Request, urlopen
@@ -404,8 +404,14 @@ def domain_d2_market_data() -> DomainReport:
         latest=db_scalar("SELECT MAX(generated_at) FROM trading_signals")
         if not latest: return False,"No signals",{"latest":None}
         try:
-            ts=datetime.fromisoformat(latest.replace("Z",""))
-            age=(datetime.now()-ts).total_seconds()/3600
+            if isinstance(latest, datetime):
+                ts = latest
+            else:
+                latest_s = str(latest).replace("Z", "+00:00")
+                ts = datetime.fromisoformat(latest_s)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age=(datetime.now(timezone.utc)-ts.astimezone(timezone.utc)).total_seconds()/3600
             return age<24,f"Latest {age:.1f}h ago",{"age_hours":round(age,2)}
         except Exception as e: return False,f"Parse error: {e}",{}
     rpt.checks.append(_check("D2.02","Signal Freshness <24h","D2",3,check_freshness,SEV_MEDIUM,
@@ -424,7 +430,7 @@ def domain_d2_market_data() -> DomainReport:
                              "symbol not empty, confidence>=0, price>0"))
     rpt.checks.append(_check("D2.04","No Duplicate Signals","D2",3,
         lambda: (int(db_scalar("""SELECT COUNT(*) FROM (SELECT symbol,strategy,timeframe,generated_at,COUNT(*) c
-               FROM trading_signals GROUP BY symbol,strategy,timeframe,generated_at HAVING c>1)""") or 0)==0,
+               FROM trading_signals GROUP BY symbol,strategy,timeframe,generated_at HAVING COUNT(*)>1)""") or 0)==0,
                  "No duplicate signals",{}),SEV_HIGH,"(symbol,strategy,timeframe,generated_at) must be unique"))
     rpt.checks.append(_check("D2.05","Signal Confidence in [0,1]","D2",3,
         lambda: (int(db_scalar("SELECT COUNT(*) FROM trading_signals WHERE confidence<0 OR confidence>1") or 0)==0,
@@ -478,7 +484,7 @@ def domain_d4_trading() -> DomainReport:
                              "entry_price>0, quantity>0, user_id not NULL"))
     rpt.checks.append(_check("D4.02","No Duplicate Active Positions","D4",3,
         lambda: (int(db_scalar("""SELECT COUNT(*) FROM (SELECT user_id,symbol,strategy,COUNT(*) c
-               FROM active_positions WHERE is_active=1 GROUP BY user_id,symbol,strategy HAVING c>1)""") or 0)==0,
+               FROM active_positions WHERE is_active=1 GROUP BY user_id,symbol,strategy HAVING COUNT(*)>1)""") or 0)==0,
                  "No duplicates",{}),SEV_CRITICAL,"(user_id,symbol,strategy) unique per is_active=1"))
     def check_sl_tp():
         bad_sl=int(db_scalar("""SELECT COUNT(*) FROM active_positions WHERE is_active=1
@@ -686,7 +692,7 @@ def domain_d10_integrity() -> DomainReport:
                  "All trading_history.user_id must reference valid user"))
     rpt.checks.append(_check("D10.02","No Duplicate Trades","D10",3,
         lambda: (int(db_scalar("""SELECT COUNT(*) FROM (SELECT user_id,symbol,entry_time,COUNT(*) c
-               FROM trading_history GROUP BY user_id,symbol,entry_time HAVING c>1)""") or 0)==0,
+               FROM trading_history GROUP BY user_id,symbol,entry_time HAVING COUNT(*)>1)""") or 0)==0,
                  "No duplicate trades",{}),SEV_HIGH,
                  "(user_id,symbol,entry_time) must be unique in trading_history"))
     def check_pnl_sync():
@@ -845,12 +851,12 @@ def stage5_e2e_flow() -> DomainReport:
         marker=f"e2e_test_{int(time.time())}"
         try:
             with db_connect() as conn:
-                conn.execute("INSERT INTO operation_log (operation_type,operation_name,status,start_time,message) VALUES (?,?,?,datetime('now'),?)",
+                conn.execute("INSERT INTO operation_log (operation_type,operation_name,status,start_time,details) VALUES (?,?,?,CURRENT_TIMESTAMP,?)",
                              ("E2E_TEST","db_roundtrip","test",marker))
                 conn.commit()
-            found=int(db_scalar("SELECT COUNT(*) FROM operation_log WHERE message=? AND operation_type='E2E_TEST'",(marker,)) or 0)
+            found=int(db_scalar("SELECT COUNT(*) FROM operation_log WHERE details=? AND operation_type='E2E_TEST'",(marker,)) or 0)
             with db_connect() as conn:
-                conn.execute("DELETE FROM operation_log WHERE operation_type='E2E_TEST' AND message=?",(marker,))
+                conn.execute("DELETE FROM operation_log WHERE operation_type='E2E_TEST' AND details=?",(marker,))
                 conn.commit()
             return found>=1,f"DB roundtrip {'OK' if found>=1 else 'FAILED'}",{"marker":marker}
         except Exception as e:
@@ -950,7 +956,8 @@ def stage6_drift_detection() -> DomainReport:
     def check_schema_drift():
         known_tables=set(REQUIRED_SCHEMA.keys())
         with db_connect() as conn:
-            actual={r[0] for r in conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")}
+            rows = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'").fetchall()
+            actual={r[0] for r in rows}
         new_tables=actual-known_tables
         return True,f"{len(new_tables)} undocumented tables: {list(new_tables)[:5]}",{
             "undocumented_tables":list(new_tables)}
@@ -1011,7 +1018,7 @@ def stage7_observability() -> DomainReport:
 
     def check_audit_coverage():
         # Verify that auth actions are covered
-        login_audits=int(db_scalar("SELECT COUNT(*) FROM security_audit_log WHERE action LIKE '%login%'") or 0)
+        login_audits=int(db_scalar("SELECT COUNT(*) FROM security_audit_log WHERE action ILIKE ?", ("%login%",)) or 0)
         return True,f"{login_audits} login events in security_audit_log",{"login_audits":login_audits}
     rpt.checks.append(_check("OBS.05","Security Audit Covers Login Events","OBS",7,check_audit_coverage,
                              SEV_MEDIUM,"Login events must appear in security_audit_log"))

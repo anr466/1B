@@ -190,7 +190,7 @@ class SecurityAuditService:
                     SELECT COUNT(*) FROM security_audit_log
                     WHERE action = 'LOGIN_FAILED'
                     AND resource = ?
-                    AND created_at > datetime('now', '-' || ? || ' minutes')
+                    AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute')
                 """, (email, minutes))
                 
                 return cursor.fetchone()[0]
@@ -209,7 +209,7 @@ class SecurityAuditService:
                     SELECT COUNT(*) FROM security_audit_log
                     WHERE action = ?
                     AND resource = ?
-                    AND created_at > datetime('now', '-' || ? || ' minutes')
+                    AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute')
                 """, (action, email, minutes))
                 
                 count = cursor.fetchone()[0]

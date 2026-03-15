@@ -239,7 +239,7 @@ def register_password_routes(bp, shared):
                     try:
                         with db_manager.get_write_connection() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("UPDATE users SET email = ?, email_verified = 1 WHERE id = ?", (new_email, user_id))
+                            cursor.execute("UPDATE users SET email = ?, email_verified = TRUE WHERE id = ?", (new_email, user_id))
                             logger.info(f"✅ تم تغيير الإيميل للمستخدم {user_id}")
                             return jsonify({'success': True, 'message': 'تم تغيير الإيميل بنجاح', 'email': new_email})
                     except Exception as e:

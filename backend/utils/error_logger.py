@@ -576,11 +576,12 @@ class ErrorLogger:
         """
         try:
             with self.db_manager.get_write_connection() as conn:
+                retention_days = max(1, int(days))
                 cursor = conn.execute("""
                     DELETE FROM system_errors
-                    WHERE resolved = 1
-                    AND datetime(created_at) < datetime('now', '-' || ? || ' days')
-                """, (days,))
+                    WHERE resolved = TRUE
+                    AND created_at < (CURRENT_TIMESTAMP - (? * INTERVAL '1 day'))
+                """, (retention_days,))
                 
                 count = cursor.rowcount
             

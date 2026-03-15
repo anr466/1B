@@ -261,6 +261,13 @@ def register_admin_users_routes(bp, shared):
                             created_at, updated_at
                         ) VALUES (?, 1, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'demo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id,))
+                    conn.execute("""
+                        INSERT INTO portfolio (
+                            user_id, total_balance, available_balance, invested_balance,
+                            total_profit_loss, total_profit_loss_percentage, initial_balance,
+                            is_demo, created_at, updated_at
+                        ) VALUES (?, 10000.0, 10000.0, 0.0, 0.0, 0.0, 10000.0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """, (user_id,))
 
                 if audit_logger:
                     audit_logger.log(

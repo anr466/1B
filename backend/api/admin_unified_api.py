@@ -796,7 +796,7 @@ def get_api_performance():
             """
             SELECT COUNT(*)
             FROM activity_logs
-            WHERE datetime(created_at) >= datetime('now', '-24 hours')
+            WHERE created_at >= (CURRENT_TIMESTAMP - INTERVAL '24 hours')
             """
         )
         requests_24h = cursor.fetchone()[0] or 0
@@ -1017,7 +1017,7 @@ def get_background_trading_status():
         try:
             with db_manager.get_connection() as conn:
                 status_row = conn.execute(
-                    "SELECT status, is_running, message FROM system_status WHERE id = 1"
+                    "SELECT trading_state, status, message FROM system_status WHERE id = 1"
                 ).fetchone()
         except Exception as db_error:
             # إذا فشل الاتصال بقاعدة البيانات، أرجع حالة افتراضية
@@ -1032,11 +1032,18 @@ def get_background_trading_status():
             })
         
         if status_row:
+            trading_state = str(status_row[0] or '').upper()
+            effective_running = trading_state == 'RUNNING'
+            if not trading_state:
+                fallback_status = str(status_row[1] or '').lower()
+                effective_running = fallback_status == 'running'
+                trading_state = 'RUNNING' if effective_running else 'STOPPED'
             return jsonify({
                 'success': True,
                 'data': {
-                    'status': status_row[0] if status_row[0] else 'unknown',
-                    'is_running': bool(status_row[1]) if status_row[1] is not None else False,
+                    'status': 'running' if effective_running else 'stopped',
+                    'trading_state': trading_state,
+                    'is_running': effective_running,
                     'message': status_row[2] if status_row[2] else 'لا توجد رسالة',
                     'timestamp': datetime.now().isoformat()
                 }

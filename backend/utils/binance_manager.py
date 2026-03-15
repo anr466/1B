@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "database"))
-from database_manager import DatabaseManager
+from database.database_manager import DatabaseManager
+from backend.utils.trading_context import get_effective_is_demo
 import hashlib
 import hmac
 import base64
@@ -243,14 +244,13 @@ class BinanceManager:
                          order_type: str = 'MARKET', price: float = None) -> Dict[str, Any]:
         """تنفيذ أمر شراء (حقيقي أو وهمي) مع سحب البيانات الفعلية"""
         try:
-            # التحقق من وضع التداول للأدمن
-            if user_id == 1:  # الأدمن
-                # فحص وجود مفاتيح Binance المفعلة
-                if not self.is_user_api_active(user_id):
-                    # تداول وهمي - لا توجد مفاتيح Binance
-                    current_price = price if price else self._get_current_price(symbol)
-                    return self._execute_demo_buy_order(user_id, symbol, quantity, current_price)
-                # إذا كانت المفاتيح موجودة، يتم التداول الحقيقي (يكمل الكود أدناه)
+            is_demo_mode = bool(get_effective_is_demo(self.db_manager, user_id))
+            if is_demo_mode:
+                current_price = price if price else self._get_current_price(symbol)
+                return self._execute_demo_buy_order(user_id, symbol, quantity, current_price)
+
+            if not self.is_user_api_active(user_id):
+                return {"success": False, "message": "التداول الحقيقي يتطلب مفاتيح Binance مفعلة"}
             
             client = self._get_binance_client(user_id)
             if not client:
@@ -320,13 +320,12 @@ class BinanceManager:
                           order_type: str = 'MARKET') -> Dict[str, Any]:
         """تنفيذ أمر بيع (حقيقي أو وهمي) مع سحب البيانات الفعلية"""
         try:
-            # التحقق من وضع التداول للأدمن
-            if user_id == 1:  # الأدمن
-                # فحص وجود مفاتيح Binance المفعلة
-                if not self.is_user_api_active(user_id):
-                    # تداول وهمي - لا توجد مفاتيح Binance
-                    return self._execute_demo_sell_order(user_id, symbol, quantity)
-                # إذا كانت المفاتيح موجودة، يتم التداول الحقيقي (يكمل الكود أدناه)
+            is_demo_mode = bool(get_effective_is_demo(self.db_manager, user_id))
+            if is_demo_mode:
+                return self._execute_demo_sell_order(user_id, symbol, quantity)
+
+            if not self.is_user_api_active(user_id):
+                return {"success": False, "message": "التداول الحقيقي يتطلب مفاتيح Binance مفعلة"}
             
             client = self._get_binance_client(user_id)
             if not client:
@@ -566,6 +565,9 @@ class BinanceManager:
         try:
             from datetime import datetime
             import uuid
+
+            if price is None or float(price) <= 0:
+                return {"success": False, "message": f"لا يمكن تنفيذ أمر وهمي بدون سعر سوقي صحيح لـ {symbol}"}
             
             # إنشاء رقم أمر وهمي
             demo_order_id = f"DEMO_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
@@ -671,7 +673,7 @@ class BinanceManager:
             self.logger.error(f"خطأ في تنفيذ أمر بيع وهمي: {e}")
             return {"success": False, "message": str(e)}
     
-    def _get_current_price(self, symbol: str) -> float:
+    def _get_current_price(self, symbol: str) -> Optional[float]:
         """جلب السعر الحالي للرمز من Binance"""
         try:
             # استخدام عميل عام لجلب السعر
@@ -681,13 +683,7 @@ class BinanceManager:
             return float(ticker['price'])
         except Exception as e:
             self.logger.error(f"خطأ في جلب سعر {symbol}: {e}")
-            # إرجاع سعر افتراضي للاختبار
-            if symbol == 'BTCUSDT':
-                return 95000.0
-            elif symbol == 'ETHUSDT':
-                return 3400.0
-            else:
-                return 1.0
+            return None
     
     def is_user_api_active(self, user_id: int) -> bool:
         """التحقق من تفعيل API للمستخدم"""

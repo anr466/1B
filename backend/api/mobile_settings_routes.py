@@ -233,6 +233,7 @@ def register_mobile_settings_routes(bp, shared):
             import re
             db = DatabaseManager()
             data = request.get_json(silent=True) or {}
+            requested_mode = request.args.get('mode')
 
             # ═══════════════════════════════════════════════════════════════
             # ✅ FIX: تطبيع أسماء الحقول — القبول بـ snake_case و camelCase
@@ -337,7 +338,7 @@ def register_mobile_settings_routes(bp, shared):
                 # جلب الإعدادات الحالية إذا لم يتم إرسالها
                 if position_size_pct is None or max_positions is None:
                     settings_query = "SELECT position_size_percentage, max_positions FROM user_settings WHERE user_id = ? AND is_demo = ?"
-                    target_context = get_trading_context(db, user_id)
+                    target_context = get_trading_context(db, user_id, requested_mode=requested_mode)
                     current_mode = target_context['trading_mode']
                     target_is_demo = bool(target_context['is_demo'])
                     settings_result = db.execute_query(settings_query, (user_id, target_is_demo))
@@ -367,10 +368,12 @@ def register_mobile_settings_routes(bp, shared):
                 is_admin_user = user_type_result[0]['user_type'] == 'admin' if user_type_result else False
 
                 # ✅ جلب وضع التداول الحالي
-                current_mode = get_trading_context(db, user_id)['trading_mode']
+                current_context = get_trading_context(db, user_id, requested_mode=requested_mode)
+                current_mode = current_context['trading_mode']
+                current_is_demo = bool(current_context['is_demo'])
 
                 # ✅ استثناء الأدمن في الوضع التجريبي: لا يحتاج مفاتيح Binance
-                skip_binance_check = is_admin_user and current_mode == 'demo'
+                skip_binance_check = is_admin_user and current_is_demo
 
                 if not skip_binance_check:
                     # 1️⃣ فحص وجود مفاتيح Binance (مطلوب للتداول الحقيقي)
@@ -446,9 +449,9 @@ def register_mobile_settings_routes(bp, shared):
                 positions_query = """
                     SELECT COUNT(*) as count, SUM(COALESCE(quantity * entry_price, 0)) as locked_amount
                     FROM active_positions 
-                    WHERE user_id = ? AND is_active = TRUE AND is_demo = FALSE
+                    WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
                 """
-                positions_result = db.execute_query(positions_query, (user_id,))
+                positions_result = db.execute_query(positions_query, (user_id, current_is_demo))
                 open_positions = positions_result[0]['count'] if positions_result else 0
                 locked_amount = positions_result[0]['locked_amount'] or 0 if positions_result else 0
 
@@ -476,11 +479,12 @@ def register_mobile_settings_routes(bp, shared):
 
             if is_admin:
                 # جلب trading_mode الحالي لتحديد المحفظة المستهدفة
-                target_context = get_trading_context(db, user_id)
+                target_context = get_trading_context(db, user_id, requested_mode=requested_mode)
                 current_mode = target_context['trading_mode']
                 target_is_demo = bool(target_context['is_demo'])
             else:
                 target_is_demo = False  # ✅ المستخدمون العاديون دائماً Real
+                current_mode = 'real'
 
             # فحص وجود إعدادات للمحفظة المستهدفة
             check_query = "SELECT id FROM user_settings WHERE user_id = ? AND is_demo = ?"

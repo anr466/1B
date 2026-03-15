@@ -253,6 +253,50 @@ def register_mobile_auth_routes(bp, shared):
 
 
 
+    @bp.route('/fcm-token', methods=['DELETE'])
+    @require_auth
+    def delete_fcm_token():
+        """
+        إلغاء تسجيل FCM Token عند تسجيل الخروج
+
+        Body:
+        {
+            "fcm_token": "token_to_remove"
+        }
+        """
+        try:
+            user_id = g.current_user_id
+            data = request.get_json(silent=True) or {}
+            fcm_token = (data.get('fcm_token') or '').strip()
+
+            try:
+                with db_manager.get_write_connection() as conn:
+                    if fcm_token:
+                        conn.execute(
+                            "DELETE FROM fcm_tokens WHERE user_id = ? AND fcm_token = ?",
+                            (user_id, fcm_token)
+                        )
+                    else:
+                        conn.execute(
+                            "DELETE FROM fcm_tokens WHERE user_id = ?",
+                            (user_id,)
+                        )
+                    conn.commit()
+            except Exception as db_error:
+                logger.error(f"❌ خطأ في حذف FCM Token: {db_error}")
+                response_data, status_code = error_response('خطأ في حذف البيانات', 'DB_ERROR', 500)
+                return jsonify(response_data), status_code
+
+            logger.info(f"✅ تم إلغاء تسجيل FCM Token للمستخدم {user_id}")
+            response_data, status_code = success_response({'deleted': True}, 'تم إلغاء تسجيل FCM Token بنجاح')
+            return jsonify(response_data), status_code
+
+        except Exception as e:
+            logger.error(f"❌ خطأ في إلغاء FCM Token: {e}")
+            response_data, status_code = error_response('خطأ في إلغاء FCM Token', 'FCM_ERROR', 500)
+            return jsonify(response_data), status_code
+
+
     # ============================================
     # Unified OTP/Verification Endpoints (لدعم التطبيق)
     # ============================================

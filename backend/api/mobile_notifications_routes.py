@@ -522,7 +522,8 @@ def register_mobile_notifications_routes(bp, shared):
                 with db_manager.get_connection() as conn:
                     cursor = conn.execute("""
                         SELECT COUNT(*) FROM active_positions
-                        WHERE user_id = ? AND created_at >= datetime('now', '-7 days')
+                        WHERE user_id = ?
+                        AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '7 days')
                     """, (user_id,))
                     recent_trades = cursor.fetchone()[0]
                     integration_status['offline_ready'] = recent_trades > 0

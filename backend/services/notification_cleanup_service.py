@@ -6,7 +6,6 @@ Notification Cleanup Service - خدمة تنظيف الإشعارات
 """
 
 import logging
-from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from database.database_manager import DatabaseManager
@@ -24,6 +23,10 @@ class NotificationCleanupService:
     - الإشعارات النظامية: تحذف بعد 3 أيام
     - الحد الأقصى: 1000 إشعار لكل مستخدم
     """
+    READ_RETENTION_DAYS = 7
+    UNREAD_RETENTION_DAYS = 30
+    SYSTEM_RETENTION_DAYS = 3
+    MAX_NOTIFICATIONS_PER_USER = 1000
     
     def __init__(self):
         """تهيئة الخدمة"""
@@ -46,7 +49,7 @@ class NotificationCleanupService:
                 'unread_deleted': 0,
                 'system_deleted': 0,
                 'total_deleted': 0,
-                'users_affected': set()
+                'limit_deleted': 0,
             }
             
             # 1. حذف الإشعارات المقروءة (أقدم من 7 أيام)
@@ -83,7 +86,10 @@ class NotificationCleanupService:
     def _cleanup_read_notifications(self, user_id: int = None) -> int:
         """حذف الإشعارات المقروءة الأقدم من 7 أيام"""
         try:
-            where_clause = "WHERE is_read = 1 AND created_at < datetime('now', '-7 days')"
+            where_clause = (
+                "WHERE is_read = TRUE "
+                f"AND created_at < (CURRENT_TIMESTAMP - INTERVAL '{self.READ_RETENTION_DAYS} days')"
+            )
             params = []
             
             if user_id:
@@ -107,7 +113,10 @@ class NotificationCleanupService:
     def _cleanup_unread_notifications(self, user_id: int = None) -> int:
         """حذف الإشعارات غير المقروءة الأقدم من 30 يوم"""
         try:
-            where_clause = "WHERE is_read = 0 AND created_at < datetime('now', '-30 days')"
+            where_clause = (
+                "WHERE is_read = FALSE "
+                f"AND created_at < (CURRENT_TIMESTAMP - INTERVAL '{self.UNREAD_RETENTION_DAYS} days')"
+            )
             params = []
             
             if user_id:
@@ -131,7 +140,10 @@ class NotificationCleanupService:
     def _cleanup_system_notifications(self, user_id: int = None) -> int:
         """حذف الإشعارات النظامية الأقدم من 3 أيام"""
         try:
-            where_clause = "WHERE type IN ('system', 'error', 'info') AND created_at < datetime('now', '-3 days')"
+            where_clause = (
+                "WHERE type IN ('system', 'error', 'info') "
+                f"AND created_at < (CURRENT_TIMESTAMP - INTERVAL '{self.SYSTEM_RETENTION_DAYS} days')"
+            )
             params = []
             
             if user_id:
@@ -159,21 +171,21 @@ class NotificationCleanupService:
             
             if user_id:
                 # حذف الإشعارات الزائدة لمستخدم واحد
-                deleted_count = self._delete_excess_notifications(user_id, 1000)
+                deleted_count = self._delete_excess_notifications(user_id, self.MAX_NOTIFICATIONS_PER_USER)
             else:
                 # جلب كل المستخدمين الذين لديهم إشعارات زائدة
                 query = """
                     SELECT user_id, COUNT(*) as count
                     FROM notifications
                     GROUP BY user_id
-                    HAVING count > 1000
+                    HAVING COUNT(*) > ?
                 """
                 
-                users = self.db.execute_query(query)
+                users = self.db.execute_query(query, (self.MAX_NOTIFICATIONS_PER_USER,))
                 
                 for user in users:
                     user_id = user['user_id']
-                    excess_deleted = self._delete_excess_notifications(user_id, 1000)
+                    excess_deleted = self._delete_excess_notifications(user_id, self.MAX_NOTIFICATIONS_PER_USER)
                     deleted_count += excess_deleted
             
             if deleted_count > 0:
@@ -188,19 +200,28 @@ class NotificationCleanupService:
     def _delete_excess_notifications(self, user_id: int, limit: int) -> int:
         """حذف الإشعارات الزائدة لمستخدم معين"""
         try:
-            # حذف أقدم الإشعارات الزائدة
+            total_result = self.db.execute_query(
+                "SELECT COUNT(*) AS total FROM notifications WHERE user_id = ?",
+                (user_id,),
+            )
+            total_notifications = total_result[0]['total'] if total_result else 0
+            if total_notifications <= limit:
+                return 0
+
+            # حذف أقدم الإشعارات الزائدة مع الاحتفاظ بآخر `limit`
             query = """
                 DELETE FROM notifications
-                WHERE id IN (
+                WHERE user_id = ?
+                AND id IN (
                     SELECT id FROM notifications
                     WHERE user_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT -1 OFFSET ?
+                    ORDER BY created_at DESC, id DESC
+                    OFFSET ?
                 )
             """
             
             with self.db.get_write_connection() as conn:
-                cursor = conn.execute(query, (user_id, limit))
+                cursor = conn.execute(query, (user_id, user_id, limit))
                 deleted_count = cursor.rowcount
                 conn.commit()
                 
@@ -221,21 +242,27 @@ class NotificationCleanupService:
             stats['total_notifications'] = total_result[0]['total'] if total_result else 0
             
             # الإشعارات المقروءة
-            read_query = "SELECT COUNT(*) as count FROM notifications WHERE is_read = 1"
+            read_query = "SELECT COUNT(*) as count FROM notifications WHERE is_read = TRUE"
             read_result = self.db.execute_query(read_query)
             stats['read_notifications'] = read_result[0]['count'] if read_result else 0
             
             # الإشعارات غير المقروءة
-            unread_query = "SELECT COUNT(*) as count FROM notifications WHERE is_read = 0"
+            unread_query = "SELECT COUNT(*) as count FROM notifications WHERE is_read = FALSE"
             unread_result = self.db.execute_query(unread_query)
             stats['unread_notifications'] = unread_result[0]['count'] if unread_result else 0
             
             # الإشعارات القديمة
-            old_read_query = "SELECT COUNT(*) as count FROM notifications WHERE is_read = 1 AND created_at < datetime('now', '-7 days')"
+            old_read_query = (
+                "SELECT COUNT(*) as count FROM notifications "
+                f"WHERE is_read = TRUE AND created_at < (CURRENT_TIMESTAMP - INTERVAL '{self.READ_RETENTION_DAYS} days')"
+            )
             old_read_result = self.db.execute_query(old_read_query)
             stats['old_read_notifications'] = old_read_result[0]['count'] if old_read_result else 0
             
-            old_unread_query = "SELECT COUNT(*) as count FROM notifications WHERE is_read = 0 AND created_at < datetime('now', '-30 days')"
+            old_unread_query = (
+                "SELECT COUNT(*) as count FROM notifications "
+                f"WHERE is_read = FALSE AND created_at < (CURRENT_TIMESTAMP - INTERVAL '{self.UNREAD_RETENTION_DAYS} days')"
+            )
             old_unread_result = self.db.execute_query(old_unread_query)
             stats['old_unread_notifications'] = old_unread_result[0]['count'] if old_unread_result else 0
             
@@ -246,10 +273,10 @@ class NotificationCleanupService:
                     SELECT user_id, COUNT(*) as notification_count
                     FROM notifications
                     GROUP BY user_id
-                    HAVING notification_count > 1000
+                    HAVING COUNT(*) > ?
                 )
             """
-            excess_result = self.db.execute_query(excess_query)
+            excess_result = self.db.execute_query(excess_query, (self.MAX_NOTIFICATIONS_PER_USER,))
             stats['users_with_excess'] = excess_result[0]['count'] if excess_result else 0
             
             return stats

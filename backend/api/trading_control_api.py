@@ -87,7 +87,9 @@ def start_trading():
             from database.database_manager import DatabaseManager
             db = DatabaseManager()
             with db.get_write_connection() as conn:
-                cursor = conn.execute("DELETE FROM activity_logs WHERE created_at < datetime('now', '-1 day')")
+                cursor = conn.execute(
+                    "DELETE FROM activity_logs WHERE created_at < (CURRENT_TIMESTAMP - INTERVAL '1 day')"
+                )
                 deleted_count = cursor.rowcount
                 if deleted_count > 0:
                     logger.info(f"🗑️ تم تنظيف {deleted_count} سجل نشاط قديم عند بدء التداول")

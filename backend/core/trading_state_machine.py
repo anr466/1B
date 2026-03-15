@@ -502,7 +502,7 @@ class TradingStateMachine:
 
     def _transition(self, conn, new_state: str, **kwargs):
         """Execute a state transition in the DB."""
-        updates = ['trading_state = ?', 'last_update = datetime("now")']
+        updates = ['trading_state = ?', 'last_update = CURRENT_TIMESTAMP']
         params = [new_state]
 
         # Also sync the legacy is_running column

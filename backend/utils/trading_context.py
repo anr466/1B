@@ -53,5 +53,5 @@ def get_trading_context(db, user_id: int, requested_mode: Optional[str] = None) 
         'active_portfolio': 'demo' if effective_is_demo else 'real',
         'can_toggle': is_admin,
         'portfolio_owner_id': portfolio_owner_id,
-        'canonical_admin_id': user_id if is_admin else None,
+        'current_admin_user_id': user_id if is_admin else None,
     }

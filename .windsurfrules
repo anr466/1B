@@ -1,73 +1,51 @@
-# REASONING PROTOCOL
+# REASONING PROTOCOL - STATE TRACKING
 
-## Step 0: LOAD MEMORY
-Read ALL Cascade persistent memory → Hold in context
+## Step 0: LOAD
+Read memory → Scan all layers → Map dependencies
 
-## Step 1: MATCH CONTEXT
-Current request → Find relevant topic in memory
+## Step 1: TRACE FULL STATE FLOW
+For every feature, track COMPLETE state chain:
 
-## Step 2: LOAD CODEBASE
-Scan ALL layers (Backend + DB + Mobile) → Map dependencies → Understand architecture
+UI State → User Action → API Request → Backend Logic → DB Operation → Response → UI Update
 
-## Step 3: UNDERSTAND FLOW
-User journey → Triggers → Chain reactions → Final state → Side effects
+Example (Change Password with otp ):
+- UI: User sees "Change Password" screen
+- UI: Inputs old + new password → Validation state
+- Action: Click "Save" → Loading state
+- API: Request fired → Pending state
+- Backend: Verify old → Hash new → Update DB
+- DB: Transaction commit → Success/Failure
+- Response: 200 OK or Error code + Message
+- UI: Success → "Password updated" + Redirect
+- UI: Error → Show message + Keep form
 
-## Step 4: ANALYZE IMPACT
-What uses this? What breaks? Cross-layer dependencies? Breaking changes?
+## Step 2: ANALYZE & EVALUATE
+Current flow → Missing states? → Broken chain? → Max 3 iterations for BEST
 
-## Step 5: GENERATE & EVALUATE
-Propose solution → Explain reasoning → Ask: Is this the BEST?
+## Step 3: PLAN
+Fix ALL states in chain → Minimal touch → Single approach
 
-IF not optimal:
-  - Identify weakness
-  - Propose better approach
-  - Repeat until BEST solution found
+## Step 4: EXECUTE (Auto)
+Implement → Test EVERY state transition → No regression → Complete
 
-## Step 6: PLAN COMPLETE FIX
-Plan for ALL layers affected → Minimal touch → Preserve existing → Single approach
+## Step 5: E2E VALIDATE
+Simulate user journey → Verify EACH visual state matches backend state
 
-## Step 7: EXECUTE & VERIFY (Auto)
-Implement ALL changes → Test in context → Verify NO regression → DO NOT STOP until complete
+## Step 6: SYNC
+Smart memory update → Git commit + push
 
-## Step 8: E2E VALIDATION (Auto)
-Simulate FULL user journey across ALL layers → Verify outcome → Check NO unexpected behavior
+## State Tracking Rules
+- EVERY user action has visual state
+- EVERY API call has loading/error/success state
+- EVERY backend operation has matching UI feedback
+- State transitions are instant and clear
+- No silent failures
+- No state mismatch between layers
 
-## Step 9: SMART MEMORY UPDATE
-IF new pattern learned OR critical fix OR architecture change:
-  Update relevant topic in memory
-ELSE:
-  Skip update
-
-## Execution Mode: AUTONOMOUS
-- Analyze completely first
-- Execute fully without asking
-- Fix ALL issues found automatically
-- Report only final result
-- NO partial solutions
-- NO "should I continue?" questions
-
-## DRY & Single Source Rule
-- ONE source of truth per domain
-- NO duplicate logic across layers
-- NO conflicting implementations
-- Shared types → Single file
-- Shared utils → Single location
-- API contract → One definition
-- Database schema → One source
-- Business rules → One place
-
-## Rules
+## Core Rules
 - One memory file
-- Read all, update smart
-- Best solution &gt; First solution
-- Iterate until reasoning is clear and optimal
-- Complete fix &gt; Partial fix
-- Auto-execute, no interruptions
-- DRY: Don't Repeat Yourself
-- Single source of truth
-- Read before write
-- Change less
-- E2E before ship
-
-## Multi-Layer Rule
-Never change one layer alone. All sync or none.
+- Best &gt; First (3 tries)
+- Complete fix
+- DRY: Single source
+- All layers sync
+- Git sync

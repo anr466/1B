@@ -72,6 +72,7 @@ POSTGRES_UPSERT_CONFLICTS = {
 POSTGRES_BOOLEAN_COLUMNS = {
     'is_active',
     'is_demo',
+    'is_read',
     'trading_enabled',
     'is_running',
     'is_processed',
@@ -121,6 +122,22 @@ def _translate_datetime_literals(sql: str) -> str:
     }
     for old, new in replacements.items():
         sql = sql.replace(old, new)
+    def _replace_relative_now(match: re.Match) -> str:
+        sign = match.group(1)
+        amount = match.group(2)
+        unit = match.group(3).lower()
+        normalized_unit = unit if unit.endswith('s') else f'{unit}s'
+        operator = '+' if sign == '+' else '-'
+        return f"CURRENT_TIMESTAMP {operator} INTERVAL '{amount} {normalized_unit}'"
+
+    sql = re.sub(
+        r"""datetime\(\s*['"]now['"]\s*,\s*['"]([+-])(\d+)\s*(day|days|hour|hours|minute|minutes)['"]\s*\)""",
+        _replace_relative_now,
+        sql,
+        flags=re.IGNORECASE,
+    )
+    sql = re.sub(r"""datetime\(\s*['"]now['"]\s*\)""", 'CURRENT_TIMESTAMP', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"""date\(\s*['"]now['"]\s*\)""", 'CURRENT_DATE', sql, flags=re.IGNORECASE)
     sql = re.sub(r'\bdatetime\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)', r'\1', sql, flags=re.IGNORECASE)
     return sql
 
@@ -617,6 +634,312 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         dismissed_at TIMESTAMPTZ,
                         UNIQUE(user_id, step)
                     )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS biometric_auth (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        biometric_hash TEXT,
+                        device_id TEXT,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    ALTER TABLE biometric_auth
+                    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                """)
+                conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_biometric_auth_user
+                    ON biometric_auth(user_id)
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_devices (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        device_id TEXT,
+                        device_type TEXT,
+                        device_name TEXT,
+                        os_version TEXT,
+                        app_version TEXT,
+                        push_token TEXT,
+                        fcm_token TEXT,
+                        is_trusted BOOLEAN DEFAULT TRUE,
+                        device_model TEXT,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        last_login TIMESTAMPTZ,
+                        last_active_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE UNIQUE INDEX
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS pending_verifications (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        action TEXT NOT NULL,
+                        otp TEXT NOT NULL,
+                        expires_at TIMESTAMPTZ,
+                        method TEXT DEFAULT 'email',
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS password_reset_requests (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        token TEXT NOT NULL,
+                        used BOOLEAN DEFAULT FALSE,
+                        expires_at TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS trading_history (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        symbol TEXT NOT NULL,
+                        side TEXT,
+                        entry_price DOUBLE PRECISION,
+                        exit_price DOUBLE PRECISION,
+                        quantity DOUBLE PRECISION,
+                        profit_loss DOUBLE PRECISION DEFAULT 0,
+                        profit_pct DOUBLE PRECISION DEFAULT 0,
+                        status TEXT DEFAULT 'closed',
+                        entry_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        exit_time TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ml_training_data (
+                        id BIGSERIAL PRIMARY KEY,
+                        symbol TEXT,
+                        strategy TEXT,
+                        timeframe TEXT,
+                        entry_price DOUBLE PRECISION,
+                        exit_price DOUBLE PRECISION,
+                        profit_loss DOUBLE PRECISION DEFAULT 0,
+                        is_winning BOOLEAN DEFAULT FALSE,
+                        source TEXT DEFAULT 'runtime',
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ml_training_history (
+                        id BIGSERIAL PRIMARY KEY,
+                        cycle_number INTEGER DEFAULT 0,
+                        total_samples INTEGER DEFAULT 0,
+                        accuracy DOUBLE PRECISION DEFAULT 0,
+                        is_ready BOOLEAN DEFAULT FALSE,
+                        status TEXT DEFAULT 'pending',
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ml_models (
+                        id BIGSERIAL PRIMARY KEY,
+                        model_name TEXT,
+                        accuracy DOUBLE PRECISION DEFAULT 0,
+                        is_best BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS backtest_vs_reality (
+                        id BIGSERIAL PRIMARY KEY,
+                        symbol TEXT,
+                        strategy TEXT,
+                        timeframe TEXT,
+                        backtest_win_rate DOUBLE PRECISION DEFAULT 0,
+                        actual_result DOUBLE PRECISION DEFAULT 0,
+                        reliability_score DOUBLE PRECISION DEFAULT 0,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS combo_reliability (
+                        id BIGSERIAL PRIMARY KEY,
+                        symbol TEXT,
+                        strategy TEXT,
+                        timeframe TEXT,
+                        total_trades INTEGER DEFAULT 0,
+                        actual_win_rate DOUBLE PRECISION DEFAULT 0,
+                        reliability_score DOUBLE PRECISION DEFAULT 0,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS operation_log (
+                        id BIGSERIAL PRIMARY KEY,
+                        operation_type TEXT,
+                        operation_name TEXT,
+                        status TEXT DEFAULT 'started',
+                        start_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        end_time TIMESTAMPTZ,
+                        details TEXT
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS dynamic_blacklist (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+                        symbol TEXT NOT NULL,
+                        reason TEXT,
+                        added_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        expires_at TIMESTAMPTZ
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS agent_memory (
+                        id BIGSERIAL PRIMARY KEY,
+                        memory_type TEXT,
+                        category TEXT,
+                        symbol TEXT,
+                        title TEXT,
+                        content TEXT,
+                        confidence DOUBLE PRECISION DEFAULT 0,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ml_patterns (
+                        id BIGSERIAL PRIMARY KEY,
+                        pattern_name TEXT,
+                        pattern_data TEXT,
+                        success_rate DOUBLE PRECISION DEFAULT 0,
+                        frequency INTEGER DEFAULT 0,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ml_quality_metrics (
+                        id BIGSERIAL PRIMARY KEY,
+                        metric_type TEXT,
+                        total_validated INTEGER DEFAULT 0,
+                        valid_count INTEGER DEFAULT 0,
+                        validity_rate DOUBLE PRECISION DEFAULT 0,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    DELETE FROM user_settings us
+                    WHERE us.id IN (
+                        SELECT id FROM (
+                            SELECT id,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY user_id, is_demo
+                                       ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+                                   ) AS rn
+                            FROM user_settings
+                        ) ranked
+                        WHERE rn > 1
+                    )
+                """)
+                conn.execute("""
+                    DELETE FROM portfolio p
+                    WHERE p.id IN (
+                        SELECT id FROM (
+                            SELECT id,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY user_id, is_demo
+                                       ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+                                   ) AS rn
+                            FROM portfolio
+                        ) ranked
+                        WHERE rn > 1
+                    )
+                """)
+                conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_user_settings_user_mode
+                    ON user_settings(user_id, is_demo)
+                """)
+                conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_portfolio_user_mode
+                    ON portfolio(user_id, is_demo)
+                """)
+                conn.execute("""
+                    INSERT INTO user_settings (
+                        user_id, is_demo, trading_enabled, trade_amount,
+                        position_size_percentage, stop_loss_pct, take_profit_pct,
+                        trailing_distance, max_positions, risk_level, max_daily_loss_pct,
+                        trading_mode, created_at, updated_at
+                    )
+                    SELECT
+                        u.id, FALSE, FALSE, 100.0,
+                        10.0, 2.0, 5.0,
+                        3.0, 5, 'medium', 10.0,
+                        'real', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM users u
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM user_settings s WHERE s.user_id = u.id AND s.is_demo = FALSE
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO user_settings (
+                        user_id, is_demo, trading_enabled, trade_amount,
+                        position_size_percentage, stop_loss_pct, take_profit_pct,
+                        trailing_distance, max_positions, risk_level, max_daily_loss_pct,
+                        trading_mode, created_at, updated_at
+                    )
+                    SELECT
+                        u.id, TRUE, FALSE, 100.0,
+                        10.0, 2.0, 5.0,
+                        3.0, 5, 'medium', 10.0,
+                        'demo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM users u
+                    WHERE u.user_type = 'admin'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM user_settings s WHERE s.user_id = u.id AND s.is_demo = TRUE
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO portfolio (
+                        user_id, total_balance, available_balance, invested_balance,
+                        total_profit_loss, total_profit_loss_percentage, initial_balance,
+                        is_demo, created_at, updated_at
+                    )
+                    SELECT
+                        u.id, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM users u
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM portfolio p WHERE p.user_id = u.id AND p.is_demo = FALSE
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO portfolio (
+                        user_id, total_balance, available_balance, invested_balance,
+                        total_profit_loss, total_profit_loss_percentage, initial_balance,
+                        is_demo, created_at, updated_at
+                    )
+                    SELECT
+                        u.id, 10000.0, 10000.0, 0.0,
+                        0.0, 0.0, 10000.0,
+                        TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM users u
+                    WHERE u.user_type = 'admin'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM portfolio p WHERE p.user_id = u.id AND p.is_demo = TRUE
+                    )
+                """)
+                conn.execute("""
+                    UPDATE portfolio
+                    SET initial_balance = CASE
+                        WHEN COALESCE(total_balance, 0) > 0 THEN total_balance
+                        WHEN COALESCE(available_balance, 0) > 0 THEN available_balance
+                        ELSE 1000
+                    END
+                    WHERE initial_balance IS NULL OR initial_balance <= 0
+                """)
+                conn.execute("""
+                    INSERT INTO operation_log (operation_type, operation_name, status, start_time, details)
+                    SELECT 'system', 'bootstrap', 'ok', CURRENT_TIMESTAMP, 'runtime migration bootstrap'
+                    WHERE NOT EXISTS (SELECT 1 FROM operation_log)
                 """)
             self.logger.info("✅ PostgreSQL runtime migrations applied")
         except Exception as e:
