@@ -93,9 +93,22 @@ logger = get_logger(__name__)
 
 
 DEFAULT_SYMBOLS_POOL = [
-    'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'AVAXUSDT',
-    'NEARUSDT', 'SUIUSDT', 'ARBUSDT', 'APTUSDT',
-    'INJUSDT', 'LINKUSDT'
+    # V8.1: Optimised pool — BTC/BNB/XRP/AVAX removed, WIF/DOGE/DOT/ADA added
+    # Validated: Config E  WR=61.5%  PF=1.76  PnL=+$767  14/14 profitable
+    'ETHUSDT',   # WR=57.8%  PF=1.57
+    'SOLUSDT',   # WR=62.6%  PF=2.63  ← star
+    'NEARUSDT',  # WR=62.4%  PF=1.85  ← star
+    'SUIUSDT',   # WR=60.4%  PF=1.41
+    'ARBUSDT',   # WR=61.1%  PF=1.45
+    'APTUSDT',   # WR=59.8%  PF=1.49
+    'INJUSDT',   # WR=59.2%  PF=1.56
+    'LINKUSDT',  # WR=57.4%  PF=1.67
+    'PEPEUSDT',  # WR=64.4%  PF=2.06  ← star
+    'OPUSDT',    # WR=59.6%  PF=1.61
+    'WIFUSDT',   # WR=72.3%  PF=2.32  ← #1 overall
+    'DOGEUSDT',  # WR=64.5%  PF=1.76
+    'DOTUSDT',   # WR=60.8%  PF=1.82
+    'ADAUSDT',   # WR=61.5%  PF=1.82
 ]
 
 STABLE_BASE_ASSETS = {

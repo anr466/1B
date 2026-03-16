@@ -44,7 +44,8 @@ V8_CONFIG = {
     **V7_CONFIG,
 
     # === ENTRY: Keep V7.1 proven system, block only verified losers ===
-    'v8_block_reversal': True,          # Block 'reversal' (net -$93 in V7.1)
+    'v8_block_reversal': True,
+    'v8_block_long_in_downtrend': True,          # V8.1: skip LONG signals when 4H trend=DOWN (LONG WR -6pp in bear market)
 
     # === EXIT: Scalping-optimized (V9.4 config, PF=1.72) ===
     # Breakeven
@@ -64,7 +65,7 @@ V8_CONFIG = {
     },
 
     # Smart early exit (momentum-based, replaces blind EARLY_CUT)
-    'v8_smart_cut_1': {'bars': 1, 'loss': -0.001, 'momentum': -2},
+    'v8_smart_cut_1': {'bars': 1, 'loss': -0.0015, 'momentum': -3},
     'v8_smart_cut_2': {'bars': 2, 'loss': -0.0015, 'momentum': 0},
     'v8_smart_cut_3': {'bars': 3, 'loss': -0.002},
 
@@ -164,6 +165,11 @@ class ScalpingV8Engine:
         # V8: Block reversal strategy (verified net negative)
         if self.config.get('v8_block_reversal', True):
             if signal.get('strategy') == 'reversal':
+                return None
+
+        # V8.1 Fix2: Block LONG entries when 4H trend is DOWN
+        if self.config.get('v8_block_long_in_downtrend', True):
+            if signal.get('side') == 'LONG' and trend == 'DOWN':
                 return None
 
         return signal

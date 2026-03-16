@@ -1,52 +1,91 @@
-# REASONING PROTOCOL - STATE TRACKING
+# REASONING PROTOCOL - PARALLEL EXECUTION
 
-## Step 0: LOAD
-Read memory → Scan all layers → Map dependencies
+## Step 0: LOAD (Parallel)
+Read memory + Scan all layers + Map dependencies → Concurrent loading
 
-## Step 1: TRACE FULL STATE FLOW
-For every feature, track COMPLETE state chain:
+## Step 1: DUAL ANALYSIS (Parallel)
+Analyze from TWO perspectives simultaneously:
 
-UI State → User Action → API Request → Backend Logic → DB Operation → Response → UI Update
+### USER VISION (Thread A)
+- Screen layout, colors, fonts, spacing
+- Visual hierarchy, consistency
+- Accessibility, navigation
 
-Example (Change Password with otp ):
-- UI: User sees "Change Password" screen
-- UI: Inputs old + new password → Validation state
-- Action: Click "Save" → Loading state
-- API: Request fired → Pending state
-- Backend: Verify old → Hash new → Update DB
-- DB: Transaction commit → Success/Failure
-- Response: 200 OK or Error code + Message
-- UI: Success → "Password updated" + Redirect
-- UI: Error → Show message + Keep form
+### SYSTEM VISION (Thread B)  
+- Data flow, API calls, logic
+- Database operations, security
+- Error handling, performance
 
-## Step 2: ANALYZE & EVALUATE
-Current flow → Missing states? → Broken chain? → Max 3 iterations for BEST
+Sync point: Merge findings → Identify mismatches
 
-## Step 3: PLAN
-Fix ALL states in chain → Minimal touch → Single approach
+## Step 2: DESIGN SYSTEM CHECK (Parallel)
+Verify consistency across ALL screens concurrently:
+- Color palette validation
+- Typography hierarchy check
+- Spacing grid verification
+- Component reuse audit
 
-## Step 4: EXECUTE (Auto)
-Implement → Test EVERY state transition → No regression → Complete
+## Step 3: TRACE SYNC (Parallel)
+Verify visual-system pairs in parallel batches
 
-## Step 5: E2E VALIDATE
-Simulate user journey → Verify EACH visual state matches backend state
+## Step 4: FIND MISMATCH (Parallel)
+Scan all layers simultaneously for inconsistencies
 
-## Step 6: SYNC
-Smart memory update → Git commit + push
+## Step 5: PLAN FIX (Parallel)
+Generate solutions for independent issues concurrently:
+- UI fixes (parallel)
+- Logic fixes (parallel)
+- Design system updates (parallel)
 
-## State Tracking Rules
-- EVERY user action has visual state
-- EVERY API call has loading/error/success state
-- EVERY backend operation has matching UI feedback
-- State transitions are instant and clear
-- No silent failures
-- No state mismatch between layers
+Merge dependent fixes into atomic units
+
+## Step 6: EXECUTE (Parallel Auto)
+Implement fixes using parallel workers:
+- Independent layers → Concurrent execution
+- Dependent changes → Sequential with sync points
+- Test in parallel → Aggregate results
+
+Max parallelism: Use all available cores
+
+## Step 7: E2E VALIDATE (Parallel)
+Simulate multiple user journeys concurrently:
+- Happy path
+- Error scenarios  
+- Edge cases
+- Cross-screen flows
+
+## Step 8: GIT SYNC
+git add -A && git commit -m "chore: sync updates" && git push
+
+## Step 9: DEPLOY (If needed)
+docker compose up -d --build
+
+## Parallel Execution Rules
+- Independent tasks → Concurrent
+- Dependent tasks → Sequential with sync
+- Maximize CPU utilization
+- Minimize idle waiting
+- Parallel testing mandatory
+- Sync points for consistency
+
+## Design System Rules
+- ONE design system, parallel validation
+- NO ad-hoc exceptions
+- Components parallel-processable
+
+## Dual Vision Rules
+- Parallel analysis: UI + Logic
+- Sync before decision
+- Mismatch detection parallel
+
+## Terminal Rule
+- Git sync: atomic (sequential by nature)
+- Deploy: separate
 
 ## Core Rules
 - One memory file
-- Best &gt; First (3 tries)
+- Best &gt; First (3 tries, parallel evaluation)
 - Complete fix
 - DRY: Single source
 - All layers sync
-- Git sync
-- git add -A && git commit -m "chore: sync local updates" && git push && docker compose up -d --build
+- Parallel execution preferred
