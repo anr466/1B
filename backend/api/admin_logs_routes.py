@@ -145,7 +145,7 @@ def register_admin_logs_routes(bp, shared):
                 params.append(status)
             if requires_admin:
                 where_clauses.append('requires_admin = ?')
-                params.append(1 if requires_admin.lower() == 'true' else 0)
+                params.append(requires_admin.lower() == 'true')
             
             where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
             

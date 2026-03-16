@@ -164,6 +164,14 @@ class IntelligentExitSystem:
         entry_time: datetime = None
     ) -> PositionTracker:
         """تسجيل صفقة جديدة"""
+        if isinstance(entry_time, pd.Timestamp):
+            entry_time = entry_time.to_pydatetime()
+        elif isinstance(entry_time, str):
+            try:
+                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+            except Exception:
+                entry_time = None
+
         entry_time = entry_time or datetime.now()
         
         # إنشاء مستويات TP
@@ -431,9 +439,18 @@ class IntelligentExitSystem:
         cfg = self.config['time']
         
         # حساب وقت الاحتفاظ
-        current_time = df['timestamp'].iloc[idx] if 'timestamp' in df.columns else datetime.now()
+        if 'timestamp' in df.columns:
+            current_time = df['timestamp'].iloc[idx]
+        else:
+            current_time = datetime.now(tracker.entry_time.tzinfo) if tracker.entry_time.tzinfo else datetime.now()
         if isinstance(current_time, pd.Timestamp):
             current_time = current_time.to_pydatetime()
+
+        if isinstance(current_time, datetime):
+            if tracker.entry_time.tzinfo and current_time.tzinfo is None:
+                current_time = current_time.replace(tzinfo=tracker.entry_time.tzinfo)
+            elif tracker.entry_time.tzinfo is None and current_time.tzinfo is not None:
+                current_time = current_time.replace(tzinfo=None)
         
         hold_hours = (current_time - tracker.entry_time).total_seconds() / 3600
         

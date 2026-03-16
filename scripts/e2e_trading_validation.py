@@ -73,7 +73,7 @@ def precheck() -> CheckResult:
         return CheckResult(False, {**out, "error": f"api_unreachable: {exc}"})
 
     critical_unresolved = db_scalar(
-        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND COALESCE(resolved,0)=0"
+        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND COALESCE(resolved, FALSE)=FALSE"
     )
 
     out["health"] = health
@@ -153,10 +153,10 @@ def postcheck(started_at: str) -> CheckResult:
     out: dict[str, Any] = {"stage": "postcheck", "started_at": started_at}
 
     critical_unresolved_after = db_scalar(
-        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND COALESCE(resolved,0)=0"
+        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND COALESCE(resolved, FALSE)=FALSE"
     )
     new_critical_since_start = db_scalar(
-        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND datetime(created_at) >= datetime(?)",
+        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND created_at >= ?",
         (started_at,),
     )
 

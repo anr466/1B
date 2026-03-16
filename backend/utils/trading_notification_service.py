@@ -90,6 +90,7 @@ class TradingNotificationService:
         """
         self.logger = logging.getLogger(__name__)
         self.db_manager = db_manager if db_manager else DatabaseManager()
+        self._notification_history_has_data_column: Optional[bool] = None
         
         # تهيئة Firebase
         if FIREBASE_AVAILABLE:
@@ -102,6 +103,24 @@ class TradingNotificationService:
         else:
             self.firebase_service = None
             self.logger.warning("⚠️ Firebase غير متوفر")
+
+    def _has_notification_history_data_column(self, conn) -> bool:
+        """فحص (مع كاش) لوجود عمود data في notification_history."""
+        if self._notification_history_has_data_column is not None:
+            return self._notification_history_has_data_column
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT data FROM notification_history LIMIT 1")
+            self._notification_history_has_data_column = True
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            self._notification_history_has_data_column = False
+
+        return self._notification_history_has_data_column
     
     def is_available(self) -> bool:
         """فحص توفر الخدمة"""
@@ -300,7 +319,7 @@ class TradingNotificationService:
             return 0.0
     
     def is_duplicate_notification(self, user_id: int, notification_type: str, 
-                                   unique_key: str, cooldown_minutes: int = 5) -> bool:
+                                  unique_key: str, cooldown_minutes: int = 5) -> bool:
         """
         ✅ فحص إذا الإشعار مكرر - منع إرسال نفس الإشعار مرتين
         
@@ -319,13 +338,29 @@ class TradingNotificationService:
                 
                 # فحص إذا أُرسل إشعار مشابه في الفترة المحددة
                 cooldown = max(1, int(cooldown_minutes))
-                cursor.execute("""
-                    SELECT COUNT(*) FROM notification_history
-                    WHERE user_id = ? 
-                    AND type = ?
-                    AND data LIKE ?
-                    AND created_at > (CURRENT_TIMESTAMP - (? * INTERVAL '1 minute'))
-                """, (user_id, notification_type, f'%{unique_key}%', cooldown))
+                if self._has_notification_history_data_column(conn):
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM notification_history
+                        WHERE user_id = ? 
+                        AND type = ?
+                        AND data LIKE ?
+                        AND created_at > (CURRENT_TIMESTAMP - (? * INTERVAL '1 minute'))
+                    """, (user_id, notification_type, f'%{unique_key}%', cooldown))
+                else:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM notification_history
+                        WHERE user_id = ? 
+                        AND (type = ? OR notification_type = ?)
+                        AND (message LIKE ? OR title LIKE ?)
+                        AND created_at > (CURRENT_TIMESTAMP - (? * INTERVAL '1 minute'))
+                    """, (
+                        user_id,
+                        notification_type,
+                        notification_type,
+                        f'%{unique_key}%',
+                        f'%{unique_key}%',
+                        cooldown,
+                    ))
                 
                 count = cursor.fetchone()[0]
                 
@@ -345,12 +380,31 @@ class TradingNotificationService:
         try:
             with self.db_manager.get_write_connection() as conn:
                 cursor = conn.cursor()
-                
-                cursor.execute("""
-                    INSERT INTO notification_history 
-                    (user_id, type, title, message, data, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
-                """, (user_id, notification_type, title, body, str(data or {})))
+                data_json = json.dumps(data or {}, ensure_ascii=False)
+
+                if self._has_notification_history_data_column(conn):
+                    cursor.execute("""
+                        INSERT INTO notification_history 
+                        (user_id, type, title, message, data, status, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
+                    """, (user_id, notification_type, title, body, data_json))
+                else:
+                    cursor.execute("""
+                        INSERT INTO notification_history 
+                        (user_id, notification_type, type, title, message, status, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
+                    """, (user_id, notification_type, notification_type, title, body))
+
+                # مزامنة مع جدول notifications الذي يقرأ منه التطبيق المحمول
+                try:
+                    cursor.execute("""
+                        INSERT INTO notifications
+                        (user_id, title, message, type, is_read, data, created_at)
+                        VALUES (?, ?, ?, ?, FALSE, ?, CURRENT_TIMESTAMP)
+                    """, (user_id, title, body, notification_type, data_json))
+                except Exception as mirror_error:
+                    # لا نفشل العملية الأساسية بسبب فشل المزامنة الثانوية
+                    self.logger.debug(f"فشل مزامنة notifications table: {mirror_error}")
                 return True
                 
         except Exception as e:
@@ -488,13 +542,22 @@ class TradingNotificationService:
         try:
             with self.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT COUNT(*) FROM notification_history
-                    WHERE user_id = ? 
-                    AND type = 'trailing_stop_activated'
-                    AND data LIKE ?
-                    AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 minutes')
-                """, (user_id, f'%{symbol}%'))
+                if self._has_notification_history_data_column(conn):
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM notification_history
+                        WHERE user_id = ? 
+                        AND type = 'trailing_stop_activated'
+                        AND data LIKE ?
+                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 minutes')
+                    """, (user_id, f'%{symbol}%'))
+                else:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM notification_history
+                        WHERE user_id = ? 
+                        AND (type = 'trailing_stop_activated' OR notification_type = 'trailing_stop_activated')
+                        AND (message LIKE ? OR title LIKE ?)
+                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 minutes')
+                    """, (user_id, f'%{symbol}%', f'%{symbol}%'))
                 
                 recent_count = cursor.fetchone()[0]
                 if recent_count > 0:

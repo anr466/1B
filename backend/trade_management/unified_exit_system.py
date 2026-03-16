@@ -413,7 +413,16 @@ class UnifiedExitSystem:
             tp_levels = self._create_default_tp_levels(entry_price)
         
         # إنشاء حالة الصفقة
+        if isinstance(entry_time, pd.Timestamp):
+            entry_time = entry_time.to_pydatetime()
+        elif isinstance(entry_time, str):
+            try:
+                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+            except Exception:
+                entry_time = None
+
         entry_time = entry_time or datetime.now()
+        now_dt = datetime.now(entry_time.tzinfo) if entry_time.tzinfo else datetime.now()
         state = PositionState(
             position_id=position_id,
             symbol=symbol,
@@ -427,7 +436,7 @@ class UnifiedExitSystem:
             tp_levels=tp_levels,
             highest_price=entry_price,
             last_price=entry_price,
-            last_update=datetime.now(),
+            last_update=now_dt,
             last_movement_time=entry_time
         )
         
@@ -506,6 +515,12 @@ class UnifiedExitSystem:
         
         state = self.positions[position_id]
         timestamp = timestamp or datetime.now()
+        if isinstance(timestamp, pd.Timestamp):
+            timestamp = timestamp.to_pydatetime()
+        if state.entry_time.tzinfo and timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=state.entry_time.tzinfo)
+        elif state.entry_time.tzinfo is None and timestamp.tzinfo is not None:
+            timestamp = timestamp.replace(tzinfo=None)
         
         # تحديث الحالة
         state.last_price = current_price

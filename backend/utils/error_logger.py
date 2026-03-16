@@ -203,7 +203,7 @@ class ErrorLogger:
                     """
                     SELECT id, attempt_count, status, requires_admin
                     FROM system_errors
-                    WHERE resolved = 0 AND error_fingerprint = ?
+                    WHERE resolved = FALSE AND error_fingerprint = ?
                     ORDER BY id DESC
                     LIMIT 1
                     """,
@@ -215,7 +215,7 @@ class ErrorLogger:
                     new_attempts = max(existing_attempts + 1, int(attempt_count or 0) + 1)
                     existing_status = str(existing['status'] or 'new')
                     next_status = existing_status if existing_status in ('escalated', 'auto_processing') else status
-                    needs_admin = 1 if (bool(existing['requires_admin']) or requires_admin) else 0
+                    needs_admin = bool(existing['requires_admin']) or bool(requires_admin)
 
                     conn.execute(
                         """
@@ -266,7 +266,7 @@ class ErrorLogger:
                     final_fingerprint,
                     status,
                     max(1, int(attempt_count or 1)),
-                    1 if requires_admin else 0,
+                    bool(requires_admin),
                     auto_action,
                 ))
                 
@@ -306,7 +306,7 @@ class ErrorLogger:
                     """
                     SELECT id, error_message, details, attempt_count, status
                     FROM system_errors
-                    WHERE resolved = 0
+                    WHERE resolved = FALSE
                       AND COALESCE(status, 'new') IN ('new', 'auto_processing', 'escalated')
                     ORDER BY created_at ASC
                     LIMIT ?
@@ -330,11 +330,11 @@ class ErrorLogger:
                             conn.execute(
                                 """
                                 UPDATE system_errors
-                                SET resolved = 1,
+                                SET resolved = TRUE,
                                     resolved_at = CURRENT_TIMESTAMP,
                                     resolved_by = 'auto-healer',
                                     status = 'auto_resolved',
-                                    requires_admin = 0,
+                                    requires_admin = FALSE,
                                     auto_action = ?,
                                     attempt_count = ?,
                                     last_attempt_at = CURRENT_TIMESTAMP
@@ -351,7 +351,7 @@ class ErrorLogger:
                                     auto_action = ?,
                                     attempt_count = ?,
                                     last_attempt_at = CURRENT_TIMESTAMP,
-                                    requires_admin = 0
+                                    requires_admin = FALSE
                                 WHERE id = ?
                                 """,
                                 (action, next_attempt, error_id),
@@ -362,7 +362,7 @@ class ErrorLogger:
                             """
                             UPDATE system_errors
                             SET status = 'escalated',
-                                requires_admin = 1,
+                                requires_admin = TRUE,
                                 auto_action = ?,
                                 attempt_count = ?,
                                 last_attempt_at = CURRENT_TIMESTAMP
@@ -528,19 +528,19 @@ class ErrorLogger:
                 
                 # الأخطاء غير المحلولة
                 unresolved = conn.execute(
-                    "SELECT COUNT(*) as count FROM system_errors WHERE resolved = 0"
+                    "SELECT COUNT(*) as count FROM system_errors WHERE resolved = FALSE"
                 ).fetchone()['count']
                 
                 # الأخطاء الحرجة
                 critical = conn.execute(
-                    "SELECT COUNT(*) as count FROM system_errors WHERE severity = 'critical' AND resolved = 0"
+                    "SELECT COUNT(*) as count FROM system_errors WHERE severity = 'critical' AND resolved = FALSE"
                 ).fetchone()['count']
                 
                 # حسب المصدر
                 by_source = conn.execute("""
                     SELECT COALESCE(source, error_type) as source, COUNT(*) as count
                     FROM system_errors
-                    WHERE resolved = 0
+                    WHERE resolved = FALSE
                     GROUP BY COALESCE(source, error_type)
                 """).fetchall()
                 
@@ -548,7 +548,7 @@ class ErrorLogger:
                 by_level = conn.execute("""
                     SELECT COALESCE(severity, 'error') as level, COUNT(*) as count
                     FROM system_errors
-                    WHERE resolved = 0
+                    WHERE resolved = FALSE
                     GROUP BY COALESCE(severity, 'error')
                 """).fetchall()
                 

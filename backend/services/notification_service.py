@@ -6,8 +6,12 @@
 import json
 from typing import Dict, List, Optional
 from datetime import datetime
+import logging
 
 from database.database_manager import DatabaseManager
+
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationService:
@@ -15,6 +19,16 @@ class NotificationService:
     
     def __init__(self):
         self.db = DatabaseManager()
+
+    def _safe_json_loads(self, raw_value):
+        if not raw_value:
+            return {}
+        if isinstance(raw_value, dict):
+            return raw_value
+        try:
+            return json.loads(raw_value)
+        except Exception:
+            return {}
     
     # ==================== إرسال إشعار ====================
     
@@ -64,7 +78,7 @@ class NotificationService:
                 return True
                 
         except Exception as e:
-            print(f"❌ خطأ في إرسال الإشعار: {e}")
+            logger.error(f"❌ خطأ في إرسال الإشعار: {e}")
             return False
     
     # ==================== جلب الإشعارات المعلقة ====================
@@ -80,25 +94,87 @@ class NotificationService:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                if last_check:
-                    cursor.execute("""
-                        SELECT id, user_id, type, title, message, data, priority, status, created_at
-                        FROM notification_history
-                        WHERE user_id = ? AND status IN ('pending', 'sent')
-                        AND created_at > ?
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                    """, (user_id, last_check, limit))
-                else:
-                    cursor.execute("""
-                        SELECT id, user_id, type, title, message, data, priority, status, created_at
-                        FROM notification_history
-                        WHERE user_id = ? AND status IN ('pending', 'sent')
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                    """, (user_id, limit))
-                
+                try:
+                    if last_check:
+                        cursor.execute("""
+                            SELECT id, user_id, COALESCE(type, 'general') as type,
+                                   title, message, data, NULL as priority,
+                                   CASE WHEN COALESCE(is_read, FALSE) THEN 'read' ELSE 'sent' END as status,
+                                   created_at
+                            FROM notifications
+                            WHERE user_id = ? AND created_at > ?
+                            ORDER BY created_at DESC
+                            LIMIT ?
+                        """, (user_id, last_check, limit))
+                    else:
+                        cursor.execute("""
+                            SELECT id, user_id, COALESCE(type, 'general') as type,
+                                   title, message, data, NULL as priority,
+                                   CASE WHEN COALESCE(is_read, FALSE) THEN 'read' ELSE 'sent' END as status,
+                                   created_at
+                            FROM notifications
+                            WHERE user_id = ?
+                            ORDER BY created_at DESC
+                            LIMIT ?
+                        """, (user_id, limit))
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    if last_check:
+                        try:
+                            cursor.execute("""
+                                SELECT id, user_id, COALESCE(type, notification_type, 'general') as type,
+                                       title, message, data, NULL as priority,
+                                       status, created_at
+                                FROM notification_history
+                                WHERE user_id = ? AND status IN ('pending', 'sent')
+                                AND created_at > ?
+                                ORDER BY created_at DESC
+                                LIMIT ?
+                            """, (user_id, last_check, limit))
+                        except Exception:
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            cursor.execute("""
+                                SELECT id, user_id, COALESCE(type, notification_type, 'general') as type,
+                                       title, message, NULL as data, NULL as priority,
+                                       status, created_at
+                                FROM notification_history
+                                WHERE user_id = ? AND status IN ('pending', 'sent')
+                                AND created_at > ?
+                                ORDER BY created_at DESC
+                                LIMIT ?
+                            """, (user_id, last_check, limit))
+                    else:
+                        try:
+                            cursor.execute("""
+                                SELECT id, user_id, COALESCE(type, notification_type, 'general') as type,
+                                       title, message, data, NULL as priority,
+                                       status, created_at
+                                FROM notification_history
+                                WHERE user_id = ? AND status IN ('pending', 'sent')
+                                ORDER BY created_at DESC
+                                LIMIT ?
+                            """, (user_id, limit))
+                        except Exception:
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            cursor.execute("""
+                                SELECT id, user_id, COALESCE(type, notification_type, 'general') as type,
+                                       title, message, NULL as data, NULL as priority,
+                                       status, created_at
+                                FROM notification_history
+                                WHERE user_id = ? AND status IN ('pending', 'sent')
+                                ORDER BY created_at DESC
+                                LIMIT ?
+                            """, (user_id, limit))
+
                 notifications = []
                 for row in cursor.fetchall():
                     notifications.append({
@@ -107,16 +183,16 @@ class NotificationService:
                         'type': row[2],
                         'title': row[3],
                         'message': row[4],
-                        'data': json.loads(row[5]) if row[5] else {},
+                        'data': self._safe_json_loads(row[5]),
                         'priority': row[6],
                         'status': row[7],
                         'createdAt': row[8]
                     })
-                
+
                 return notifications
         
         except Exception as e:
-            print(f"❌ خطأ في جلب الإشعارات: {e}")
+            logger.error(f"❌ خطأ في جلب الإشعارات: {e}")
             return []
     
     # ==================== تحديث حالة الإشعار ====================
@@ -126,12 +202,24 @@ class NotificationService:
         try:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE notification_history
-                    SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (notification_id,))
-                return True
+                try:
+                    cursor.execute("""
+                        UPDATE notification_history
+                        SET status = 'delivered'
+                        WHERE id = ?
+                    """, (notification_id,))
+                    return True
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    cursor.execute("""
+                        UPDATE notifications
+                        SET is_read = COALESCE(is_read, FALSE)
+                        WHERE id = ?
+                    """, (notification_id,))
+                    return True
         
         except Exception:
             return False
@@ -141,12 +229,24 @@ class NotificationService:
         try:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE notification_history
-                    SET status = 'read', read_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (notification_id,))
-                return True
+                try:
+                    cursor.execute("""
+                        UPDATE notifications
+                        SET is_read = TRUE
+                        WHERE id = ?
+                    """, (notification_id,))
+                    return True
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    cursor.execute("""
+                        UPDATE notification_history
+                        SET status = 'read', read_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (notification_id,))
+                    return True
         
         except Exception:
             return False
@@ -158,14 +258,48 @@ class NotificationService:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, type, title, message, data, priority, status, created_at, delivered_at
-                    FROM notification_history
-                    WHERE user_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                """, (user_id, limit))
-                
+                try:
+                    cursor.execute("""
+                        SELECT id, COALESCE(type, 'general') as type, title, message, data,
+                               NULL as priority,
+                               CASE WHEN COALESCE(is_read, FALSE) THEN 'read' ELSE 'unread' END as status,
+                               created_at,
+                               NULL as delivered_at
+                        FROM notifications
+                        WHERE user_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (user_id, limit))
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("""
+                            SELECT id, COALESCE(type, notification_type, 'general') as type,
+                                   title, message, data, NULL as priority,
+                                   status, created_at, NULL as delivered_at
+                            FROM notification_history
+                            WHERE user_id = ?
+                            ORDER BY created_at DESC
+                            LIMIT ?
+                        """, (user_id, limit))
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        cursor.execute("""
+                            SELECT id, COALESCE(type, notification_type, 'general') as type,
+                                   title, message, NULL as data, NULL as priority,
+                                   status, created_at, NULL as delivered_at
+                            FROM notification_history
+                            WHERE user_id = ?
+                            ORDER BY created_at DESC
+                            LIMIT ?
+                        """, (user_id, limit))
+
                 history = []
                 for row in cursor.fetchall():
                     history.append({
@@ -173,16 +307,17 @@ class NotificationService:
                         'type': row[1],
                         'title': row[2],
                         'message': row[3],
-                        'data': json.loads(row[4]) if row[4] else {},
+                        'data': self._safe_json_loads(row[4]),
                         'priority': row[5],
                         'status': row[6],
                         'createdAt': row[7],
                         'deliveredAt': row[8]
                     })
-                
+
                 return history
         
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_notification_history: {e}")
             return []
     
     # ==================== الإحصائيات ====================
@@ -192,17 +327,34 @@ class NotificationService:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as total,
-                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-                        COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered,
-                        COUNT(CASE WHEN type LIKE 'trade%' THEN 1 END) as trade_notifications,
-                        COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority
-                    FROM notification_history
-                    WHERE user_id = ?
-                    AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
-                """, (user_id,))
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            COUNT(*) as total,
+                            COUNT(CASE WHEN COALESCE(is_read, FALSE) = FALSE THEN 1 END) as pending,
+                            COUNT(CASE WHEN COALESCE(is_read, FALSE) = TRUE THEN 1 END) as delivered,
+                            COUNT(CASE WHEN COALESCE(type, '') LIKE 'trade%' THEN 1 END) as trade_notifications,
+                            0 as high_priority
+                        FROM notifications
+                        WHERE user_id = ?
+                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
+                    """, (user_id,))
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    cursor.execute("""
+                        SELECT 
+                            COUNT(*) as total,
+                            COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+                            COUNT(CASE WHEN status IN ('delivered', 'read', 'sent') THEN 1 END) as delivered,
+                            COUNT(CASE WHEN COALESCE(type, notification_type, '') LIKE 'trade%' THEN 1 END) as trade_notifications,
+                            0 as high_priority
+                        FROM notification_history
+                        WHERE user_id = ?
+                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
+                    """, (user_id,))
                 
                 row = cursor.fetchone()
                 if row:
@@ -224,7 +376,8 @@ class NotificationService:
                     'deliveryRate': 0.0
                 }
         
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_notification_stats: {e}")
             return {}
 
 

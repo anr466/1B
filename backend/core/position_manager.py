@@ -402,10 +402,12 @@ class PositionManagerMixin:
                     if entry_time:
                         if isinstance(entry_time, str):
                             try:
-                                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00')).replace(tzinfo=None)
+                                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
                             except Exception:
-                                entry_time = datetime.now()
-                        hold_hours = (datetime.now() - entry_time).total_seconds() / 3600
+                                entry_time = None
+                        if isinstance(entry_time, datetime):
+                            now_dt = datetime.now(entry_time.tzinfo) if entry_time.tzinfo else datetime.now()
+                            hold_hours = (now_dt - entry_time).total_seconds() / 3600
 
                     self.logger.info(
                         f"   🚪 [{symbol}] Exit: {exit_result['reason']} | "
@@ -613,12 +615,15 @@ class PositionManagerMixin:
                 entry_time = position.get('created_at')
                 hold_min = 0
                 if entry_time:
+                    entry_dt = entry_time
                     if isinstance(entry_time, str):
                         try:
-                            entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00')).replace(tzinfo=None)
-                            hold_min = int((datetime.now() - entry_dt).total_seconds() / 60)
+                            entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
                         except Exception:
-                            pass
+                            entry_dt = None
+                    if isinstance(entry_dt, datetime):
+                        now_dt = datetime.now(entry_dt.tzinfo) if entry_dt.tzinfo else datetime.now()
+                        hold_min = int((now_dt - entry_dt).total_seconds() / 60)
                 
                 # استخراج المؤشرات المحفوظة مع الصفقة
                 saved_indicators = {}

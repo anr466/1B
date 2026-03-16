@@ -568,11 +568,11 @@ def resolve_error(error_id):
         cursor.execute(
             """
             UPDATE system_errors
-            SET resolved = 1,
+            SET resolved = TRUE,
                 resolved_at = CURRENT_TIMESTAMP,
                 resolved_by = ?,
                 status = 'resolved',
-                requires_admin = 0
+                requires_admin = FALSE
             WHERE id = ?
             """,
             (resolved_by, error_id)

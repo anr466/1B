@@ -386,11 +386,18 @@ class TradingDecisionMatrix:
         # فحص الوقت (مثال: أكثر من 24 ساعة)
         entry_time = position.get('created_at')
         if entry_time:
-            hours_held = (datetime.now() - entry_time).total_seconds() / 3600
-            if hours_held > 24:
-                signals.append({
-                    'reason': f'Position held too long: {hours_held:.1f} hours',
-                    'strength': 40
-                })
+            if isinstance(entry_time, str):
+                try:
+                    entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                except Exception:
+                    entry_time = None
+            if isinstance(entry_time, datetime):
+                now_dt = datetime.now(entry_time.tzinfo) if entry_time.tzinfo else datetime.now()
+                hours_held = (now_dt - entry_time).total_seconds() / 3600
+                if hours_held > 24:
+                    signals.append({
+                        'reason': f'Position held too long: {hours_held:.1f} hours',
+                        'strength': 40
+                    })
         
         return signals

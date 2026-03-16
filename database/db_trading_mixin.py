@@ -75,7 +75,7 @@ class DbTradingMixin:
                 INSERT OR REPLACE INTO successful_coins 
                 (symbol, strategy, timeframe, score, profit_pct, win_rate, 
                  total_trades, market_trend, analysis_date, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
             """, (
                 str(symbol),
                 str(data.get('strategy', 'unknown')),
@@ -474,7 +474,7 @@ class DbTradingMixin:
                     signal['signal_type'],
                     signal['price'],
                     confidence,
-                    1 if is_processed else 0
+                    bool(is_processed)
                 ))
         
         self.logger.info(f"تم حفظ {len(signals)} إشارة")
@@ -540,7 +540,7 @@ class DbTradingMixin:
 
     def add_position_on_conn(self, conn, user_id: int, symbol: str, entry_price: float,
                              quantity: float, position_size: float, signal_type: str,
-                             is_demo: int = 1, order_id: str = None,
+                             is_demo: bool = True, order_id: str = None,
                              position_type: str = 'long', stop_loss_price: float = None,
                              take_profit_price: float = None, timeframe: str = '1h',
                              signal_metadata: str = None,
@@ -566,7 +566,7 @@ class DbTradingMixin:
                  stop_loss, take_profit, is_demo, order_id, entry_commission,
                  position_size, position_type, timeframe, entry_date,
                  is_active, created_at, highest_price, signal_metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP, ?, ?)
             """, (
                 user_id,
                 symbol,
@@ -575,7 +575,7 @@ class DbTradingMixin:
                 signal_type,
                 stop_loss_price,
                 take_profit_price,
-                is_demo,
+                bool(is_demo),
                 order_id,
                 entry_commission,
                 position_size,
@@ -598,7 +598,7 @@ class DbTradingMixin:
 
     def add_position(self, user_id: int, symbol: str, entry_price: float,
                     quantity: float, position_size: float, signal_type: str,
-                    is_demo: int = 1, order_id: str = None,
+                    is_demo: bool = True, order_id: str = None,
                     position_type: str = 'long', stop_loss_price: float = None,
                     take_profit_price: float = None, timeframe: str = '1h',
                     signal_metadata: str = None) -> Optional[int]:
@@ -654,7 +654,7 @@ class DbTradingMixin:
                                     position_type = ?,
                                     timeframe = ?,
                                     entry_date = CURRENT_TIMESTAMP,
-                                    is_active = 1,
+                                    is_active = TRUE,
                                     created_at = CURRENT_TIMESTAMP,
                                     updated_at = CURRENT_TIMESTAMP,
                                     highest_price = ?,
@@ -672,7 +672,7 @@ class DbTradingMixin:
                                     quantity,
                                     stop_loss_price,
                                     take_profit_price,
-                                    is_demo,
+                                    bool(is_demo),
                                     order_id,
                                     entry_commission,
                                     position_size,
@@ -721,7 +721,7 @@ class DbTradingMixin:
 
         conn.execute("""
             UPDATE active_positions
-            SET is_active = 0, exit_price = ?, exit_reason = ?,
+            SET is_active = FALSE, exit_price = ?, exit_reason = ?,
                 profit_loss = ?, profit_pct = ?, exit_commission = ?, exit_order_id = ?,
                 closed_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -745,12 +745,12 @@ class DbTradingMixin:
 
     def update_user_balance_on_conn(self, conn, user_id: int, new_balance: float, is_demo: bool = True) -> bool:
         """تحديث رصيد المحفظة على اتصال خارجي (للعمليات الذرية)"""
-        is_demo_int = 1 if is_demo else 0
+        is_demo_flag = bool(is_demo)
         invested_row = conn.execute("""
             SELECT COALESCE(SUM(position_size), 0) as invested
             FROM active_positions
             WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
-        """, (user_id, is_demo_int)).fetchone()
+        """, (user_id, is_demo_flag)).fetchone()
         invested_balance = invested_row[0] if invested_row else 0
 
         total_balance = new_balance + invested_balance
@@ -764,7 +764,7 @@ class DbTradingMixin:
                 SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
             FROM active_positions
             WHERE user_id = ? AND is_demo = ?
-        """, (user_id, is_demo_int)).fetchone()
+        """, (user_id, is_demo_flag)).fetchone()
         
         total_pnl = stats_row[0] if stats_row else 0
         total_trades = stats_row[1] if stats_row else 0
@@ -774,7 +774,7 @@ class DbTradingMixin:
         # حساب نسبة نمو المحفظة
         initial_balance_row = conn.execute("""
             SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?
-        """, (user_id, is_demo_int)).fetchone()
+        """, (user_id, is_demo_flag)).fetchone()
         initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
         portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
 
@@ -786,20 +786,20 @@ class DbTradingMixin:
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ? AND is_demo = ?
         """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
-              total_trades, winning_trades, losing_trades, user_id, is_demo_int))
+              total_trades, winning_trades, losing_trades, user_id, is_demo_flag))
 
         return True
 
     def update_user_balance(self, user_id: int, new_balance: float, is_demo: bool = True) -> bool:
         """تحديث رصيد المحفظة للمستخدم (standalone — يفتح اتصال خاص)"""
         try:
-            is_demo_int = 1 if is_demo else 0
+            is_demo_flag = bool(is_demo)
             with self.get_write_connection() as conn:
                 invested_row = conn.execute("""
                     SELECT COALESCE(SUM(position_size), 0) as invested
                     FROM active_positions
                     WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
-                """, (user_id, is_demo_int)).fetchone()
+                """, (user_id, is_demo_flag)).fetchone()
                 invested_balance = invested_row[0] if invested_row else 0
                 
                 total_balance = new_balance + invested_balance
@@ -813,7 +813,7 @@ class DbTradingMixin:
                         SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
                     FROM active_positions
                     WHERE user_id = ? AND is_demo = ?
-                """, (user_id, is_demo_int)).fetchone()
+                """, (user_id, is_demo_flag)).fetchone()
                 
                 total_pnl = stats_row[0] if stats_row else 0
                 total_trades = stats_row[1] if stats_row else 0
@@ -823,7 +823,7 @@ class DbTradingMixin:
                 # حساب نسبة نمو المحفظة
                 initial_balance_row = conn.execute("""
                     SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?
-                """, (user_id, is_demo_int)).fetchone()
+                """, (user_id, is_demo_flag)).fetchone()
                 initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
                 portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
                 
@@ -835,7 +835,7 @@ class DbTradingMixin:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND is_demo = ?
                 """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
-                      total_trades, winning_trades, losing_trades, user_id, is_demo_int))
+                      total_trades, winning_trades, losing_trades, user_id, is_demo_flag))
                 
                 return True
         except Exception as e:

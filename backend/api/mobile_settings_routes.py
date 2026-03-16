@@ -80,52 +80,69 @@ def register_mobile_settings_routes(bp, shared):
                 """
                 result = db.execute_query(settings_query, (user_id, ))
 
-            if result and len(result) > 0:
-                s = result[0]
-                effective_mode = current_mode if is_admin else 'real'
+            if not result:
                 effective_is_demo = is_demo if is_admin else False
+                with db.get_write_connection() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO user_settings (user_id, is_demo, trading_mode)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT (user_id, is_demo) DO NOTHING
+                        """,
+                        (user_id, effective_is_demo, 'demo' if effective_is_demo else 'real'),
+                    )
+                    conn.commit()
+                result = db.execute_query(
+                    settings_query,
+                    (user_id, is_demo) if is_admin else (user_id,),
+                )
 
-                # ✅ فحص وجود مفاتيح Binance
-                keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = 1"
-                keys_result = db.execute_query(keys_query, (user_id,))
-                has_keys = keys_result[0]['count'] > 0 if keys_result else False
+            if not result:
+                response_data, status_code = error_response(
+                    'تعذر تحميل إعدادات المستخدم',
+                    'SETTINGS_NOT_FOUND',
+                    500,
+                )
+                return jsonify(response_data), status_code
 
-                data = {
-                    'tradingEnabled': bool(s['trading_enabled']),
-                    'tradeAmount': float(s['trade_amount'] or 100.0),
-                    'positionSizePercentage': float(s['position_size_percentage'] or 10.0),
-                    'riskLevel': s['risk_level'] or 'medium',
-                    'stopLossPercentage': float(s['stop_loss_pct'] or 3.0),
-                    'takeProfitPercentage': float(s['take_profit_pct'] or 6.0),
-                    'trailingDistance': float(s['trailing_distance'] or 3.0),
-                    'maxDailyLossPct': float(s['max_daily_loss_pct'] or 5.0),
-                    'maxConcurrentTrades': int(s['max_positions'] or 5),
-                    'tradingMode': effective_mode,
-                    'activePortfolio': 'demo' if effective_is_demo else 'real',
-                    'canToggle': is_admin,
-                    'hasBinanceKeys': has_keys
-                }
-                response_data, status_code = success_response(data, 'تم جلب الإعدادات بنجاح')
-                return jsonify(response_data), status_code
-            else:
-                default_mode = current_mode if is_admin else 'real'
-                data = {
-                    'tradingEnabled': False, 
-                    'tradeAmount': 100.0,
-                    'positionSizePercentage': 10.0,
-                    'riskLevel': 'medium',
-                    'stopLossPercentage': 3.0, 
-                    'takeProfitPercentage': 6.0,
-                    'trailingDistance': 3.0,
-                    'maxDailyLossPct': 5.0,
-                    'maxConcurrentTrades': 5, 
-                    'tradingMode': default_mode,
-                    'activePortfolio': 'demo' if (is_admin and bool(is_demo)) else 'real',
-                    'canToggle': is_admin,
-                    'hasBinanceKeys': False
-                }
-                response_data, status_code = success_response(data, 'تم جلب الإعدادات الافتراضية')
-                return jsonify(response_data), status_code
+            s = result[0]
+            effective_mode = current_mode if is_admin else 'real'
+            effective_is_demo = is_demo if is_admin else False
+
+            def as_float(value, fallback=0.0):
+                try:
+                    return float(value) if value is not None else fallback
+                except (TypeError, ValueError):
+                    return fallback
+
+            def as_int(value, fallback=0):
+                try:
+                    return int(value) if value is not None else fallback
+                except (TypeError, ValueError):
+                    return fallback
+
+            # ✅ فحص وجود مفاتيح Binance
+            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
+            keys_result = db.execute_query(keys_query, (user_id,))
+            has_keys = keys_result[0]['count'] > 0 if keys_result else False
+
+            data = {
+                'tradingEnabled': bool(s.get('trading_enabled')),
+                'tradeAmount': as_float(s.get('trade_amount')),
+                'positionSizePercentage': as_float(s.get('position_size_percentage')),
+                'riskLevel': s.get('risk_level') or 'medium',
+                'stopLossPercentage': as_float(s.get('stop_loss_pct')),
+                'takeProfitPercentage': as_float(s.get('take_profit_pct')),
+                'trailingDistance': as_float(s.get('trailing_distance')),
+                'maxDailyLossPct': as_float(s.get('max_daily_loss_pct')),
+                'maxConcurrentTrades': as_int(s.get('max_positions')),
+                'tradingMode': effective_mode,
+                'activePortfolio': 'demo' if effective_is_demo else 'real',
+                'canToggle': is_admin,
+                'hasBinanceKeys': has_keys
+            }
+            response_data, status_code = success_response(data, 'تم جلب الإعدادات بنجاح')
+            return jsonify(response_data), status_code
         except Exception as e:
             logger.error(f"❌ خطأ Settings {user_id}: {e}")
             response_data, status_code = error_response('خطأ في جلب الإعدادات', 'SETTINGS_ERROR', 500)
@@ -377,7 +394,7 @@ def register_mobile_settings_routes(bp, shared):
 
                 if not skip_binance_check:
                     # 1️⃣ فحص وجود مفاتيح Binance (مطلوب للتداول الحقيقي)
-                    keys_query = "SELECT api_key, api_secret FROM user_binance_keys WHERE user_id = ? AND is_active = 1"
+                    keys_query = "SELECT api_key, api_secret FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
                     keys_result = db.execute_query(keys_query, (user_id,))
                     has_keys = keys_result and len(keys_result) > 0 and keys_result[0].get('api_key')
 
@@ -609,11 +626,9 @@ def register_mobile_settings_routes(bp, shared):
             target_user_type = user_result[0]['user_type']
             is_admin = target_user_type == 'admin'
 
-            # جلب الوضع الحالي
             current_mode = get_trading_context(db, user_id)['trading_mode']
 
-            # فحص وجود مفاتيح Binance
-            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = 1"
+            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
             keys_result = db.execute_query(keys_query, (user_id,))
             has_keys = keys_result[0]['count'] > 0 if keys_result else False
 
@@ -662,7 +677,7 @@ def register_mobile_settings_routes(bp, shared):
 
             # إذا كان real، تحقق من المفاتيح
             if new_mode == 'real':
-                keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = 1"
+                keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
                 keys_result = db.execute_query(keys_query, (user_id,))
                 has_keys = keys_result[0]['count'] > 0 if keys_result else False
 
@@ -840,7 +855,7 @@ def register_mobile_settings_routes(bp, shared):
             db = DatabaseManager()
 
             # جلب المفاتيح المشفرة
-            keys_query = "SELECT id, api_key, is_active, created_at FROM user_binance_keys WHERE user_id = ? AND is_active = 1"
+            keys_query = "SELECT id, api_key, is_active, created_at FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
             result = db.execute_query(keys_query, (user_id,))
 
             if result and len(result) > 0:

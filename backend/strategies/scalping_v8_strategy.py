@@ -76,11 +76,12 @@ class ScalpingV8Strategy(BaseStrategy):
         if entry_time:
             if isinstance(entry_time, str):
                 try:
-                    entry_time = datetime.fromisoformat(
-                        entry_time.replace('Z', '+00:00')).replace(tzinfo=None)
+                    entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
                 except Exception:
-                    entry_time = datetime.now()
-            hold_hours = (datetime.now() - entry_time).total_seconds() / 3600
+                    entry_time = None
+            if isinstance(entry_time, datetime):
+                now_dt = datetime.now(entry_time.tzinfo) if entry_time.tzinfo else datetime.now()
+                hold_hours = (now_dt - entry_time).total_seconds() / 3600
 
         if position_type == 'SHORT':
             if peak == 0 or peak >= entry_price:

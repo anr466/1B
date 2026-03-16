@@ -68,7 +68,8 @@ def register_mobile_trades_routes(bp, shared):
                 row = cursor.fetchone()
                 
                 if not row:
-                    return error_response('الصفقة غير موجودة', 'NOT_FOUND', 404)
+                    response_data, status_code = error_response('الصفقة غير موجودة', 'NOT_FOUND', 404)
+                    return jsonify(response_data), status_code
                 
                 trade = {
                     'id': row[0],
@@ -89,11 +90,13 @@ def register_mobile_trades_routes(bp, shared):
                     'updatedAt': row[12]
                 }
                 
-                return success_response(trade)
+                response_data, status_code = success_response(trade)
+                return jsonify(response_data), status_code
                 
         except Exception as e:
             logger.error(f"❌ خطأ في جلب الصفقة {trade_id}: {e}")
-            return error_response('خطأ في جلب البيانات', 'ERROR', 500)
+            response_data, status_code = error_response('خطأ في جلب البيانات', 'ERROR', 500)
+            return jsonify(response_data), status_code
 
     @bp.route('/trades/<int:user_id>', methods=['GET'])
     @require_auth
@@ -142,18 +145,21 @@ def register_mobile_trades_routes(bp, shared):
                 try:
                     dt.fromisoformat(date_from)
                 except (ValueError, TypeError):
-                    return error_response('صيغة date_from غير صحيحة. استخدم ISO format (YYYY-MM-DD)', 'INVALID_DATE', 400)
+                    response_data, status_code = error_response('صيغة date_from غير صحيحة. استخدم ISO format (YYYY-MM-DD)', 'INVALID_DATE', 400)
+                    return jsonify(response_data), status_code
             
             if date_to:
                 try:
                     dt.fromisoformat(date_to)
                 except (ValueError, TypeError):
-                    return error_response('صيغة date_to غير صحيحة. استخدم ISO format (YYYY-MM-DD)', 'INVALID_DATE', 400)
+                    response_data, status_code = error_response('صيغة date_to غير صحيحة. استخدم ISO format (YYYY-MM-DD)', 'INVALID_DATE', 400)
+                    return jsonify(response_data), status_code
             
             if date_from and date_to:
                 try:
                     if dt.fromisoformat(date_to) < dt.fromisoformat(date_from):
-                        return error_response('date_to يجب أن يكون بعد date_from', 'INVALID_DATE_RANGE', 400)
+                        response_data, status_code = error_response('date_to يجب أن يكون بعد date_from', 'INVALID_DATE_RANGE', 400)
+                        return jsonify(response_data), status_code
                 except (ValueError, TypeError) as e:
                     logger.warning(f"⚠️ خطأ في مقارنة التواريخ: {e}")
             

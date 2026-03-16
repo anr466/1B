@@ -366,10 +366,33 @@ class AdminNotificationService:
     
     def notify_trading_stopped(self, reason: str):
         """إشعار بتوقف التداول"""
+        try:
+            from database.database_manager import DatabaseManager
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT id
+                    FROM system_alerts
+                    WHERE alert_type = 'trading_stopped'
+                      AND COALESCE(resolved, FALSE) = FALSE
+                      AND created_at >= NOW() - INTERVAL '30 minutes'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                )
+                recent = cursor.fetchone()
+            if recent:
+                self.logger.info("ℹ️ تجاهل إنذار trading_stopped مكرر خلال آخر 30 دقيقة")
+                return
+        except Exception as e:
+            self.logger.warning(f"⚠️ تعذر فحص تكرار trading_stopped: {e}")
+
         self.notify_admin(
             title="⛔ توقف التداول",
             message=f"توقف نظام التداول: {reason}",
-            severity='critical',
+            severity='warning',
             alert_type='trading_stopped',
             data={'reason': reason}
         )

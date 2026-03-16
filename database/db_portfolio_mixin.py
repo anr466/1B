@@ -52,7 +52,7 @@ class DbPortfolioMixin:
                                     user_id, is_demo, total_balance, available_balance,
                                     invested_balance, initial_balance, updated_at
                                 )
-                                VALUES (?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                                VALUES (?, FALSE, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                                 """,
                                 (user_id, total_balance, available_balance, invested_amount, total_balance),
                             )
@@ -105,7 +105,7 @@ class DbPortfolioMixin:
                 values.append(field_value)
             
             if values:
-                values.extend([user_id, is_demo])
+                values.extend([user_id, bool(is_demo)])
                 query = f"UPDATE portfolio SET {', '.join(update_fields)} WHERE user_id = ? AND is_demo = ?"
                 conn.execute(query, values)
                 try:
@@ -118,13 +118,14 @@ class DbPortfolioMixin:
         """إضافة صفقة جديدة للمستخدم حسب الوضع"""
         if is_demo is None:
             is_demo = get_effective_is_demo(self, user_id)
+        is_demo = bool(is_demo)
         
         with self.get_write_connection() as conn:
             cursor = conn.execute("""
                 INSERT INTO active_positions 
                 (user_id, symbol, strategy, timeframe, side, entry_price, quantity, 
                  stop_loss, take_profit, is_active, is_demo, entry_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, CURRENT_TIMESTAMP)
             """, (
                 user_id,
                 trade_data['symbol'],
@@ -195,7 +196,7 @@ class DbPortfolioMixin:
             conn.execute("""
                 UPDATE active_positions 
                 SET exit_price = ?, profit_loss = ?, profit_pct = ?, 
-                    is_active = 0, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    is_active = FALSE, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             """, (
                 exit_price,
@@ -210,10 +211,10 @@ class DbPortfolioMixin:
         """إعادة ضبط الحساب التجريبي - مسح جميع البيانات وإعادة تعيين الرصيد"""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("DELETE FROM active_positions WHERE user_id = ? AND is_demo = 1", (user_id,))
+                conn.execute("DELETE FROM active_positions WHERE user_id = ? AND is_demo = TRUE", (user_id,))
                 self.logger.info(f"تم مسح صفقات الحساب التجريبي للمستخدم {user_id})")
                 
-                conn.execute("DELETE FROM user_binance_orders WHERE user_id = ? AND is_demo = 1", (user_id,))
+                conn.execute("DELETE FROM user_binance_orders WHERE user_id = ? AND is_demo = TRUE", (user_id,))
                 self.logger.info(f"تم مسح أوامر Binance التجريبية للمستخدم {user_id}")
                 
                 try:
@@ -247,14 +248,14 @@ class DbPortfolioMixin:
                     self.logger.warning(f"جدول activity_logs غير موجود: {e}")
                 
                 portfolio_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = 1 LIMIT 1
+                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = TRUE LIMIT 1
                 """, (user_id,)).fetchone()
                 resolved_initial_balance = float(portfolio_row[0] or initial_balance or 0.0) if portfolio_row else float(initial_balance or 0.0)
                 conn.execute("""
                     INSERT OR REPLACE INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance,
                      total_profit_loss, total_profit_loss_percentage, initial_balance, updated_at)
-                    VALUES (?, 1, ?, ?, 0.0, 0.0, 0.0, ?, CURRENT_TIMESTAMP)
+                    VALUES (?, TRUE, ?, ?, 0.0, 0.0, 0.0, ?, CURRENT_TIMESTAMP)
                 """, (user_id, resolved_initial_balance, resolved_initial_balance, resolved_initial_balance))
                 
                 conn.execute("""
@@ -262,7 +263,7 @@ class DbPortfolioMixin:
                     (user_id, is_demo, trade_amount, max_positions, risk_level, stop_loss_pct,
                      take_profit_pct, trailing_distance, position_size_percentage, trading_enabled,
                      max_daily_loss_pct, daily_loss_limit, trading_mode, updated_at)
-                    VALUES (?, 1, 100.00, 5, 'medium', 3.00, 6.00, 3.00, 10.00, 0, 10.00, 100.00, 'demo', CURRENT_TIMESTAMP)
+                    VALUES (?, TRUE, 100.00, 5, 'medium', 3.00, 6.00, 3.00, 10.00, FALSE, 10.00, 100.00, 'demo', CURRENT_TIMESTAMP)
                 """, (user_id,))
                 
                 self.logger.info(f"تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} بنجاح - الرصيد: {resolved_initial_balance}$")
@@ -482,7 +483,7 @@ class DbPortfolioMixin:
             with self.get_write_connection() as conn:
                 result = conn.execute("""
                     SELECT initial_balance FROM portfolio
-                    WHERE user_id = ? AND is_demo = 0
+                    WHERE user_id = ? AND is_demo = FALSE
                 """, (user_id,)).fetchone()
                 
                 if result and result[0] and result[0] > 0:
@@ -502,7 +503,7 @@ class DbPortfolioMixin:
                             END,
                             total_balance = ?,
                             updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ? AND is_demo = 0
+                        WHERE user_id = ? AND is_demo = FALSE
                         """,
                         (current_balance, current_balance, user_id),
                     )
@@ -511,7 +512,7 @@ class DbPortfolioMixin:
                         conn.execute(
                             """
                             INSERT INTO portfolio (user_id, total_balance, available_balance, initial_balance, is_demo, updated_at)
-                            VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                            VALUES (?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP)
                             """,
                             (user_id, current_balance, current_balance, current_balance),
                         )
@@ -807,7 +808,7 @@ class DbPortfolioMixin:
                 conn.execute("""
                     INSERT INTO user_binance_keys 
                     (user_id, api_key, api_secret, is_active)
-                    VALUES (?, ?, ?, 1)
+                    VALUES (?, ?, ?, TRUE)
                 """, (user_id, encrypted_api_key, encrypted_secret_key))
                 self.logger.info(f"✅ تم تحديث مفاتيح Binance للمستخدم {user_id} (مشفرة)")
                 return True
@@ -868,14 +869,14 @@ class DbPortfolioMixin:
                     self.logger.warning(f"جدول notification_history غير موجود: {e}")
                 
                 portfolio_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = 1 LIMIT 1
+                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = TRUE LIMIT 1
                 """, (user_id,)).fetchone()
                 resolved_initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
                 conn.execute("""
                     INSERT OR REPLACE INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance,
                      total_profit_loss, total_profit_loss_percentage, initial_balance, updated_at)
-                    VALUES (?, 1, ?, ?, 0.0, 0.0, 0.0, ?, datetime('now'))
+                    VALUES (?, TRUE, ?, ?, 0.0, 0.0, 0.0, ?, datetime('now'))
                 """, (user_id, resolved_initial_balance, resolved_initial_balance, resolved_initial_balance))
                 
                 try:
@@ -885,7 +886,7 @@ class DbPortfolioMixin:
                          take_profit_pct, trade_amount, position_size_percentage,
                          trailing_distance, trading_enabled, max_daily_loss_pct,
                          daily_loss_limit, trading_mode, updated_at)
-                        VALUES (?, 1, 'medium', 5, 2.0, 6.0, 100.0, 10.0, 3.0, 0, 10.0, 100.0, 'demo', CURRENT_TIMESTAMP)
+                        VALUES (?, TRUE, 'medium', 5, 2.0, 6.0, 100.0, 10.0, 3.0, FALSE, 10.0, 100.0, 'demo', CURRENT_TIMESTAMP)
                     """, (user_id,))
                     
                     self.logger.info(f"تم إعادة ضبط إعدادات التداول للمستخدم {user_id}")
@@ -904,6 +905,7 @@ class DbPortfolioMixin:
         """تسجيل لقطة يومية من بيانات المحفظة في portfolio_growth_history"""
         try:
             today = datetime.now().strftime('%Y-%m-%d')
+            is_demo = bool(is_demo)
             with self.get_connection() as conn:
                 # جلب بيانات المحفظة الحالية
                 portfolio_row = conn.execute(
@@ -962,7 +964,7 @@ class DbPortfolioMixin:
             for user in (users or []):
                 uid = user['id']
                 # demo و real كلاهما
-                for is_demo in [0, 1]:
+                for is_demo in [False, True]:
                     if self.record_portfolio_snapshot(uid, is_demo):
                         count += 1
             return count

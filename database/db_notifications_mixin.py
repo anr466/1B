@@ -19,13 +19,32 @@ class DbNotificationsMixin:
         """جلب إشعارات المستخدم"""
         try:
             with self.get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT id, title, message, notification_type as type, data, created_at, status as read_status
-                    FROM notification_history 
-                    WHERE user_id = ? 
-                    ORDER BY created_at DESC 
-                    LIMIT ?
-                """, (user_id, limit)).fetchall()
+                try:
+                    rows = conn.execute("""
+                        SELECT id, title, message, notification_type as type, data, created_at, status as read_status
+                        FROM notification_history 
+                        WHERE user_id = ? 
+                        ORDER BY created_at DESC 
+                        LIMIT ?
+                    """, (user_id, limit)).fetchall()
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    rows = conn.execute("""
+                        SELECT id,
+                               title,
+                               message,
+                               COALESCE(notification_type, type, 'general') as type,
+                               NULL as data,
+                               created_at,
+                               status as read_status
+                        FROM notification_history
+                        WHERE user_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (user_id, limit)).fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
             self.logger.error(f"خطأ في جلب الإشعارات للمستخدم {user_id}: {e}")
@@ -35,11 +54,22 @@ class DbNotificationsMixin:
         """حفظ إشعار جديد"""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("""
-                    INSERT INTO notification_history 
-                    (user_id, title, message, notification_type, data, created_at, status)
-                    VALUES (?, ?, ?, ?, ?, datetime('now'), 'pending')
-                """, (user_id, title, message, notification_type, json.dumps(data) if data else None))
+                try:
+                    conn.execute("""
+                        INSERT INTO notification_history 
+                        (user_id, title, message, notification_type, data, created_at, status)
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'pending')
+                    """, (user_id, title, message, notification_type, json.dumps(data) if data else None))
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    conn.execute("""
+                        INSERT INTO notification_history 
+                        (user_id, title, message, notification_type, type, created_at, status)
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'pending')
+                    """, (user_id, title, message, notification_type, notification_type))
                 return True
         except Exception as e:
             self.logger.error(f"خطأ في حفظ الإشعار للمستخدم {user_id}: {e}")
