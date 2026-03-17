@@ -21,10 +21,10 @@ def main() -> None:
             """
             SELECT id, username, email
             FROM users
-            WHERE username = ?
-               OR email = ?
+            WHERE username = %s
+               OR email = %s
                OR user_type = 'admin'
-            ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, id ASC
+            ORDER BY CASE WHEN username = %s THEN 0 ELSE 1 END, id ASC
             LIMIT 1
             """,
             (ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_USERNAME),
@@ -35,18 +35,18 @@ def main() -> None:
             conn.execute(
                 """
                 UPDATE users
-                SET username = ?,
-                    password_hash = ?,
+                SET username = %s,
+                    password_hash = %s,
                     user_type = 'admin',
-                    is_active = 1,
-                    email_verified = 1,
+                    is_active = TRUE,
+                    email_verified = TRUE,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = %s
                 """,
                 (ADMIN_USERNAME, password_hash, admin_id),
             )
             row = conn.execute(
-                "SELECT id, username, email, user_type, is_active FROM users WHERE id = ?",
+                "SELECT id, username, email, user_type, is_active FROM users WHERE id = %s",
                 (admin_id,),
             ).fetchone()
         else:
@@ -54,7 +54,14 @@ def main() -> None:
                 """
                 INSERT INTO users (
                     username, email, password_hash, user_type, is_active, email_verified, created_at, updated_at
-                ) VALUES (?, ?, ?, 'admin', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ) VALUES (%s, %s, %s, 'admin', TRUE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (email) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    password_hash = EXCLUDED.password_hash,
+                    user_type = 'admin',
+                    is_active = TRUE,
+                    email_verified = TRUE,
+                    updated_at = CURRENT_TIMESTAMP
                 """,
                 (ADMIN_USERNAME, ADMIN_EMAIL, password_hash),
             )
@@ -62,7 +69,7 @@ def main() -> None:
                 """
                 SELECT id, username, email, user_type, is_active
                 FROM users
-                WHERE username = ?
+                WHERE username = %s
                 ORDER BY id DESC
                 LIMIT 1
                 """,
