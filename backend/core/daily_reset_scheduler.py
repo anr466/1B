@@ -45,7 +45,7 @@ class DailyResetScheduler:
             users = self.db.execute_query("""
                 SELECT id, username, user_type 
                 FROM users 
-                WHERE is_active = 1
+                WHERE is_active = TRUE
             """)
             
             if not users:

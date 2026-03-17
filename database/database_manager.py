@@ -99,7 +99,7 @@ def _replace_qmark_params(sql: str) -> str:
             in_double = not in_double
             out.append(ch)
             continue
-        if ch == '%s' and not in_single and not in_double:
+        if ch == '?' and not in_single and not in_double:
             out.append('%s')
         else:
             out.append(ch)
@@ -1127,7 +1127,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         """الحصول على قائمة المستخدمين النشطين"""
         with self.get_connection() as conn:
             rows = conn.execute("""
-                SELECT id, username, email FROM users WHERE is_active = 1
+                SELECT id, username, email FROM users WHERE is_active = TRUE
             """).fetchall()
             return [dict(row) for row in rows]
     

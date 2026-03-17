@@ -176,7 +176,7 @@ def db_table_exists(t):
 
 def db_columns(t):
     rows = db_fetchall(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? ORDER BY ordinal_position",
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = %s ORDER BY ordinal_position",
         (t,),
     )
     return [r[0] for r in rows]
@@ -851,10 +851,10 @@ def stage5_e2e_flow() -> DomainReport:
         marker=f"e2e_test_{int(time.time())}"
         try:
             with db_connect() as conn:
-                conn.execute("INSERT INTO operation_log (operation_type,operation_name,status,start_time,details) VALUES (?,?,?,CURRENT_TIMESTAMP,?)",
+                conn.execute("INSERT INTO operation_log (operation_type,operation_name,status,start_time,details) VALUES (%s,%s,%s,CURRENT_TIMESTAMP,%s)",
                              ("E2E_TEST","db_roundtrip","test",marker))
                 conn.commit()
-            found=int(db_scalar("SELECT COUNT(*) FROM operation_log WHERE details=? AND operation_type='E2E_TEST'",(marker,)) or 0)
+            found=int(db_scalar("SELECT COUNT(*) FROM operation_log WHERE details=%s AND operation_type='E2E_TEST'",(marker,)) or 0)
             with db_connect() as conn:
                 conn.execute("DELETE FROM operation_log WHERE operation_type='E2E_TEST' AND details=?",(marker,))
                 conn.commit()

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/constants/ux_messages.dart';
 import 'package:trading_app/core/models/settings_model.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
@@ -555,6 +554,7 @@ class _ModeButton extends StatelessWidget {
 }
 
 /// Reusable slider card for trading settings
+// ignore: unused_element
 class _SliderCard extends StatelessWidget {
   final String label;
   final String caption;

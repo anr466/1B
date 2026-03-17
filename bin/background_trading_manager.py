@@ -540,21 +540,21 @@ class BackgroundTradingManager:
                 user_rows = conn.execute("""
                     SELECT id, username, user_type
                     FROM users
-                    WHERE is_active = ?
+                    WHERE is_active = %s
                     ORDER BY id
                 """, (active_true,)).fetchall()
 
                 key_rows = conn.execute("""
                     SELECT user_id
                     FROM user_binance_keys
-                    WHERE is_active = ?
+                    WHERE is_active = %s
                 """, (active_true,)).fetchall()
                 users_with_keys = {row[0] for row in key_rows}
 
                 open_positions_rows = conn.execute("""
                     SELECT user_id, COUNT(*) AS open_count
                     FROM active_positions
-                    WHERE is_active = ?
+                    WHERE is_active = %s
                     GROUP BY user_id
                 """, (active_true,)).fetchall()
                 open_positions_map = {row[0]: int(row[1] or 0) for row in open_positions_rows}
@@ -716,9 +716,9 @@ class BackgroundTradingManager:
                     trading_state = trading_state_map.get(status, 'STOPPED')
                     conn.execute("""
                         UPDATE system_status 
-                        SET status = ?, is_running = ?, trading_state = ?,
-                            pid = ?,
-                            last_update = datetime('now'), message = ?
+                        SET status = %s, is_running = %s, trading_state = %s,
+                            pid = %s,
+                            last_update = datetime('now'), message = %s
                         WHERE id = 1
                     """, (status, is_running, trading_state,
                           os.getpid() if is_running else None,
