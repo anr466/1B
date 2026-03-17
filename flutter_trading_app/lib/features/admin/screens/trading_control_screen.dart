@@ -10,6 +10,8 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_info_row.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
@@ -29,13 +31,12 @@ class TradingControlScreen extends ConsumerWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'التحكم بالتداول',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-        ),
-        body: RefreshIndicator(
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppScreenHeader(title: 'التحكم بالتداول', showBack: true),
+              Expanded(
+                child: RefreshIndicator(
           color: cs.primary,
           onRefresh: () async {
             ref.invalidate(systemStatusProvider);
@@ -79,6 +80,10 @@ class TradingControlScreen extends ConsumerWidget {
               ),
 
               const SizedBox(height: SpacingTokens.xl),
+            ],
+          ),
+        ),
+              ),
             ],
           ),
         ),
@@ -134,15 +139,14 @@ class TradingControlScreen extends ConsumerWidget {
           ),
           const SizedBox(height: SpacingTokens.md),
 
-          _infoRow(cs, 'الوضع', s.tradingMode == 'real' ? 'حقيقي' : 'تجريبي'),
-          _infoRow(cs, 'الحالة', s.state),
-          _infoRow(
-            cs,
-            'التحقق التشغيلي',
-            s.runtimeVerificationLabel.toString(),
+          AppInfoRow(label: 'الوضع', value: s.tradingMode == 'real' ? 'حقيقي' : 'تجريبي'),
+          AppInfoRow(label: 'الحالة', value: s.state),
+          AppInfoRow(
+            label: 'التحقق التشغيلي',
+            value: s.runtimeVerificationLabel.toString(),
           ),
-          if (s.errorCount > 0) _infoRow(cs, 'عدد الأخطاء', '${s.errorCount}'),
-          if (s.lastError != null) _infoRow(cs, 'آخر خطأ', s.lastError!),
+          if (s.errorCount > 0) AppInfoRow(label: 'عدد الأخطاء', value: '${s.errorCount}'),
+          if (s.lastError != null) AppInfoRow(label: 'آخر خطأ', value: s.lastError!),
 
           const SizedBox(height: SpacingTokens.lg),
 
@@ -222,40 +226,14 @@ class TradingControlScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: SpacingTokens.sm),
-          _infoRow(cs, 'الحالة', statusText),
-          _infoRow(cs, 'الجاهزية', isReady ? 'جاهز للتصفية' : 'قيد التدريب'),
-          _infoRow(cs, 'التقدم', '${progressPct.toStringAsFixed(1)}%'),
-          _infoRow(
-            cs,
-            'البيانات',
-            '${totalSamples.toInt()} / ${requiredSamples.toInt()}',
+          AppInfoRow(label: 'الحالة', value: statusText),
+          AppInfoRow(label: 'الجاهزية', value: isReady ? 'جاهز للتصفية' : 'قيد التدريب'),
+          AppInfoRow(label: 'التقدم', value: '${progressPct.toStringAsFixed(1)}%'),
+          AppInfoRow(
+            label: 'البيانات',
+            value: '${totalSamples.toInt()} / ${requiredSamples.toInt()}',
           ),
-          _infoRow(cs, 'الدقة', '${(accuracy * 100).toStringAsFixed(1)}%'),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoRow(ColorScheme cs, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: SpacingTokens.xs),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TypographyTokens.bodySmall(
-              cs.onSurface.withValues(alpha: 0.5),
-            ),
-          ),
-          Flexible(
-            child: Text(
-              value,
-              style: TypographyTokens.mono(cs.onSurface, fontSize: 13),
-              textAlign: TextAlign.end,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          AppInfoRow(label: 'الدقة', value: '${(accuracy * 100).toStringAsFixed(1)}%'),
         ],
       ),
     );

@@ -13,6 +13,7 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
@@ -33,10 +34,12 @@ class AdminDashboardScreen extends ConsumerWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text('لوحة الإدارة', style: TypographyTokens.h3(cs.onSurface)),
-        ),
-        body: RefreshIndicator(
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppScreenHeader(title: 'لوحة الإدارة', showBack: true),
+              Expanded(
+                child: RefreshIndicator(
           color: cs.primary,
           onRefresh: () async {
             ref.invalidate(tradingCycleLiveProvider);
@@ -104,6 +107,10 @@ class AdminDashboardScreen extends ConsumerWidget {
               ),
 
               const SizedBox(height: SpacingTokens.xl),
+            ],
+          ),
+        ),
+              ),
             ],
           ),
         ),
