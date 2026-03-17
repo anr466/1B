@@ -66,7 +66,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
             color: cs.primary,
             onRefresh: () async {
               ref.invalidate(portfolioProvider);
-              ref.invalidate(statsProvider);
             },
             child: Center(
               child: ConstrainedBox(

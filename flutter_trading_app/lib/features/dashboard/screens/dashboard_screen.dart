@@ -673,7 +673,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildRecentTradesSection(BuildContext context, WidgetRef ref) {
     return Column(
       children: [
-        const SizedBox(height: SpacingTokens.md),
         _DashTitle(
           title: 'آخر الصفقات',
           actionText: 'عرض الكل',
