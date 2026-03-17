@@ -326,7 +326,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
 
                   // ─── Admin Section ─────────────────────
-                  if (auth.isAdmin) ...[                    _ProfileSectionTitle(
+                  if (auth.isAdmin) ...[
+                    const SizedBox(height: SpacingTokens.lg),
+                    _ProfileSectionTitle(
                       title: 'الإدارة',
                       color: cs.primary.withValues(alpha: 0.7),
                       icon: BrandIcons.shield,

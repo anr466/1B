@@ -42,8 +42,9 @@ class TypographyTokens {
 
   static TextStyle h4(Color color) => TextStyle(
     fontFamily: _fontFamily,
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
+    fontSize: 15,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.1,
     color: color,
   );
 
@@ -60,6 +61,7 @@ class TypographyTokens {
     fontFamily: _fontFamily,
     fontSize: 13,
     fontWeight: FontWeight.w400,
+    height: 1.4,
     color: color,
   );
 
@@ -89,12 +91,23 @@ class TypographyTokens {
 
   // ─── Monospace for numbers ──────────────────────
   static TextStyle mono(Color color, {double fontSize = 15}) => TextStyle(
+    fontFamily: _fontFamily,
     fontSize: fontSize,
     fontWeight: FontWeight.w600,
     letterSpacing: 0.1,
     color: color,
     fontFeatures: const [FontFeature.tabularFigures()],
   );
+
+  // ─── Semantic Opacity Tiers ─────────────────────
+  /// Primary — محتوى رئيسي (alpha 1.0)
+  static const double opPrimary = 1.0;
+  /// Secondary — نصوص ثانوية، عناوين (alpha 0.55)
+  static const double opSecondary = 0.55;
+  /// Tertiary — ملاحظات، تسميات معتمة (alpha 0.35)
+  static const double opTertiary = 0.35;
+  /// Disabled — معطّل، غير نشط (alpha 0.25)
+  static const double opDisabled = 0.25;
 
   // ─── Overline — section labels (caps, muted) ───
   static TextStyle overline(Color color) => TextStyle(
