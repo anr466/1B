@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:ui' show Color;
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/services/api_service.dart';
 import 'package:trading_app/core/services/storage_service.dart';
@@ -9,6 +11,8 @@ class PushNotificationService {
   final ApiService _api;
   final StorageService _storage;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _localNotifs =
+      FlutterLocalNotificationsPlugin();
   Timer? _pollingTimer;
   StreamSubscription<RemoteMessage>? _onMessageSub;
   StreamSubscription<RemoteMessage>? _onMessageOpenedSub;
@@ -89,10 +93,14 @@ class PushNotificationService {
 
       _onMessageSub = FirebaseMessaging.onMessage.listen((message) {
         final data = Map<String, dynamic>.from(message.data);
-        if (message.notification != null) {
-          data['title'] = message.notification!.title;
-          data['body'] = message.notification!.body;
-        }
+        final title = message.notification?.title ?? data['title'] as String? ?? '1B Trading';
+        final body = message.notification?.body ?? data['body'] as String? ?? '';
+        data['title'] = title;
+        data['body'] = body;
+
+        // Show heads-up local notification while app is in foreground
+        _showLocalNotification(title, body, data);
+
         onNotificationReceived?.call(data);
       });
 
@@ -163,6 +171,38 @@ class PushNotificationService {
       // Silent fail — polling continues
     } finally {
       _isCheckingNotifications = false;
+    }
+  }
+
+  /// Show a heads-up local notification while the app is in the foreground
+  Future<void> _showLocalNotification(
+    String title,
+    String body,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      await _localNotifs.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'trading_alerts',
+            '1B Trading Alerts',
+            channelDescription: 'إشعارات الصفقات والتنبيهات',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@drawable/ic_notification',
+            color: Color(0xFF1565C0),
+            playSound: true,
+            enableVibration: true,
+            styleInformation: BigTextStyleInformation(''),
+          ),
+        ),
+      );
+    } catch (_) {
+      // Silent — foreground notification display is best-effort
     }
   }
 

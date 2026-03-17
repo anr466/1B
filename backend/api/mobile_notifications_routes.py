@@ -121,7 +121,7 @@ def register_mobile_notifications_routes(bp, shared):
                 cursor = conn.cursor()
                 # ✅ SECURITY FIX: التحقق من أن الإشعار يخص المستخدم الحالي
                 cursor.execute(
-                    "UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?",
+                    "UPDATE notifications SET is_read = TRUE WHERE id = %s AND user_id = %s",
                     (notification_id, user_id)
                 )
                 if cursor.rowcount == 0:
@@ -147,7 +147,7 @@ def register_mobile_notifications_routes(bp, shared):
             with db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE",
+                    "UPDATE notifications SET is_read = TRUE WHERE user_id = %s AND is_read = FALSE",
                     (user_id,)
                 )
                 affected = cursor.rowcount
@@ -220,10 +220,7 @@ def register_mobile_notifications_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT settings_data FROM user_notification_settings 
-                        WHERE user_id = ?
-                    """, (user_id,))
+                    cursor.execute("""\n                        SELECT settings_data FROM user_notification_settings \n                        WHERE user_id = %s\n                    """, (user_id,))
                     row = cursor.fetchone()
                     
                     if row and row[0]:
@@ -306,15 +303,13 @@ def register_mobile_notifications_routes(bp, shared):
 
                     # حذف الإعدادات السابقة
                     conn.execute("""
-                        DELETE FROM user_notification_settings
-                        WHERE user_id = ?
-                    """, (user_id,))
-
-                    # إدراج الإعدادات الجديدة
-                    conn.execute("""
                         INSERT INTO user_notification_settings (
                             user_id, settings_data, updated_at
-                        ) VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ) VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id)
+                        DO UPDATE SET
+                            settings_data = EXCLUDED.settings_data,
+                            updated_at = CURRENT_TIMESTAMP
                     """, (user_id, settings_json))
 
                     conn.commit()
@@ -517,7 +512,7 @@ def register_mobile_notifications_routes(bp, shared):
                 with db_manager.get_connection() as conn:
                     cursor = conn.execute("""
                         SELECT COUNT(*) FROM user_notification_settings
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                     """, (user_id,))
                     count = cursor.fetchone()[0]
                     integration_status['notifications_configured'] = count > 0
@@ -529,8 +524,8 @@ def register_mobile_notifications_routes(bp, shared):
                 with db_manager.get_connection() as conn:
                     cursor = conn.execute("""
                         SELECT COUNT(*) FROM active_positions
-                        WHERE user_id = ?
-                        AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '7 days')
+                        WHERE user_id = %s
+                        AND created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
                     """, (user_id,))
                     recent_trades = cursor.fetchone()[0]
                     integration_status['offline_ready'] = recent_trades > 0
@@ -721,6 +716,93 @@ def register_mobile_notifications_routes(bp, shared):
     # 📬 NOTIFICATIONS APIs
     # =========================================================================
 
+    # ============================================================================
+    # 📱 FCM TOKEN APIs
+    # ============================================================================
+
+    @bp.route('/fcm-token', methods=['POST'])
+    @require_auth
+    @rate_limit_general
+    def register_fcm_token():
+        """تسجيل FCM token للجهاز"""
+        try:
+            user_id = g.user_id
+            data = request.get_json() or {}
+            fcm_token = data.get('fcm_token', '').strip()
+            platform = data.get('platform', 'android').strip()
+
+            if not fcm_token:
+                return error_response('fcm_token مطلوب', 400)
+
+            try:
+                from utils.firebase_notification_service import get_firebase_notification_service
+                svc = get_firebase_notification_service()
+                svc.register_token(user_id, fcm_token, platform)
+            except Exception as firebase_err:
+                logger.warning(f"فشل تسجيل FCM token عبر service: {firebase_err}")
+                # fallback: حفظ مباشر في DB
+                try:
+                    with db_manager.get_write_connection() as conn:
+                        conn.execute("""
+                            CREATE TABLE IF NOT EXISTS user_devices (
+                                id SERIAL PRIMARY KEY,
+                                user_id INTEGER NOT NULL,
+                                fcm_token TEXT NOT NULL,
+                                platform VARCHAR(20) DEFAULT 'android',
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                CONSTRAINT user_devices_token_unique UNIQUE (fcm_token)
+                            )
+                        """)
+                        conn.execute("""
+                            INSERT INTO user_devices (user_id, fcm_token, platform, updated_at)
+                            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                            ON CONFLICT (fcm_token)
+                            DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = CURRENT_TIMESTAMP
+                        """, (user_id, fcm_token, platform))
+                except Exception as db_err:
+                    logger.error(f"فشل حفظ FCM token في DB: {db_err}")
+
+            logger.info(f"✅ FCM token مسجّل للمستخدم {user_id}")
+            return success_response({'registered': True}, 'تم تسجيل الجهاز بنجاح')
+
+        except Exception as e:
+            logger.error(f"❌ خطأ في تسجيل FCM token: {e}")
+            return error_response('خطأ في تسجيل الجهاز', 500)
+
+    @bp.route('/fcm-token', methods=['DELETE'])
+    @require_auth
+    @rate_limit_general
+    def unregister_fcm_token():
+        """حذف FCM token عند تسجيل الخروج"""
+        try:
+            user_id = g.user_id
+            data = request.get_json() or {}
+            fcm_token = data.get('fcm_token', '').strip()
+
+            if not fcm_token:
+                return error_response('fcm_token مطلوب', 400)
+
+            try:
+                from utils.firebase_notification_service import get_firebase_notification_service
+                svc = get_firebase_notification_service()
+                svc.unregister_token(fcm_token)
+            except Exception:
+                try:
+                    with db_manager.get_write_connection() as conn:
+                        conn.execute(
+                            "DELETE FROM user_devices WHERE fcm_token = %s AND user_id = %s",
+                            (fcm_token, user_id)
+                        )
+                except Exception:
+                    pass
+
+            return success_response({'unregistered': True}, 'تم إلغاء تسجيل الجهاز')
+
+        except Exception as e:
+            logger.error(f"❌ خطأ في حذف FCM token: {e}")
+            return error_response('خطأ في إلغاء تسجيل الجهاز', 500)
+
     @bp.route('/notifications-list', methods=['GET'])
     @require_auth
     def get_user_notifications():
@@ -742,9 +824,9 @@ def register_mobile_notifications_routes(bp, shared):
                                CASE WHEN is_read THEN 'read' ELSE 'unread' END as status,
                                created_at, NULL as delivered_at
                         FROM notifications
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         ORDER BY created_at DESC
-                        LIMIT ? OFFSET ?
+                        LIMIT %s OFFSET %s
                     """, (user_id, per_page, offset))
                 except Exception:
                     try:
@@ -756,15 +838,15 @@ def register_mobile_notifications_routes(bp, shared):
                                CASE WHEN is_read THEN 'read' ELSE 'unread' END as status,
                                created_at, NULL as delivered_at
                         FROM notifications
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         ORDER BY created_at DESC
-                        LIMIT ? OFFSET ?
+                        LIMIT %s OFFSET %s
                     """, (user_id, per_page, offset))
 
                 notifications = cursor.fetchall()
 
                 cursor.execute("""
-                    SELECT COUNT(*) FROM notifications WHERE user_id = ?
+                    SELECT COUNT(*) FROM notifications WHERE user_id = %s
                 """, (user_id,))
 
                 total_count = cursor.fetchone()[0]

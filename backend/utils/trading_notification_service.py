@@ -149,7 +149,7 @@ class TradingNotificationService:
                            notify_daily_loss,
                            notify_low_balance
                     FROM user_notification_settings
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY updated_at DESC
                     LIMIT 1
                 """, (user_id,))
@@ -305,9 +305,9 @@ class TradingNotificationService:
                     """
                     SELECT COALESCE(SUM(ABS(profit_loss)), 0)
                     FROM active_positions
-                    WHERE user_id = ?
-                      AND DATE(COALESCE(closed_at, updated_at)) = DATE('now')
-                      AND is_active = 0
+                    WHERE user_id = %s
+                      AND DATE(COALESCE(closed_at, updated_at)) = CURRENT_DATE
+                      AND is_active = FALSE
                       AND profit_loss < 0
                     """,
                     (user_id,),
@@ -341,18 +341,18 @@ class TradingNotificationService:
                 if self._has_notification_history_data_column(conn):
                     cursor.execute("""
                         SELECT COUNT(*) FROM notification_history
-                        WHERE user_id = ? 
-                        AND type = ?
-                        AND data LIKE ?
-                        AND created_at > (CURRENT_TIMESTAMP - (? * INTERVAL '1 minute'))
+                        WHERE user_id = %s
+                        AND type = %s
+                        AND data LIKE %s
+                        AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute')
                     """, (user_id, notification_type, f'%{unique_key}%', cooldown))
                 else:
                     cursor.execute("""
                         SELECT COUNT(*) FROM notification_history
-                        WHERE user_id = ? 
-                        AND (type = ? OR notification_type = ?)
-                        AND (message LIKE ? OR title LIKE ?)
-                        AND created_at > (CURRENT_TIMESTAMP - (? * INTERVAL '1 minute'))
+                        WHERE user_id = %s
+                        AND (type = %s OR notification_type = %s)
+                        AND (message LIKE %s OR title LIKE %s)
+                        AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute')
                     """, (
                         user_id,
                         notification_type,
@@ -386,13 +386,13 @@ class TradingNotificationService:
                     cursor.execute("""
                         INSERT INTO notification_history 
                         (user_id, type, title, message, data, status, created_at)
-                        VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, %s, %s, %s, 'sent', CURRENT_TIMESTAMP)
                     """, (user_id, notification_type, title, body, data_json))
                 else:
                     cursor.execute("""
                         INSERT INTO notification_history 
                         (user_id, notification_type, type, title, message, status, created_at)
-                        VALUES (?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, %s, %s, %s, 'sent', CURRENT_TIMESTAMP)
                     """, (user_id, notification_type, notification_type, title, body))
 
                 # مزامنة مع جدول notifications الذي يقرأ منه التطبيق المحمول
@@ -400,7 +400,7 @@ class TradingNotificationService:
                     cursor.execute("""
                         INSERT INTO notifications
                         (user_id, title, message, type, is_read, data, created_at)
-                        VALUES (?, ?, ?, ?, FALSE, ?, CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, %s, %s, FALSE, %s, CURRENT_TIMESTAMP)
                     """, (user_id, title, body, notification_type, data_json))
                 except Exception as mirror_error:
                     # لا نفشل العملية الأساسية بسبب فشل المزامنة الثانوية
@@ -545,18 +545,18 @@ class TradingNotificationService:
                 if self._has_notification_history_data_column(conn):
                     cursor.execute("""
                         SELECT COUNT(*) FROM notification_history
-                        WHERE user_id = ? 
+                        WHERE user_id = %s
                         AND type = 'trailing_stop_activated'
-                        AND data LIKE ?
-                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 minutes')
+                        AND data LIKE %s
+                        AND created_at > CURRENT_TIMESTAMP - INTERVAL '30 minutes'
                     """, (user_id, f'%{symbol}%'))
                 else:
                     cursor.execute("""
                         SELECT COUNT(*) FROM notification_history
-                        WHERE user_id = ? 
+                        WHERE user_id = %s
                         AND (type = 'trailing_stop_activated' OR notification_type = 'trailing_stop_activated')
-                        AND (message LIKE ? OR title LIKE ?)
-                        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 minutes')
+                        AND (message LIKE %s OR title LIKE %s)
+                        AND created_at > CURRENT_TIMESTAMP - INTERVAL '30 minutes'
                     """, (user_id, f'%{symbol}%', f'%{symbol}%'))
                 
                 recent_count = cursor.fetchone()[0]

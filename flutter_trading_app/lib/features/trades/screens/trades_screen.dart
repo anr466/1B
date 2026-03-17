@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   final _scrollController = ScrollController();
   String? _selectedFilter;
   int _touchedSection = -1;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -33,6 +35,13 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
     _scrollController.addListener(_onScroll);
     Future.microtask(() {
       ref.read(tradesListProvider.notifier).loadFirstPage();
+    });
+    // Auto-refresh active positions every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      ref.read(tradesListProvider.notifier).loadFirstPage(
+        statusFilter: _selectedFilter,
+      );
     });
   }
 
@@ -45,6 +54,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }

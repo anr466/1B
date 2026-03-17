@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -28,11 +29,46 @@ import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Dashboard Screen — الشاشة الرئيسية
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-refresh every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      ref.invalidate(portfolioProvider);
+      ref.invalidate(statsProvider);
+      ref.invalidate(activePositionsProvider);
+      ref.invalidate(accountTradingProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _refresh() {
+    ref.invalidate(portfolioProvider);
+    ref.invalidate(statsProvider);
+    ref.invalidate(recentTradesProvider);
+    ref.invalidate(activePositionsProvider);
+    ref.invalidate(systemStatusProvider);
+    ref.invalidate(accountTradingProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     final pagePadding = ResponsiveUtils.pageHorizontalPadding(context);
@@ -45,14 +81,7 @@ class DashboardScreen extends ConsumerWidget {
         body: SafeArea(
           child: RefreshIndicator(
             color: cs.primary,
-            onRefresh: () async {
-              ref.invalidate(portfolioProvider);
-              ref.invalidate(statsProvider);
-              ref.invalidate(recentTradesProvider);
-              ref.invalidate(activePositionsProvider);
-              ref.invalidate(systemStatusProvider);
-              ref.invalidate(accountTradingProvider);
-            },
+            onRefresh: () async => _refresh(),
             child: Center(
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxWidth),
