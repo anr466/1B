@@ -70,7 +70,17 @@ class RiskManagerMixin:
             self.logger.info(
                 f"💧 Liquidity-adjusted size: ${original_size:.2f} × {size_factor:.2f} = ${position_size:.2f}"
             )
-        
+
+        # Fix-A: تطبيق معامل الحذر من حالة السوق (يُضبط في _check_market_regime)
+        # 1.0 = طبيعي | 0.7 = هبوط BTC 3-5% | 0.5 = RSI < 25
+        caution = getattr(self, '_market_caution_factor', 1.0)
+        if caution < 1.0 and caution > 0.0:
+            original_size = position_size
+            position_size = position_size * caution
+            self.logger.info(
+                f"🌡️ Market caution: ${original_size:.2f} × {caution:.1f} = ${position_size:.2f}"
+            )
+
         # ✅ الحد الأدنى $10 (متطلبات Binance)
         if position_size < 10:
             self.logger.warning(f"⚠️ Position size ${position_size:.2f} < $10 minimum")

@@ -300,7 +300,13 @@ class ScannerMixin:
         """
         فحص حالة السوق العامة عبر BTC
         لا ندخل صفقات جديدة إذا كان السوق في حالة هبوط حاد أو تقلب شديد
+
+        يضبط self._market_caution_factor (0.5–1.0) الذي يُطبّقه
+        _calculate_position_size لتخفيض حجم الصفقة عند الحالات الحذرة.
         """
+        # إعادة تعيين المعامل افتراضياً (1.0 = بدون تخفيض)
+        self._market_caution_factor = 1.0
+
         try:
             df = self.data_provider.get_historical_data('BTCUSDT', '1h', limit=50)
             if df is None or len(df) < 30:
@@ -311,9 +317,13 @@ class ScannerMixin:
             last = df.iloc[-1]
             rsi = last.get('rsi', 50)
             
-            # فحص RSI المتطرف
+            # Fix-A: RSI < 25 = ذعر بيع شديد → تقليل حجم الصفقة 50%
             if rsi < 25:
-                self.logger.info(f"   🌡️ BTC RSI={rsi:.1f} (extreme oversold) - cautious entry")
+                self._market_caution_factor = 0.5
+                self.logger.warning(
+                    f"   🌡️ BTC RSI={rsi:.1f} (extreme oversold) "
+                    f"— position size ×0.5 (caution mode)"
+                )
             
             # فحص الانهيار الحاد (أكثر من 5% هبوط في 24 ساعة)
             if len(df) >= 24:
@@ -323,10 +333,16 @@ class ScannerMixin:
                 
                 if change_24h < -0.05:
                     self.logger.warning(f"   🚨 BTC crashed {change_24h*100:.1f}% in 24h - blocking entries")
+                    self._market_caution_factor = 0.0  # لن يُستخدم (نرجع False)
                     return False
                 
+                # Fix-A: هبوط 3–5% → تقليل حجم الصفقة 30%
                 if change_24h < -0.03:
-                    self.logger.info(f"   ⚠️ BTC down {change_24h*100:.1f}% in 24h - reduced entries")
+                    self._market_caution_factor = min(self._market_caution_factor, 0.7)
+                    self.logger.info(
+                        f"   ⚠️ BTC down {change_24h*100:.1f}% in 24h "
+                        f"— position size ×{self._market_caution_factor:.1f}"
+                    )
             
             # فحص التقلب العالي (ATR > 3% من السعر)
             if len(df) >= 14:
@@ -334,12 +350,14 @@ class ScannerMixin:
                 atr_pct = atr / df.iloc[-1]['close']
                 if atr_pct > 0.03:
                     self.logger.warning(f"   🌊 BTC volatility too high (ATR={atr_pct*100:.1f}%) - blocking entries")
+                    self._market_caution_factor = 0.0  # لن يُستخدم (نرجع False)
                     return False
             
             return True
             
         except Exception as e:
             self.logger.warning(f"⚠️ Market regime check failed: {e} — blocking entries (No classification → No trade)")
+            self._market_caution_factor = 0.0
             return False  # قانون: لا تصنيف = لا تداول
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
