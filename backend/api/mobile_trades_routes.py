@@ -43,8 +43,7 @@ def register_mobile_trades_routes(bp, shared):
         """
         try:
             user_id = g.user_id
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             with db.get_connection() as conn:
                 cursor = conn.cursor()
@@ -120,9 +119,8 @@ def register_mobile_trades_routes(bp, shared):
             return error_response('لا توجد صلاحيات', 'UNAUTHORIZED', 403)
         
         try:
-            from database.database_manager import DatabaseManager
             import math
-            db = DatabaseManager()
+            db = db_manager
             
             from datetime import datetime as dt
             
@@ -255,8 +253,7 @@ def register_mobile_trades_routes(bp, shared):
             return jsonify(response_data), status_code
         
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             
             requested_mode = request.args.get('mode', None)
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
@@ -342,8 +339,7 @@ def register_mobile_trades_routes(bp, shared):
             days = request.args.get('days', 90, type=int)
             requested_mode = request.args.get('trading_mode', None) or request.args.get('mode', None)
             
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
             is_admin = (db.get_user_by_id(user_id) or {}).get('user_type') == 'admin'
             
@@ -415,8 +411,7 @@ def register_mobile_trades_routes(bp, shared):
             days = request.args.get('days', 30, type=int)
             requested_mode = request.args.get('mode', None)
             
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, requested_mode)
             
             with db_manager.get_connection() as conn:
@@ -554,8 +549,7 @@ def register_mobile_trades_routes(bp, shared):
             if not verify_user_access(user_id):
                 return jsonify({'success': False, 'error': 'Unauthorized access to another user\'s data'}), 403
 
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
             
             with db_manager.get_connection() as conn:
@@ -605,8 +599,7 @@ def register_mobile_trades_routes(bp, shared):
     def get_trades_distribution(user_id):
         """جلب توزيع الصفقات"""
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
             
             with db_manager.get_connection() as conn:
@@ -680,9 +673,7 @@ def register_mobile_trades_routes(bp, shared):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
         
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
+            db = db_manager
             dashboard_data = {
                 'portfolio': {},
                 'active_positions': [],

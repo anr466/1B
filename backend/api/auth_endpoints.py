@@ -27,10 +27,11 @@ from backend.api.auth_middleware import require_auth
 
 # استيراد نظام JWT Tokens
 try:
-    from backend.api.token_refresh_endpoint import generate_tokens, TOKEN_SYSTEM_AVAILABLE
+    from backend.api.token_refresh_endpoint import generate_tokens, TOKEN_SYSTEM_AVAILABLE, revoke_token
 except ImportError:
     TOKEN_SYSTEM_AVAILABLE = False
     generate_tokens = None
+    revoke_token = None
 
 try:
     from backend.utils.security_audit_service import SecurityAuditService
@@ -938,17 +939,12 @@ def logout_user():
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith('Bearer '):
             token = auth_header.split(' ')[1]
-            
-            # محاولة إبطال Token في قاعدة البيانات
-            try:
-                with db_manager.get_write_connection() as conn:
-                    # حذف الجلسة من قاعدة البيانات
-                    conn.execute("""
-                        DELETE FROM user_sessions 
-                        WHERE session_token = ?
-                    """, (token,))
-            except Exception as db_error:
-                log_error(f"خطأ في حذف الجلسة: {db_error}")
+
+            # إبطال Token في DB blocklist
+            if revoke_token:
+                from datetime import datetime, timedelta
+                expires_at = datetime.utcnow() + timedelta(seconds=86400)
+                revoke_token(token, expires_at=expires_at)
         
         return jsonify({
             'success': True,

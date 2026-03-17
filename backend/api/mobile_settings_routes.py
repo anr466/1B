@@ -45,8 +45,7 @@ def register_mobile_settings_routes(bp, shared):
             return jsonify(response_data), status_code
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             requested_mode = request.args.get('mode')
             trading_context = get_trading_context(db, user_id, requested_mode=requested_mode)
@@ -246,9 +245,7 @@ def register_mobile_settings_routes(bp, shared):
             return jsonify(response_data), status_code
 
         try:
-            from database.database_manager import DatabaseManager
-            import re
-            db = DatabaseManager()
+            db = db_manager
             data = request.get_json(silent=True) or {}
             requested_mode = request.args.get('mode')
 
@@ -430,11 +427,8 @@ def register_mobile_settings_routes(bp, shared):
                         else:
                             binance_error = balance_result.get('error', 'خطأ في الاتصال بـ Binance')
                     except ImportError:
-                        # إذا لم تتوفر خدمة فحص الرصيد، نستخدم قاعدة البيانات كاحتياطي
-                        logger.warning(f"⚠️ BinanceBalanceChecker غير متاح، استخدام قاعدة البيانات")
-                        portfolio_query = "SELECT available_balance FROM portfolio WHERE user_id = ? AND is_demo = FALSE"
-                        portfolio_result = db.execute_query(portfolio_query, (user_id,))
-                        available_balance = float(portfolio_result[0]['available_balance'] or 0) if portfolio_result else 0
+                        logger.error(f"❌ BinanceBalanceChecker غير متاح — لا يمكن التحقق من الرصيد")
+                        binance_error = 'خدمة فحص الرصيد غير متاحة حالياً. يرجى المحاولة لاحقاً.'
                     except Exception as e:
                         binance_error = str(e)
                         logger.error(f"❌ خطأ في جلب رصيد Binance: {e}")
@@ -614,8 +608,7 @@ def register_mobile_settings_routes(bp, shared):
             }), 403
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             user_query = "SELECT user_type FROM users WHERE id = ?"
             user_result = db.execute_query(user_query, (user_id,))
@@ -663,8 +656,7 @@ def register_mobile_settings_routes(bp, shared):
             if new_mode not in ['demo', 'real']:
                 return jsonify({'success': False, 'error': 'Invalid mode. Must be: demo or real'}), 400
 
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             # فحص نوع المستخدم
             user_query = "SELECT user_type FROM users WHERE id = ?"
@@ -851,8 +843,7 @@ def register_mobile_settings_routes(bp, shared):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             # جلب المفاتيح المشفرة
             keys_query = "SELECT id, api_key, is_active, created_at FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
@@ -898,8 +889,7 @@ def register_mobile_settings_routes(bp, shared):
     def save_binance_keys():
         """حفظ مفاتيح Binance - مع تشفير AES"""
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             data = request.get_json()
             user_id = g.current_user_id
 
@@ -996,8 +986,7 @@ def register_mobile_settings_routes(bp, shared):
     def delete_binance_key(key_id):
         """حذف مفتاح Binance - مع التحقق"""
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             user_id = g.current_user_id
 
             check_query = "SELECT user_id FROM user_binance_keys WHERE id = ?"
@@ -1035,8 +1024,7 @@ def register_mobile_settings_routes(bp, shared):
             }
         """
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
             user_id = g.current_user_id
             data = request.get_json()
 
@@ -1190,8 +1178,7 @@ def register_mobile_settings_routes(bp, shared):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             profile_query = "SELECT id, username, name, email, phone_number, user_type, is_active, created_at, last_login_at FROM users WHERE id = ?"
             result = db.execute_query(profile_query, (user_id,))

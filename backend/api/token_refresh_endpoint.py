@@ -5,6 +5,7 @@ Token Refresh Endpoint
 
 import jwt
 import time
+import hashlib
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 from functools import wraps
@@ -25,6 +26,67 @@ REFRESH_TOKEN_EXPIRY = 2592000  # 30 يوم
 
 # ✅ FIX: متغير للتحقق من توفر النظام
 TOKEN_SYSTEM_AVAILABLE = bool(JWT_SECRET_KEY)
+
+# ─── DB-backed token blocklist ────────────────────────────────────────────────
+try:
+    from database.database_manager import DatabaseManager as _DBManager
+    _db = _DBManager()
+    with _db.get_write_connection() as _conn:
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS revoked_tokens (
+                token_hash  TEXT        PRIMARY KEY,
+                user_id     BIGINT,
+                revoked_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                expires_at  TIMESTAMPTZ
+            )
+        """)
+    BLOCKLIST_AVAILABLE = True
+except Exception:
+    _db = None
+    BLOCKLIST_AVAILABLE = False
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def revoke_token(token: str, user_id: int = None, expires_at: datetime = None) -> bool:
+    """Add token to DB blocklist. Returns True on success."""
+    if not BLOCKLIST_AVAILABLE or not _db:
+        return False
+    try:
+        # Prune expired entries first (best-effort)
+        try:
+            with _db.get_write_connection() as conn:
+                conn.execute("DELETE FROM revoked_tokens WHERE expires_at < CURRENT_TIMESTAMP")
+        except Exception:
+            pass
+        with _db.get_write_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO revoked_tokens (token_hash, user_id, expires_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (token_hash) DO NOTHING
+                """,
+                (_token_hash(token), user_id, expires_at),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def is_token_revoked(token: str) -> bool:
+    """Return True if token is in the DB blocklist."""
+    if not BLOCKLIST_AVAILABLE or not _db:
+        return False
+    try:
+        result = _db.execute_query(
+            "SELECT 1 FROM revoked_tokens WHERE token_hash = ?",
+            (_token_hash(token),),
+        )
+        return bool(result)
+    except Exception:
+        return False
 
 def generate_tokens(user_id: int, username: str = None, user_type: str = 'user') -> dict:
     """
@@ -81,6 +143,10 @@ def verify_token(token: str, token_type: str = 'access') -> dict:
     Returns:
         decoded payload أو يرفع jwt.InvalidTokenError
     """
+    # فحص Blocklist قبل فك التشفير
+    if is_token_revoked(token):
+        raise jwt.InvalidTokenError("Token has been revoked")
+
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         

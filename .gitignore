@@ -43,8 +43,11 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
+# Python venv lib (but NOT Flutter source lib)
+/lib/
+backend/lib/
+!flutter_trading_app/lib/
 parts/
 sdist/
 var/
