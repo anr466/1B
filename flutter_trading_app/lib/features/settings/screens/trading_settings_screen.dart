@@ -163,7 +163,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
         'takeProfitPercentage': _takeProfit,
         'trailingDistance': _trailingDistance,
         'maxDailyLoss': _maxDailyLoss,
-      });
+      }, mode: mode);
 
       if (!mounted) return;
       if (result['success'] == true) {
