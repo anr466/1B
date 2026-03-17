@@ -12,7 +12,9 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_info_row.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/financial_metric_tile.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
@@ -151,24 +153,21 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                                   isSensitive: true,
                                 ),
                                 const SizedBox(height: SpacingTokens.lg),
-                                _infoRow(
-                                  cs,
-                                  'الرصيد المتاح',
-                                  hideBalance
+                                AppInfoRow(
+                                  label: 'الرصيد المتاح',
+                                  value: hideBalance
                                       ? '••••••'
                                       : '\$${p.availableBalance.toStringAsFixed(2)}',
                                 ),
-                                _infoRow(
-                                  cs,
-                                  'الرصيد المحجوز',
-                                  hideBalance
+                                AppInfoRow(
+                                  label: 'الرصيد المحجوز',
+                                  value: hideBalance
                                       ? '••••••'
                                       : '\$${p.reservedBalance.toStringAsFixed(2)}',
                                 ),
-                                _infoRow(
-                                  cs,
-                                  'الرصيد الابتدائي',
-                                  hideBalance
+                                AppInfoRow(
+                                  label: 'الرصيد الابتدائي',
+                                  value: hideBalance
                                       ? '••••••'
                                       : '\$${p.initialBalance.toStringAsFixed(2)}',
                                 ),
@@ -255,50 +254,56 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                         children: [
                           Row(
                             children: [
-                              _statCard(
-                                cs,
-                                'إجمالي الصفقات',
-                                '${s.totalTrades}',
+                              Expanded(
+                                child: FinancialMetricTile(
+                                  label: 'إجمالي الصفقات',
+                                  value: '${s.totalTrades}',
+                                ),
                               ),
                               const SizedBox(width: SpacingTokens.sm),
-                              _statCard(
-                                cs,
-                                'نسبة الفوز',
-                                '${s.winRate.toStringAsFixed(1)}%',
+                              Expanded(
+                                child: FinancialMetricTile(
+                                  label: 'نسبة الفوز',
+                                  value: '${s.winRate.toStringAsFixed(1)}%',
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: SpacingTokens.sm),
                           Row(
                             children: [
-                              _statCard(
-                                cs,
-                                'أفضل صفقة',
-                                '\$${s.bestTrade.toStringAsFixed(2)}',
-                                valueColor: SemanticColors.of(context).positive,
+                              Expanded(
+                                child: FinancialMetricTile(
+                                  label: 'أفضل صفقة',
+                                  value: '\$${s.bestTrade.toStringAsFixed(2)}',
+                                  isPositive: true,
+                                ),
                               ),
                               const SizedBox(width: SpacingTokens.sm),
-                              _statCard(
-                                cs,
-                                'أسوأ صفقة',
-                                '\$${s.worstTrade.toStringAsFixed(2)}',
-                                valueColor: SemanticColors.of(context).negative,
+                              Expanded(
+                                child: FinancialMetricTile(
+                                  label: 'أسوأ صفقة',
+                                  value: '\$${s.worstTrade.toStringAsFixed(2)}',
+                                  isPositive: false,
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: SpacingTokens.sm),
                           Row(
                             children: [
-                              _statCard(
-                                cs,
-                                'معامل الربح',
-                                s.profitFactor.toStringAsFixed(2),
+                              Expanded(
+                                child: FinancialMetricTile(
+                                  label: 'معامل الربح',
+                                  value: s.profitFactor.toStringAsFixed(2),
+                                ),
                               ),
                               const SizedBox(width: SpacingTokens.sm),
-                              _statCard(
-                                cs,
-                                'متوسط الربح',
-                                '\$${s.averagePnl.toStringAsFixed(2)}',
+                              Expanded(
+                                child: FinancialMetricTile(
+                                  label: 'متوسط الربح',
+                                  value: '\$${s.averagePnl.toStringAsFixed(2)}',
+                                ),
                               ),
                             ],
                           ),
@@ -317,73 +322,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     );
   }
 
-  Widget _infoRow(ColorScheme cs, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TypographyTokens.bodySmall(
-              cs.onSurface.withValues(alpha: 0.5),
-            ),
-          ),
-          Text(value, style: TypographyTokens.mono(cs.onSurface, fontSize: 14)),
-        ],
-      ),
-    );
-  }
-
-  Widget _statCard(
-    ColorScheme cs,
-    String label,
-    String value, {
-    Color? valueColor,
-  }) {
-    final isDark = cs.brightness == Brightness.dark;
-
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: SpacingTokens.sm,
-          vertical: SpacingTokens.md,
-        ),
-        decoration: BoxDecoration(
-          color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-          border: Border.all(
-            color: cs.outline.withValues(alpha: isDark ? 0.18 : 0.10),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TypographyTokens.caption(
-                cs.onSurface.withValues(alpha: 0.45),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: SpacingTokens.xxs),
-            Text(
-              value,
-              style: TypographyTokens.mono(
-                valueColor ?? cs.onSurface,
-                fontSize: 17,
-              ).copyWith(fontWeight: FontWeight.w700),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildPortfolioBreakdownChart(
     BuildContext context,

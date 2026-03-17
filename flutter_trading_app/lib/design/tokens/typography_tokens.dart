@@ -9,6 +9,7 @@ class TypographyTokens {
 
   // ─── Hero — الأرقام المالية الكبيرة ─────────────
   static TextStyle hero(Color color) => TextStyle(
+    fontFamily: _fontFamily,
     fontSize: 36,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.15,
@@ -93,6 +94,15 @@ class TypographyTokens {
     letterSpacing: 0.1,
     color: color,
     fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
+  // ─── Overline — section labels (caps, muted) ───
+  static TextStyle overline(Color color) => TextStyle(
+    fontFamily: _fontFamily,
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.2,
+    color: color,
   );
 
   // ─── Code ───────────────────────────────────────

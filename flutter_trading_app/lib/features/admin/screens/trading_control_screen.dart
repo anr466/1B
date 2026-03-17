@@ -11,6 +11,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
@@ -60,13 +61,7 @@ class TradingControlScreen extends ConsumerWidget {
 
               const SizedBox(height: SpacingTokens.lg),
 
-              // ─── ML Status ─────────────────────────
-              Text(
-                'نموذج الذكاء الاصطناعي',
-                style: TypographyTokens.label(
-                  cs.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
+              const AppSectionLabel(text: 'نموذج الذكاء الاصطناعي'),
               const SizedBox(height: SpacingTokens.sm),
               mlStatus.when(
                 loading: () =>

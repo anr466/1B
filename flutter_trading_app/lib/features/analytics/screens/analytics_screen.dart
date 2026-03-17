@@ -14,6 +14,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/financial_metric_tile.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
@@ -183,10 +184,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                           Row(
                             children: [
                               Expanded(
-                                child: _MiniMetricCard(
+                                child: FinancialMetricTile(
                                   label: 'نسبة الفوز',
                                   value: '${s.winRate.toStringAsFixed(1)}%',
-                                  valueColor: cs.primary,
                                   footer: _progressBar(
                                     cs,
                                     s.winRate / 100,
@@ -196,10 +196,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                               ),
                               const SizedBox(width: SpacingTokens.sm),
                               Expanded(
-                                child: _MiniMetricCard(
+                                child: FinancialMetricTile(
                                   label: 'معامل الربح',
                                   value: s.profitFactor.toStringAsFixed(2),
-                                  valueColor: cs.primary,
                                   footer: _progressBar(
                                     cs,
                                     (s.profitFactor / 3).clamp(0, 1),
@@ -615,64 +614,3 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   }
 }
 
-class _MiniMetricCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color valueColor;
-  final Widget? footer;
-
-  const _MiniMetricCard({
-    required this.label,
-    required this.value,
-    required this.valueColor,
-    this.footer,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: SpacingTokens.sm,
-        vertical: SpacingTokens.md,
-      ),
-      decoration: BoxDecoration(
-        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-        border: Border.all(
-          color: cs.outline.withValues(alpha: isDark ? 0.18 : 0.10),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TypographyTokens.caption(
-              cs.onSurface.withValues(alpha: 0.45),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: SpacingTokens.xxs),
-          Text(
-            value,
-            style: TypographyTokens.mono(
-              valueColor,
-              fontSize: 17,
-            ).copyWith(fontWeight: FontWeight.w700),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (footer != null) ...[
-            const SizedBox(height: SpacingTokens.sm),
-            footer!,
-          ],
-        ],
-      ),
-    );
-  }
-}

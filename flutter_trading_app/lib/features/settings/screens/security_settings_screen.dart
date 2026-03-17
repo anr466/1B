@@ -10,6 +10,7 @@ import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/flow_stepper.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/main.dart';
@@ -508,12 +509,7 @@ class _SecuritySettingsScreenState
               ),
             ),
             const SizedBox(height: SpacingTokens.lg),
-            Text(
-              'إجراءات آمنة',
-              style: TypographyTokens.label(
-                cs.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
+            const AppSectionLabel(text: 'إجراءات آمنة'),
             const SizedBox(height: SpacingTokens.sm),
 
             // ─── Change Password ─────────────────────
@@ -535,12 +531,7 @@ class _SecuritySettingsScreenState
             ),
 
             const SizedBox(height: SpacingTokens.lg),
-            Text(
-              'الجلسات',
-              style: TypographyTokens.label(
-                cs.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
+            const AppSectionLabel(text: 'الجلسات'),
             const SizedBox(height: SpacingTokens.sm),
 
             // ─── Active Sessions Info ────────────────

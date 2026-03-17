@@ -14,6 +14,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/navigation/route_names.dart';
@@ -61,12 +62,7 @@ class AdminDashboardScreen extends ConsumerWidget {
               const SizedBox(height: SpacingTokens.base),
 
               // ─── ML Status ─────────────────────────
-              Text(
-                'نموذج الذكاء الاصطناعي',
-                style: TypographyTokens.label(
-                  cs.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
+              const AppSectionLabel(text: 'نموذج الذكاء الاصطناعي'),
               const SizedBox(height: SpacingTokens.sm),
               mlStatus.when(
                 loading: () =>
@@ -86,12 +82,7 @@ class AdminDashboardScreen extends ConsumerWidget {
               const SizedBox(height: SpacingTokens.base),
 
               // ─── Quick Actions ─────────────────────
-              Text(
-                'إجراءات سريعة',
-                style: TypographyTokens.label(
-                  cs.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
+              const AppSectionLabel(text: 'إجراءات سريعة'),
               const SizedBox(height: SpacingTokens.sm),
 
               _actionItem(

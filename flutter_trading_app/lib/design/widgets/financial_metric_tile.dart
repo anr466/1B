@@ -23,6 +23,9 @@ class FinancialMetricTile extends StatelessWidget {
 
   final VoidCallback? onTap;
 
+  /// Optional footer widget — displayed below the value (e.g. progress bar)
+  final Widget? footer;
+
   const FinancialMetricTile({
     super.key,
     required this.label,
@@ -31,6 +34,7 @@ class FinancialMetricTile extends StatelessWidget {
     this.isPositive,
     this.level = 1,
     this.onTap,
+    this.footer,
   });
 
   @override
@@ -99,6 +103,10 @@ class FinancialMetricTile extends StatelessWidget {
                 ),
               ],
             ),
+          ],
+          if (footer != null) ...[
+            const SizedBox(height: SpacingTokens.sm),
+            footer!,
           ],
         ],
       ),

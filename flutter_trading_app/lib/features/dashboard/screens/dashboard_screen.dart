@@ -25,6 +25,7 @@ import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
+import 'package:trading_app/design/widgets/app_icon_button.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
@@ -184,8 +185,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
         ),
         const Spacer(),
-        // Visibility toggle
-        _HeaderIconButton(
+        AppIconButton(
           icon: hideBalance
               ? Icons.visibility_off_rounded
               : Icons.visibility_rounded,
@@ -193,11 +193,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           color: cs.onSurface.withValues(alpha: 0.5),
         ),
         const SizedBox(width: SpacingTokens.xs),
-        // Notifications
-        _HeaderIconButton(
-          icon: BrandIcons.bell,
+        AppIconButton(
+          child: BrandIcon(
+            BrandIcons.bell,
+            size: 22,
+            color: cs.onSurface.withValues(alpha: 0.5),
+          ),
           onTap: () => context.push(RouteNames.notifications),
-          color: cs.onSurface.withValues(alpha: 0.5),
         ),
       ],
     );
@@ -1314,34 +1316,6 @@ class _OpenTradeLiveIndicator extends StatelessWidget {
   }
 }
 
-/// Header icon button with consistent size and tap area
-class _HeaderIconButton extends StatelessWidget {
-  final dynamic icon; // IconData or BrandIcon key
-  final VoidCallback onTap;
-  final Color color;
-
-  const _HeaderIconButton({
-    required this.icon,
-    required this.onTap,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 36,
-        height: 36,
-        child: Center(
-          child: icon is IconData
-              ? Icon(icon as IconData, size: 22, color: color)
-              : BrandIcon(icon as BrandIconData, size: 22, color: color),
-        ),
-      ),
-    );
-  }
-}
 
 class _BalanceSummaryMetric extends StatelessWidget {
   final String label;

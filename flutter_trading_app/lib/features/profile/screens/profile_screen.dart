@@ -12,6 +12,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/app_setting_tile.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/navigation/route_names.dart';
@@ -292,83 +293,61 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   _ProfileSectionTitle(title: 'الإعدادات'),
                   const SizedBox(height: SpacingTokens.sm),
 
-                  _menuItem(
-                    context,
-                    cs,
-                    BrandIcons.key,
-                    'مفاتيح Binance',
-                    RouteNames.binanceKeys,
-                  ),
-                  _menuItem(
-                    context,
-                    cs,
-                    BrandIcons.shield,
-                    'الأمان',
-                    RouteNames.securitySettings,
-                  ),
-                  _menuItem(
-                    context,
-                    cs,
-                    BrandIcons.info,
-                    'دليل الاستخدام',
-                    RouteNames.onboarding,
-                  ),
-                  _menuItem(
-                    context,
-                    cs,
-                    BrandIcons.eye,
-                    'التصميم',
-                    RouteNames.skinPicker,
-                  ),
-                  _menuItem(
-                    context,
-                    cs,
-                    BrandIcons.bell,
-                    'الإشعارات',
-                    RouteNames.notificationSettings,
+                  AppSettingGroup(
+                    margin: const EdgeInsets.only(bottom: SpacingTokens.lg),
+                    children: [
+                      AppSettingTile(
+                        icon: BrandIcons.key,
+                        label: 'مفاتيح Binance',
+                        onTap: () => context.push(RouteNames.binanceKeys),
+                      ),
+                      AppSettingTile(
+                        icon: BrandIcons.shield,
+                        label: 'الأمان',
+                        onTap: () => context.push(RouteNames.securitySettings),
+                      ),
+                      AppSettingTile(
+                        icon: BrandIcons.info,
+                        label: 'دليل الاستخدام',
+                        onTap: () => context.push(RouteNames.onboarding),
+                      ),
+                      AppSettingTile(
+                        icon: BrandIcons.eye,
+                        label: 'التصميم',
+                        onTap: () => context.push(RouteNames.skinPicker),
+                      ),
+                      AppSettingTile(
+                        icon: BrandIcons.bell,
+                        label: 'الإشعارات',
+                        onTap: () =>
+                            context.push(RouteNames.notificationSettings),
+                      ),
+                    ],
                   ),
 
                   // ─── Admin Section ─────────────────────
-                  if (auth.isAdmin) ...[
-                    const SizedBox(height: SpacingTokens.lg),
-                    _ProfileSectionTitle(
+                  if (auth.isAdmin) ...[                    _ProfileSectionTitle(
                       title: 'الإدارة',
                       color: cs.primary.withValues(alpha: 0.7),
                       icon: BrandIcons.shield,
                     ),
                     const SizedBox(height: SpacingTokens.sm),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: cs.primary.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(
-                          SpacingTokens.radiusMd,
+                    AppSettingGroup(
+                      margin: const EdgeInsets.only(bottom: SpacingTokens.lg),
+                      children: [
+                        AppSettingTile(
+                          icon: BrandIcons.chart,
+                          label: 'لوحة الإدارة',
+                          iconColor: cs.primary,
+                          onTap: () => context.push(RouteNames.adminDashboard),
                         ),
-                        border: Border.all(
-                          color: cs.primary.withValues(alpha: 0.14),
-                          width: 0.8,
+                        AppSettingTile(
+                          icon: BrandIcons.history,
+                          label: 'سجلات النظام',
+                          iconColor: cs.primary,
+                          onTap: () => context.push(RouteNames.systemLogs),
                         ),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: SpacingTokens.xs,
-                      ),
-                      child: Column(
-                        children: [
-                          _menuItem(
-                            context,
-                            cs,
-                            BrandIcons.chart,
-                            'لوحة الإدارة',
-                            RouteNames.adminDashboard,
-                          ),
-                          _menuItem(
-                            context,
-                            cs,
-                            BrandIcons.history,
-                            'سجلات النظام',
-                            RouteNames.systemLogs,
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
                   ],
 
@@ -446,38 +425,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _menuItem(
-    BuildContext context,
-    ColorScheme cs,
-    BrandIconData icon,
-    String label,
-    String route,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
-      child: AppCard(
-        onTap: () => context.push(route),
-        padding: const EdgeInsets.symmetric(
-          horizontal: SpacingTokens.base,
-          vertical: SpacingTokens.md,
-        ),
-        child: Row(
-          children: [
-            BrandIcon(icon, size: 20, color: cs.primary),
-            const SizedBox(width: SpacingTokens.md),
-            Expanded(
-              child: Text(label, style: TypographyTokens.body(cs.onSurface)),
-            ),
-            Icon(
-              Icons.chevron_left,
-              color: cs.onSurface.withValues(alpha: 0.3),
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Future<void> _showLogoutDialog(BuildContext context) async {
     final cs = Theme.of(context).colorScheme;
