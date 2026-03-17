@@ -345,38 +345,8 @@ def register_mobile_settings_routes(bp, shared):
             trading_enabled = data.get('tradingEnabled', False)
 
             if trading_enabled:
-                # ✅ فحص اكتمال الإعدادات الأساسية (حجم الصفقة + عدد الصفقات)
-                position_size_pct = data.get('positionSizePercentage')
-                max_positions = data.get('maxConcurrentTrades')
-                
-                # جلب الإعدادات الحالية إذا لم يتم إرسالها
-                if position_size_pct is None or max_positions is None:
-                    settings_query = "SELECT position_size_percentage, max_positions FROM user_settings WHERE user_id = ? AND is_demo = ?"
-                    target_context = get_trading_context(db, user_id, requested_mode=requested_mode)
-                    current_mode = target_context['trading_mode']
-                    target_is_demo = bool(target_context['is_demo'])
-                    settings_result = db.execute_query(settings_query, (user_id, target_is_demo))
-                    if settings_result:
-                        position_size_pct = position_size_pct or settings_result[0].get('position_size_percentage')
-                        max_positions = max_positions or settings_result[0].get('max_positions')
-                
-                # فحص اكتمال الإعدادات
-                if not position_size_pct or position_size_pct < 5:
-                    return jsonify({
-                        'success': False,
-                        'error': 'يرجى تحديد حجم الصفقة أولاً',
-                        'error_code': 'INCOMPLETE_SETTINGS',
-                        'message': 'يجب تعيين حجم الصفقة (5% على الأقل) قبل تفعيل التداول'
-                    }), 400
-                
-                if not max_positions or max_positions < 1:
-                    return jsonify({
-                        'success': False,
-                        'error': 'يرجى تحديد أقصى عدد صفقات أولاً',
-                        'error_code': 'INCOMPLETE_SETTINGS',
-                        'message': 'يجب تعيين أقصى عدد صفقات (1 على الأقل) قبل تفعيل التداول'
-                    }), 400
                 # ✅ فحص نوع المستخدم ووضع التداول لتحديد الاستثناءات
+                # ملاحظة: حجم الصفقة وعدد المراكز يتحكم فيها backend تلقائياً — لا نتحقق منها هنا
                 user_type_query = "SELECT user_type FROM users WHERE id = ?"
                 user_type_result = db.execute_query(user_type_query, (user_id,))
                 is_admin_user = user_type_result[0]['user_type'] == 'admin' if user_type_result else False
@@ -405,7 +375,13 @@ def register_mobile_settings_routes(bp, shared):
                         }), 400
 
                 # 2️⃣ ✅ جلب الرصيد - من DB للتجريبي، من Binance للحقيقي
-                trade_amount = data.get('tradeAmount', 100.0)
+                # trade_amount: يُقرأ من DB إذا لم يُرسَل في الطلب (backend يتحكم فيه)
+                if 'tradeAmount' in data:
+                    trade_amount = float(data['tradeAmount'])
+                else:
+                    _amt_q = "SELECT trade_amount FROM user_settings WHERE user_id = ? AND is_demo = ?"
+                    _amt_r = db.execute_query(_amt_q, (user_id, current_is_demo))
+                    trade_amount = float(_amt_r[0]['trade_amount'] or 100.0) if _amt_r else 100.0
                 available_balance = 0.0
                 binance_error = None
 
@@ -472,8 +448,9 @@ def register_mobile_settings_routes(bp, shared):
 
                 logger.info(f"✅ المستخدم {user_id}: تفعيل التداول - رصيد حر: {available_balance:.2f} USDT")
 
-            # ✅ Validation لحد الخسارة اليومي (نظام هجين)
-            max_daily_loss = data.get('maxDailyLoss') or data.get('maxDailyLossPct') or data.get('max_daily_loss_pct', 10.0)
+            # ✅ Validation لحد الخسارة اليومي — لا نكتبه إلا إذا أُرسِل صراحةً في الطلب
+            _raw_mdl = data.get('maxDailyLoss') or data.get('maxDailyLossPct') or data.get('max_daily_loss_pct')
+            max_daily_loss = float(_raw_mdl) if _raw_mdl is not None else None
             if max_daily_loss is not None:
                 # فرض الحدود من النظام (5%-15%)
                 if max_daily_loss < 5.0:
@@ -511,7 +488,7 @@ def register_mobile_settings_routes(bp, shared):
                 'stopLossPercentage': float(stop_loss_value),
                 'takeProfitPercentage': float(take_profit_value),
                 'trailingDistance': float(data.get('trailingDistance', 3.0)),
-                'maxDailyLossPct': float(max_daily_loss),
+                'maxDailyLossPct': float(max_daily_loss) if max_daily_loss is not None else None,
                 'maxConcurrentTrades': int(data.get('maxConcurrentTrades', 5)),
                 'tradingMode': effective_mode,
                 'activePortfolio': 'demo' if target_is_demo else 'real',
@@ -519,24 +496,34 @@ def register_mobile_settings_routes(bp, shared):
             }
 
             if existing and len(existing) > 0:
-                # تحديث الإعدادات الموجودة للمحفظة المستهدفة
-                update_query = """
+                # ✅ تحديث فقط الحقول الموجودة في الطلب — لا نكتب defaults للحقول غير المرسلة
+                field_map = {}
+                if 'tradingEnabled' in data:
+                    field_map['trading_enabled'] = bool(data['tradingEnabled'])
+                if 'tradeAmount' in data:
+                    field_map['trade_amount'] = float(data['tradeAmount'])
+                if 'positionSizePercentage' in data:
+                    field_map['position_size_percentage'] = float(data['positionSizePercentage'])
+                if 'riskLevel' in data:
+                    field_map['risk_level'] = str(data['riskLevel'])
+                if any(k in data for k in ('stopLossPercentage', 'stopLossPct', 'stop_loss_pct')):
+                    field_map['stop_loss_pct'] = float(stop_loss_value)
+                if any(k in data for k in ('takeProfitPercentage', 'takeProfitPct', 'take_profit_pct')):
+                    field_map['take_profit_pct'] = float(take_profit_value)
+                if 'trailingDistance' in data:
+                    field_map['trailing_distance'] = float(data['trailingDistance'])
+                if 'maxConcurrentTrades' in data:
+                    field_map['max_positions'] = int(data['maxConcurrentTrades'])
+                if max_daily_loss is not None:
+                    field_map['max_daily_loss_pct'] = float(max_daily_loss)
+                field_map['trading_mode'] = effective_mode  # دائماً نحدّث وضع التداول
+                set_clauses = ', '.join(f"{k} = ?" for k in field_map.keys())
+                update_query = f"""
                     UPDATE user_settings
-                    SET trading_enabled = ?, trade_amount = ?, position_size_percentage = ?,
-                        risk_level = ?, stop_loss_pct = ?, take_profit_pct = ?,
-                        trailing_distance = ?, max_positions = ?, max_daily_loss_pct = ?,
-                        trading_mode = ?, updated_at = CURRENT_TIMESTAMP
+                    SET {set_clauses}, updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND is_demo = ?
                 """
-                db.execute_query(update_query, (
-                    data.get('tradingEnabled', False), data.get('tradeAmount', 100.0),
-                    data.get('positionSizePercentage', 10.0),
-                    data.get('riskLevel', 'medium'),
-                    stop_loss_value, take_profit_value,
-                    data.get('trailingDistance', 3.0),
-                    data.get('maxConcurrentTrades', 5),
-                    max_daily_loss, effective_mode, user_id, target_is_demo
-                ))
+                db.execute_query(update_query, (*field_map.values(), user_id, target_is_demo))
             else:
                 # إنشاء إعدادات جديدة للمحفظة المستهدفة
                 insert_query = """
@@ -547,11 +534,17 @@ def register_mobile_settings_routes(bp, shared):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """
                 db.execute_query(insert_query, (
-                    user_id, target_is_demo, data.get('tradingEnabled', False), 
-                    data.get('tradeAmount', 100.0), data.get('positionSizePercentage', 10.0),
-                    stop_loss_value, take_profit_value,
-                    data.get('trailingDistance', 3.0), data.get('maxConcurrentTrades', 5), 
-                    data.get('riskLevel', 'medium'), max_daily_loss, effective_mode
+                    user_id, target_is_demo,
+                    bool(data.get('tradingEnabled', False)),
+                    float(data.get('tradeAmount', 100.0)),
+                    float(data.get('positionSizePercentage', 12.0)),  # backend default: 12%
+                    float(data.get('stopLossPercentage', data.get('stopLossPct', 1.0))),  # backend default: 1%
+                    float(data.get('takeProfitPercentage', data.get('takeProfitPct', 2.0))),  # backend default: 2%
+                    float(data.get('trailingDistance', 0.4)),  # backend default: 0.4%
+                    int(data.get('maxConcurrentTrades', 5)),
+                    str(data.get('riskLevel', 'medium')),
+                    float(max_daily_loss) if max_daily_loss is not None else 3.0,  # backend enforces 3%
+                    effective_mode
                 ))
                 if not target_is_demo:
                     initial_balance = 0.0

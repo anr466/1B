@@ -10,7 +10,6 @@ import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
-import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
@@ -49,15 +48,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   SettingsModel? _settings;
   String _tradingMode = 'demo';
   bool _tradingEnabled = false;
-  double _positionSize = 10;
-  int _maxPositions = 3;
-  double _stopLoss = 2.0;
-  double _takeProfit = 4.0;
-  double _trailingDistance = 3.0;
-  double _maxDailyLoss = 10;
-  bool _isSaving = false;
   bool _isSwitchingMode = false;
-  bool _hasChanges = false;
 
   // التحقق من اكتمال إعدادات التداول - النظام يديرها تلقائياً الآن
   bool get _isTradingSettingsValid {
@@ -66,16 +57,16 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   }
 
   void _initFromSettings(SettingsModel s) {
-    if (_settings != null) return;
+    final shouldSync =
+        _settings == null ||
+        _settings!.activePortfolio != s.activePortfolio ||
+        _settings!.tradingEnabled != s.tradingEnabled;
+
+    if (!shouldSync) return;
+
     _settings = s;
-    _tradingMode = s.tradingMode;
+    _tradingMode = s.activePortfolio;
     _tradingEnabled = s.tradingEnabled;
-    _positionSize = s.positionSizePct;
-    _maxPositions = s.maxPositions;
-    _stopLoss = s.stopLossPct.clamp(0.5, 10.0);
-    _takeProfit = s.takeProfitPct.clamp(AppConstants.minTakeProfitPct, AppConstants.maxTakeProfitPct);
-    _trailingDistance = s.trailingDistancePct.clamp(0.5, 5.0);
-    _maxDailyLoss = s.maxDailyLossPct.clamp(5.0, 15.0);
     ref.read(adminPortfolioModeProvider.notifier).state = s.activePortfolio;
   }
 
@@ -142,7 +133,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
     if (!mounted) return;
     setState(() {
       _tradingEnabled = v;
-      _hasChanges = true;
     });
     await _save();
   }
@@ -151,23 +141,15 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
     final auth = ref.read(authProvider);
     if (auth.user == null) return;
 
-    setState(() => _isSaving = true);
     try {
       final repo = ref.read(settingsRepositoryProvider);
       final mode = auth.isAdmin ? ref.read(adminPortfolioModeProvider) : null;
       final result = await repo.updateSettings(auth.user!.id, {
         'tradingEnabled': _tradingEnabled,
-        'positionSizePercentage': _positionSize,
-        'maxConcurrentTrades': _maxPositions,
-        'stopLossPercentage': _stopLoss,
-        'takeProfitPercentage': _takeProfit,
-        'trailingDistance': _trailingDistance,
-        'maxDailyLoss': _maxDailyLoss,
       }, mode: mode);
 
       if (!mounted) return;
       if (result['success'] == true) {
-        setState(() => _hasChanges = false);
         ref.read(accountTradingProvider.notifier).load();
         AppSnackbar.show(
           context,
@@ -195,8 +177,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
         message: UxMessages.error,
         type: SnackType.error,
       );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -284,121 +264,31 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                 _DailyRiskCard(dailyStatus: ref.watch(dailyRiskStatusProvider)),
                 const SizedBox(height: SpacingTokens.md),
 
-                // حد الخسارة اليومية
                 AppCard(
                   padding: const EdgeInsets.all(SpacingTokens.md),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'حد الخسارة اليومية',
-                            style: TypographyTokens.body(cs.onSurface),
-                          ),
-                          Text(
-                            '${_maxDailyLoss.toStringAsFixed(0)}%',
-                            style: TypographyTokens.body(
-                              cs.primary,
-                            ).copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: SpacingTokens.xs),
                       Text(
-                        'يوقف التداول تلقائياً عند تجاوز هذه النسبة من رصيدك',
+                        'تنبيه مهم',
+                        style: TypographyTokens.body(cs.onSurface),
+                      ),
+                      const SizedBox(height: SpacingTokens.xxs),
+                      Text(
+                        'هذه الشاشة تتحكم فقط في تفعيل التداول واختيار المحفظة النشطة.',
                         style: TypographyTokens.caption(
                           cs.onSurface.withValues(alpha: 0.5),
                         ),
                       ),
-                      Slider(
-                        value: _maxDailyLoss,
-                        min: 5,
-                        max: 15,
-                        divisions: 10,
-                        label: '${_maxDailyLoss.toStringAsFixed(0)}%',
-                        onChanged: (v) => setState(() {
-                          _maxDailyLoss = v;
-                          _hasChanges = true;
-                        }),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '5% (حماية)',
-                            style: TypographyTokens.caption(
-                              cs.onSurface.withValues(alpha: 0.4),
-                            ),
-                          ),
-                          Text(
-                            '15% (مرونة)',
-                            style: TypographyTokens.caption(
-                              cs.onSurface.withValues(alpha: 0.4),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: SpacingTokens.xs),
+                      Text(
+                        'منطق الدخول والخروج وحجم الصفقة الوقائي يدار من محرك التداول الخلفي والاستراتيجية النشطة، لذلك لا نسمح بتعديل هذه القيم من الواجهة حتى لا يحدث تعارض يسبب خسارة أو سلوكاً مضللاً.',
+                        style: TypographyTokens.caption(
+                          cs.onSurface.withValues(alpha: 0.4),
+                        ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: SpacingTokens.md),
-
-                // وقف الخسارة
-                _SliderCard(
-                  label: 'وقف الخسارة',
-                  caption: 'يُغلق الصفقة تلقائياً عند الوصول لهذه الخسارة',
-                  value: _stopLoss,
-                  min: 0.5,
-                  max: 10.0,
-                  divisions: 19,
-                  suffix: '%',
-                  fractionDigits: 1,
-                  minLabel: '0.5%',
-                  maxLabel: '10%',
-                  onChanged: (v) => setState(() {
-                    _stopLoss = v;
-                    _hasChanges = true;
-                  }),
-                ),
-                const SizedBox(height: SpacingTokens.md),
-
-                // جني الأرباح
-                _SliderCard(
-                  label: 'جني الأرباح',
-                  caption: 'يُغلق الصفقة تلقائياً عند تحقيق هذا الربح',
-                  value: _takeProfit,
-                  min: AppConstants.minTakeProfitPct,
-                  max: AppConstants.maxTakeProfitPct,
-                  divisions: 49,
-                  suffix: '%',
-                  fractionDigits: 1,
-                  minLabel: '${AppConstants.minTakeProfitPct.toInt()}%',
-                  maxLabel: '${AppConstants.maxTakeProfitPct.toInt()}%',
-                  onChanged: (v) => setState(() {
-                    _takeProfit = v;
-                    _hasChanges = true;
-                  }),
-                ),
-                const SizedBox(height: SpacingTokens.md),
-
-                // الوقف المتحرك
-                _SliderCard(
-                  label: 'الوقف المتحرك (Trailing)',
-                  caption: 'مسافة الوقف المتحرك من السعر الحالي',
-                  value: _trailingDistance,
-                  min: 0.5,
-                  max: 5.0,
-                  divisions: 9,
-                  suffix: '%',
-                  fractionDigits: 1,
-                  minLabel: '0.5%',
-                  maxLabel: '5%',
-                  onChanged: (v) => setState(() {
-                    _trailingDistance = v;
-                    _hasChanges = true;
-                  }),
                 ),
                 const SizedBox(height: SpacingTokens.md),
 
@@ -430,14 +320,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: SpacingTokens.xl),
-
-                // Save
-                AppButton(
-                  label: 'حفظ الإعدادات',
-                  onPressed: _hasChanges ? _save : null,
-                  isLoading: _isSaving,
                 ),
                 const SizedBox(height: SpacingTokens.xl),
               ],
