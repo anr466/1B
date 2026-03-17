@@ -170,7 +170,7 @@ def register_mobile_auth_routes(bp, shared):
                     conn.execute("""
                         INSERT INTO user_devices
                         (user_id, device_id, device_name, device_type, fcm_token, created_at)
-                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                         ON CONFLICT (user_id, device_id) DO UPDATE SET
                             device_name = EXCLUDED.device_name,
                             device_type = EXCLUDED.device_type,
@@ -229,11 +229,11 @@ def register_mobile_auth_routes(bp, shared):
                 with db_manager.get_write_connection() as conn:
                     # توحيد التخزين في جدول fcm_tokens (المستخدم + التوكن فريد)
                     conn.execute(
-                        "DELETE FROM fcm_tokens WHERE user_id = ? OR fcm_token = ?",
+                        "DELETE FROM fcm_tokens WHERE user_id = %s OR fcm_token = %s",
                         (user_id, fcm_token)
                     )
                     conn.execute(
-                        "INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                        "INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)",
                         (user_id, fcm_token, 'android')
                     )
                     conn.commit()
@@ -273,12 +273,12 @@ def register_mobile_auth_routes(bp, shared):
                 with db_manager.get_write_connection() as conn:
                     if fcm_token:
                         conn.execute(
-                            "DELETE FROM fcm_tokens WHERE user_id = ? AND fcm_token = ?",
+                            "DELETE FROM fcm_tokens WHERE user_id = %s AND fcm_token = %s",
                             (user_id, fcm_token)
                         )
                     else:
                         conn.execute(
-                            "DELETE FROM fcm_tokens WHERE user_id = ?",
+                            "DELETE FROM fcm_tokens WHERE user_id = %s",
                             (user_id,)
                         )
                     conn.commit()

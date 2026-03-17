@@ -83,13 +83,13 @@ def register_user_fcm_token(user_id: str, fcm_token: str, platform: str = 'andro
             # (نقل الجهاز بين حسابات يجب ألا يفشل بسبب UNIQUE constraint)
             conn.execute("""
                 DELETE FROM fcm_tokens 
-                WHERE user_id = ? OR fcm_token = ?
+                WHERE user_id = %s OR fcm_token = %s
             """, (user_id, fcm_token))
             
             # إضافة التوكن الجديد
             conn.execute("""
                 INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
             """, (user_id, fcm_token, platform))
             
             conn.commit()
@@ -152,12 +152,12 @@ def unregister_user_fcm_token(user_id: str, fcm_token: str = None) -> bool:
             if fcm_token:
                 conn.execute("""
                     DELETE FROM fcm_tokens 
-                    WHERE user_id = ? AND fcm_token = ?
+                    WHERE user_id = %s AND fcm_token = %s
                 """, (user_id, fcm_token))
             else:
                 conn.execute("""
                     DELETE FROM fcm_tokens 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (user_id,))
             
             conn.commit()

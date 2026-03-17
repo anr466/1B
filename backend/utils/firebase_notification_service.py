@@ -69,7 +69,6 @@ class FirebaseNotificationService:
         if _DB_OK:
             try:
                 self._db = DatabaseManager()
-                self._ensure_device_table()
             except Exception as e:
                 logger.warning(f"⚠️ فشل تهيئة قاعدة البيانات: {e}")
 
@@ -99,52 +98,27 @@ class FirebaseNotificationService:
             logger.error("❌ فشل تهيئة Firebase Admin: %s", exc)
             self._available = False
 
-    def _ensure_device_table(self) -> None:
-        """إنشاء جدول user_devices إذا لم يكن موجوداً"""
-        if not self._db:
-            return
-        try:
-            with self._db.get_write_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS user_devices (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER NOT NULL,
-                        fcm_token TEXT NOT NULL,
-                        platform VARCHAR(20) DEFAULT 'android',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        CONSTRAINT user_devices_token_unique UNIQUE (fcm_token)
-                    )
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_user_devices_user_id
-                    ON user_devices (user_id)
-                """)
-        except Exception as e:
-            logger.debug(f"_ensure_device_table: {e}")
-
     def is_available(self) -> bool:
         return self._available
 
     # ─── Token Management ──────────────────────────────────────
 
     def register_token(self, user_id: int, fcm_token: str, platform: str = "android") -> bool:
-        """تسجيل FCM token للمستخدم"""
+        """تسجيل FCM token للمستخدم في جدول fcm_tokens"""
         if not fcm_token or not self._db:
             return False
         try:
             with self._db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO user_devices (user_id, fcm_token, platform, updated_at)
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (fcm_token)
-                    DO UPDATE SET
-                        user_id = EXCLUDED.user_id,
-                        platform = EXCLUDED.platform,
-                        updated_at = CURRENT_TIMESTAMP
-                """, (user_id, fcm_token, platform))
+                # حذف أي token قديم لنفس المستخدم أو نفس الجهاز
+                cursor.execute(
+                    "DELETE FROM fcm_tokens WHERE user_id = %s OR fcm_token = %s",
+                    (user_id, fcm_token)
+                )
+                cursor.execute(
+                    "INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)",
+                    (user_id, fcm_token, platform)
+                )
             logger.debug(f"✅ FCM token مسجّل للمستخدم {user_id}")
             return True
         except Exception as e:
@@ -152,14 +126,14 @@ class FirebaseNotificationService:
             return False
 
     def unregister_token(self, fcm_token: str) -> bool:
-        """حذف FCM token"""
+        """حذف FCM token من fcm_tokens"""
         if not fcm_token or not self._db:
             return False
         try:
             with self._db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "DELETE FROM user_devices WHERE fcm_token = %s",
+                    "DELETE FROM fcm_tokens WHERE fcm_token = %s",
                     (fcm_token,)
                 )
             return True
@@ -168,14 +142,14 @@ class FirebaseNotificationService:
             return False
 
     def get_user_tokens(self, user_id: int) -> List[str]:
-        """جلب كل FCM tokens للمستخدم"""
+        """جلب كل FCM tokens للمستخدم من fcm_tokens"""
         if not self._db:
             return []
         try:
             with self._db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT fcm_token FROM user_devices WHERE user_id = %s",
+                    "SELECT fcm_token FROM fcm_tokens WHERE user_id = %s",
                     (user_id,)
                 )
                 rows = cursor.fetchall()
@@ -263,14 +237,14 @@ class FirebaseNotificationService:
             except Exception as e:
                 logger.warning(f"⚠️ فشل إرسال FCM: {e}")
 
-        # حذف الـ tokens غير الصالحة من قاعدة البيانات
+        # حذف الـ tokens غير الصالحة من fcm_tokens
         if invalid_tokens and self._db:
             try:
                 with self._db.get_write_connection() as conn:
                     cursor = conn.cursor()
                     for t in invalid_tokens:
                         cursor.execute(
-                            "DELETE FROM user_devices WHERE fcm_token = %s", (t,)
+                            "DELETE FROM fcm_tokens WHERE fcm_token = %s", (t,)
                         )
             except Exception:
                 pass
