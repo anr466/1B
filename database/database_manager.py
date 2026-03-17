@@ -139,6 +139,7 @@ def _translate_datetime_literals(sql: str) -> str:
     sql = re.sub(r"""datetime\(\s*['"]now['"]\s*\)""", 'CURRENT_TIMESTAMP', sql, flags=re.IGNORECASE)
     sql = re.sub(r"""date\(\s*['"]now['"]\s*\)""", 'CURRENT_DATE', sql, flags=re.IGNORECASE)
     sql = re.sub(r'\bdatetime\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)', r'\1', sql, flags=re.IGNORECASE)
+    sql = re.sub(r'\bDATE\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)', r'\1::date', sql, flags=re.IGNORECASE)
     return sql
 
 

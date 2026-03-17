@@ -89,3 +89,7 @@ docker compose up -d --build
 - DRY: Single source
 - All layers sync
 - Parallel execution preferred
+
+
+## System_overview
+- /Users/anr/Desktop/trading_ai_bot-1/.TRADING_BOT_SYSTEM_DESIGN_v1.2.md 

@@ -127,7 +127,7 @@ class DbNotificationsMixin:
                 existing = conn.execute("""
                     SELECT id FROM user_devices WHERE user_id = ? AND push_token = ?
                 """, (user_id, fcm_token)).fetchone()
-                
+
                 if not existing:
                     device_id = f"device_{user_id}_{int(time.time())}"
                     conn.execute("""
@@ -141,6 +141,12 @@ class DbNotificationsMixin:
                         SET is_trusted = 1, last_login = datetime('now')
                         WHERE user_id = ? AND push_token = ?
                     """, (user_id, fcm_token))
+
+                conn.execute("""
+                    INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at)
+                    VALUES (?, ?, ?, datetime('now'))
+                    ON CONFLICT (fcm_token) DO UPDATE SET platform = EXCLUDED.platform
+                """, (user_id, fcm_token, platform))
                 conn.commit()
                 return True
         except Exception as e:
@@ -154,6 +160,10 @@ class DbNotificationsMixin:
                 conn.execute("""
                     DELETE FROM fcm_tokens 
                     WHERE user_id = ? AND fcm_token = ?
+                """, (user_id, fcm_token))
+                conn.execute("""
+                    DELETE FROM user_devices
+                    WHERE user_id = ? AND push_token = ?
                 """, (user_id, fcm_token))
                 conn.commit()
                 return True
