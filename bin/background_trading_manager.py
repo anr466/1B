@@ -684,9 +684,17 @@ class BackgroundTradingManager:
         # ✅ FIX: تحديث StateManager JSON أيضاً (حل مشكلة Dual State)
         if self.state_manager:
             try:
+                trading_state_map_sm = {
+                    'running': 'RUNNING',
+                    'starting': 'STARTING',
+                    'stopped': 'STOPPED',
+                    'emergency_stopped': 'STOPPED',
+                    'error': 'ERROR',
+                }
                 state_data = {
                     'status': status,
                     'is_running': bool(is_running),
+                    'trading_state': trading_state_map_sm.get(status, 'STOPPED'),
                     'message': message or ('النظام يعمل' if status == 'running' else 'النظام متوقف'),
                     'pid': os.getpid() if is_running else None,
                 }
@@ -716,8 +724,7 @@ class BackgroundTradingManager:
         for attempt in range(max_retries):
             try:
                 with self.db_manager.get_write_connection() as conn:
-                    conn.execute("PRAGMA busy_timeout = 2000")  # 2 seconds max
-                    # ✅ FIX: تحديث trading_state أيضاً لمنع تضارب مع State Machine
+                    # ✅ FIX: removed PRAGMA busy_timeout (SQLite-only, breaks psycopg2)
                     trading_state_map = {
                         'running': 'RUNNING',
                         'starting': 'STARTING',
@@ -730,7 +737,7 @@ class BackgroundTradingManager:
                         UPDATE system_status 
                         SET status = %s, is_running = %s, trading_state = %s,
                             pid = %s,
-                            last_update = datetime('now'), message = %s
+                            last_update = CURRENT_TIMESTAMP, message = %s
                         WHERE id = 1
                     """, (status, is_running, trading_state,
                           os.getpid() if is_running else None,

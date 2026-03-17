@@ -113,12 +113,12 @@ class SystemStateRecovery:
                 if actual_running:
                     status = 'running'
                     trading_state = 'RUNNING'
-                    is_running = 1
+                    is_running = True
                     message = 'تم المزامنة: النظام يعمل'
                 else:
                     status = 'stopped'
                     trading_state = 'STOPPED'
-                    is_running = 0
+                    is_running = False
                     message = 'تم المزامنة: النظام متوقف'
                 
                 conn.execute("""
