@@ -4,6 +4,7 @@ import '../services/parsing_service.dart';
 /// منطق صافي — لا يستورد Flutter
 class SettingsModel {
   final bool tradingEnabled;
+  final double tradeAmount;
   final double positionSizePct;
   final int maxPositions;
   final double stopLossPct;
@@ -17,6 +18,7 @@ class SettingsModel {
 
   const SettingsModel({
     this.tradingEnabled = false,
+    this.tradeAmount = 100.0,
     this.positionSizePct = 0,
     this.maxPositions = 0,
     this.stopLossPct = 0,
@@ -36,6 +38,10 @@ class SettingsModel {
           json['trading_enabled'] == 1 ||
           json['tradingEnabled'] == true ||
           json['tradingEnabled'] == 1,
+      tradeAmount: ParsingService.asDouble(
+        json['trade_amount'] ?? json['tradeAmount'],
+        fallback: 100.0,
+      ),
       positionSizePct: ParsingService.asDouble(
         json['position_size_pct'] ??
             json['position_size_percentage'] ??
@@ -91,6 +97,7 @@ class SettingsModel {
 
   Map<String, dynamic> toJson() => {
     'tradingEnabled': tradingEnabled,
+    'tradeAmount': tradeAmount,
     'positionSizePercentage': positionSizePct,
     'maxConcurrentTrades': maxPositions,
     'stopLossPercentage': stopLossPct,
@@ -105,6 +112,7 @@ class SettingsModel {
 
   SettingsModel copyWith({
     bool? tradingEnabled,
+    double? tradeAmount,
     double? positionSizePct,
     int? maxPositions,
     double? stopLossPct,
@@ -118,6 +126,7 @@ class SettingsModel {
   }) {
     return SettingsModel(
       tradingEnabled: tradingEnabled ?? this.tradingEnabled,
+      tradeAmount: tradeAmount ?? this.tradeAmount,
       positionSizePct: positionSizePct ?? this.positionSizePct,
       maxPositions: maxPositions ?? this.maxPositions,
       stopLossPct: stopLossPct ?? this.stopLossPct,

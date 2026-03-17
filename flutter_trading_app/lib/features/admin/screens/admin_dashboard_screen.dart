@@ -97,6 +97,16 @@ class AdminDashboardScreen extends ConsumerWidget {
               _actionItem(
                 context,
                 cs,
+                BrandIcons.chart,
+                'التحكم في التداول',
+                RouteNames.tradingControl,
+              ),
+
+              const SizedBox(height: SpacingTokens.sm),
+
+              _actionItem(
+                context,
+                cs,
                 BrandIcons.history,
                 'سجلات النظام',
                 RouteNames.systemLogs,

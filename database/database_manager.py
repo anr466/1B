@@ -62,7 +62,7 @@ POSTGRES_UPSERT_CONFLICTS = {
     'biometric_auth': ['user_id'],
     'pending_verifications': ['user_id', 'action'],
     'user_binance_keys': ['user_id'],
-    'successful_coins': ['symbol'],
+    'successful_coins': ['symbol', 'strategy', 'timeframe'],
     'active_positions': ['user_id', 'symbol', 'strategy', 'is_demo'],
     'trading_signals': ['symbol', 'strategy', 'timeframe'],
     'portfolio_growth_history': ['user_id', 'date', 'is_demo'],

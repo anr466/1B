@@ -109,10 +109,13 @@ class DailyResetScheduler:
                 """, (user_id, '%daily_loss%'))
                 
                 if recent_logs:
-                    # إعادة تفعيل التداول
-                    self.db.update_trading_settings(user_id, {'trading_enabled': True})
+                    # إعادة تفعيل التداول لكلا المحفظتين (demo و real)
+                    for portfolio_is_demo in (False, True):
+                        self.db.update_trading_settings(
+                            user_id, {'trading_enabled': True}, is_demo=portfolio_is_demo
+                        )
                     self.logger.info(f"✅ تم إعادة تفعيل التداول للمستخدم {user_id} (يوم جديد)")
-                    
+
                     # تسجيل في activity_logs
                     self.db.add_activity_log(
                         user_id=user_id,

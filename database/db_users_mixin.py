@@ -39,37 +39,32 @@ class DbUsersMixin:
 
     def authenticate_user(self, username: str, password: str):
         """التحقق من صحة بيانات المستخدم"""
-        import hashlib
-        
+        from backend.utils.password_utils import verify_password
+
         self.logger.info(f"محاولة تسجيل دخول للمستخدم: {username}")
-        
+
         user = self.get_user_by_username(username)
         if user:
             self.logger.info(f"تم العثور على المستخدم: {username} (ID: {user.get('id')})")
-            
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
+
             stored_hash = user.get('password_hash')
-            
-            self.logger.info(f"Hash المرسل: {password_hash[:20]}...")
-            self.logger.info(f"Hash المحفوظ: {stored_hash[:20] if stored_hash else 'None'}...")
-            
-            if stored_hash == password_hash:
+            if stored_hash and verify_password(password, stored_hash):
                 self.logger.info(f"تسجيل دخول ناجح للمستخدم: {username}")
                 return user
             else:
                 self.logger.warning(f"كلمة المرور غير صحيحة للمستخدم: {username}")
         else:
             self.logger.warning(f"المستخدم غير موجود: {username}")
-        
+
         return None
 
     def create_user(self, username: str, email: str, password: str):
         """إنشاء مستخدم جديد مع إعدادات افتراضية"""
         try:
-            import hashlib
-            
+            from backend.utils.password_utils import hash_password
+
             with self.get_write_connection() as conn:
-                password_hash = hashlib.sha256(password.encode()).hexdigest()
+                password_hash = hash_password(password)
                 
                 self.logger.info(f"إنشاء مستخدم جديد: {username}")
                 
@@ -264,7 +259,7 @@ class DbUsersMixin:
             'updated_at': None
         }
 
-    def update_trading_settings(self, user_id: int, settings: Dict[str, Any]) -> bool:
+    def update_trading_settings(self, user_id: int, settings: Dict[str, Any], is_demo: bool = False) -> bool:
         """تحديث إعدادات التداول مع التحقق من الصحة - جميع الحقول في user_settings"""
         try:
             settings_updates = {}
@@ -305,10 +300,10 @@ class DbUsersMixin:
                 
             if 'trade_amount' in settings:
                 amount = float(settings['trade_amount'])
-                if 10.0 <= amount <= 1000.0:
+                if 5.0 <= amount <= 10000.0:
                     settings_updates['trade_amount'] = amount
                 else:
-                    raise ValueError(f"مبلغ التداول يجب أن يكون بين 10 و 1000")
+                    raise ValueError(f"مبلغ التداول يجب أن يكون بين 5 و 10000")
             
             if 'capital_percentage' in settings:
                 cap_pct = float(settings['capital_percentage'])
@@ -346,8 +341,8 @@ class DbUsersMixin:
                     update_fields.append("updated_at = CURRENT_TIMESTAMP")
                     values = list(filtered_updates.values()) + [user_id]
                     
-                    query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ?"
-                    conn.execute(query, values)
+                    query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ? AND is_demo = ?"
+                    conn.execute(query, values + [is_demo])
                     self.logger.info(f"تم تحديث إعدادات التداول للمستخدم {user_id}")
             
             return True
@@ -362,9 +357,20 @@ class DbUsersMixin:
         """الحصول على الملف الشخصي الكامل للمستخدم"""
         with self.get_connection() as conn:
             row = conn.execute("""
-                SELECT * FROM user_full_profile WHERE id = ?
+                SELECT u.id, u.username, u.email, u.name, u.phone_number,
+                       u.user_type, u.is_active, u.email_verified,
+                       u.is_phone_verified, u.preferred_verification_method,
+                       u.created_at, u.updated_at, u.last_login_at,
+                       us.trading_enabled, us.trading_mode, us.trade_amount,
+                       us.position_size_percentage, us.stop_loss_pct,
+                       us.take_profit_pct, us.max_positions,
+                       us.max_daily_loss_pct, us.risk_level, us.is_demo
+                FROM users u
+                LEFT JOIN user_settings us
+                    ON us.user_id = u.id AND us.is_demo = FALSE
+                WHERE u.id = ?
             """, (user_id,)).fetchone()
-            
+
             if row:
                 return dict(row)
             return {}
