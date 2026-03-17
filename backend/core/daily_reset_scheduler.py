@@ -103,10 +103,10 @@ class DailyResetScheduler:
                     SELECT action, details 
                     FROM activity_logs 
                     WHERE user_id = ? 
-                    AND action LIKE '%daily_loss%'
+                    AND action LIKE ?
                     ORDER BY created_at DESC 
                     LIMIT 1
-                """, (user_id,))
+                """, (user_id, '%daily_loss%'))
                 
                 if recent_logs:
                     # إعادة تفعيل التداول

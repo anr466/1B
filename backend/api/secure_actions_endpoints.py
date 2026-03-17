@@ -123,13 +123,18 @@ def _get_pending_verification(user_id, action):
             WHERE user_id = ? AND action = ?
         """, (user_id, action)).fetchone()
         if row:
+            expires_raw = row[1] if isinstance(row, (list, tuple)) else (row['expires_at'] if 'expires_at' in row.keys() else row[1])
+            if isinstance(expires_raw, datetime):
+                expires_dt = expires_raw
+            else:
+                expires_dt = datetime.fromisoformat(str(expires_raw))
             return {
-                'otp': row[0],
-                'expires': datetime.fromisoformat(row[1]),
-                'method': row[2],
-                'new_value': row[3],
-                'old_password': row[4],
-                'attempts': row[5],
+                'otp': row[0] if isinstance(row, (list, tuple)) else row['otp'],
+                'expires': expires_dt,
+                'method': row[2] if isinstance(row, (list, tuple)) else row['method'],
+                'new_value': row[3] if isinstance(row, (list, tuple)) else row['new_value'],
+                'old_password': row[4] if isinstance(row, (list, tuple)) else row['old_password'],
+                'attempts': row[5] if isinstance(row, (list, tuple)) else row['attempts'],
             }
     return None
 

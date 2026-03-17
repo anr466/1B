@@ -939,10 +939,16 @@ class DbPortfolioMixin:
 
             with self.get_write_connection() as conn:
                 conn.execute(
-                    """INSERT OR REPLACE INTO portfolio_growth_history
+                    """INSERT INTO portfolio_growth_history
                        (user_id, date, total_balance, daily_pnl, daily_pnl_percentage,
                         active_trades_count, created_at, is_demo)
-                       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
+                       ON CONFLICT (user_id, date, is_demo)
+                       DO UPDATE SET
+                           total_balance = EXCLUDED.total_balance,
+                           daily_pnl = EXCLUDED.daily_pnl,
+                           daily_pnl_percentage = EXCLUDED.daily_pnl_percentage,
+                           active_trades_count = EXCLUDED.active_trades_count""",
                     (user_id, today, total_balance, daily_pnl, daily_pnl_pct, active_count, is_demo)
                 )
                 conn.commit()

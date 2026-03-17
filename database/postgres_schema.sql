@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS user_binance_keys (
     api_key TEXT NOT NULL,
     api_secret TEXT NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
+    is_testnet BOOLEAN DEFAULT FALSE,
+    permissions TEXT,
+    last_verified TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -347,6 +350,33 @@ CREATE TABLE IF NOT EXISTS security_audit_log (
     status TEXT DEFAULT 'success',
     details TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pending_verifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    otp TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    method TEXT DEFAULT 'email',
+    new_value TEXT,
+    old_password TEXT,
+    attempts INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, action)
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_growth_history (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    total_balance DOUBLE PRECISION DEFAULT 0,
+    daily_pnl DOUBLE PRECISION DEFAULT 0,
+    daily_pnl_percentage DOUBLE PRECISION DEFAULT 0,
+    active_trades_count INTEGER DEFAULT 0,
+    is_demo BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, date, is_demo)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
