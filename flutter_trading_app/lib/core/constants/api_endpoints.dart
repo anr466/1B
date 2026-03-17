@@ -65,7 +65,11 @@ class ApiEndpoints {
 
   static String validateSettings(int userId) =>
       '/user/settings/$userId/validate';
-  static String updateSettings(int userId) => '/user/settings/$userId';
+  static String updateSettings(int userId, {String? mode}) {
+    var url = '/user/settings/$userId';
+    if (mode != null) url += '?mode=$mode';
+    return url;
+  }
   static String tradingMode(int userId) =>
       '/user/settings/trading-mode/$userId';
   static String binanceKeys(int userId) => '/user/binance-keys/$userId';

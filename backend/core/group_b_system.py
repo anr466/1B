@@ -625,6 +625,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         }
         
         try:
+            # 0. إعادة تحميل إعدادات المستخدم وحالة التداول من DB في كل دورة
+            self.user_settings = self._load_user_settings()
+            self.can_trade = self.user_settings.get('trading_enabled', False)
+            self.is_demo_trading = self._determine_trading_mode()
+
             # 1. تحديث المحفظة
             self.user_portfolio = self._load_user_portfolio()
             
