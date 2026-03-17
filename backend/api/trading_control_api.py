@@ -28,9 +28,11 @@ sys.path.insert(0, project_root)
 from config.logging_config import get_logger
 from backend.core.trading_state_machine import get_trading_state_machine
 from backend.utils.admin_auth import require_admin
+from database.database_manager import DatabaseManager
 
 trading_control_bp = Blueprint('trading_control', __name__, url_prefix='/admin/trading')
 logger = get_logger(__name__)
+db_manager = DatabaseManager()
 
 # Singleton state machine
 tsm = get_trading_state_machine()
@@ -84,9 +86,7 @@ def start_trading():
 
         # تنظيف السجلات القديمة عند بدء التداول
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            with db.get_write_connection() as conn:
+            with db_manager.get_write_connection() as conn:
                 cursor = conn.execute(
                     "DELETE FROM activity_logs WHERE created_at < (CURRENT_TIMESTAMP - INTERVAL '1 day')"
                 )

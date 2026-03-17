@@ -195,7 +195,7 @@ def get_background_status():
         
         # ✅ الخطوة 2: جلب حالة قاعدة البيانات (باستخدام DatabaseManager)
         db_status = {}
-        db = DatabaseManager()
+        db = db_manager
         
         try:
             with db.get_connection() as conn:

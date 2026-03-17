@@ -35,8 +35,7 @@ def register_mobile_notifications_routes(bp, shared):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             # ✅ دعم Pagination من التطبيق
             page = request.args.get('page', 1, type=int)
@@ -85,8 +84,7 @@ def register_mobile_notifications_routes(bp, shared):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             # تحديث جميع الإشعارات غير المقروءة إلى مقروءة في جدول notifications
             update_query = """
@@ -115,8 +113,7 @@ def register_mobile_notifications_routes(bp, shared):
     def mark_notification_read(notification_id):
         """تحديد إشعار كمقروء — مع تحقق من ملكية المستخدم"""
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             user_id = g.user_id
 
@@ -145,8 +142,7 @@ def register_mobile_notifications_routes(bp, shared):
             return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
 
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = db_manager
 
             with db.get_write_connection() as conn:
                 cursor = conn.cursor()

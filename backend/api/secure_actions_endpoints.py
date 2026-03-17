@@ -98,7 +98,7 @@ DEDICATED_ACCOUNT_ACTIONS = {
 
 def _save_pending_verification(user_id, action, otp, expires_at, method, new_value=None, old_password=None):
     """حفظ طلب تحقق معلق في قاعدة البيانات"""
-    db = DatabaseManager()
+    db = db_manager
     with db.get_write_connection() as conn:
         conn.execute("""
             INSERT INTO pending_verifications
@@ -115,7 +115,7 @@ def _save_pending_verification(user_id, action, otp, expires_at, method, new_val
 
 def _get_pending_verification(user_id, action):
     """جلب طلب تحقق معلق من قاعدة البيانات"""
-    db = DatabaseManager()
+    db = db_manager
     with db.get_connection() as conn:
         row = conn.execute("""
             SELECT otp, expires_at, method, new_value, old_password, attempts
@@ -140,7 +140,7 @@ def _get_pending_verification(user_id, action):
 
 def _update_pending_attempts(user_id, action, attempts):
     """تحديث عدد المحاولات"""
-    db = DatabaseManager()
+    db = db_manager
     with db.get_write_connection() as conn:
         conn.execute("""
             UPDATE pending_verifications SET attempts = ?
@@ -149,7 +149,7 @@ def _update_pending_attempts(user_id, action, attempts):
 
 def _update_pending_otp(user_id, action, otp):
     """تحديث رمز OTP (عند إرسال OTP فعلي من خدمة الإيميل)"""
-    db = DatabaseManager()
+    db = db_manager
     with db.get_write_connection() as conn:
         conn.execute("""
             UPDATE pending_verifications SET otp = ?
@@ -158,7 +158,7 @@ def _update_pending_otp(user_id, action, otp):
 
 def _delete_pending_verification(user_id, action):
     """حذف طلب تحقق معلق"""
-    db = DatabaseManager()
+    db = db_manager
     with db.get_write_connection() as conn:
         conn.execute("""
             DELETE FROM pending_verifications

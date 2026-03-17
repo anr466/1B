@@ -1011,11 +1011,9 @@ def get_trading_status():
 def get_background_trading_status():
     """حالة التداول الخلفي"""
     try:
-        db_manager = DatabaseManager()
-        
         # جلب حالة النظام من قاعدة البيانات
         try:
-            with db_manager.get_connection() as conn:
+            with db.get_connection() as conn:
                 status_row = conn.execute(
                     "SELECT trading_state, status, message FROM system_status WHERE id = 1"
                 ).fetchone()

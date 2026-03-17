@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/constants/ux_messages.dart';
 import 'package:trading_app/core/models/settings_model.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
@@ -72,7 +73,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
     _positionSize = s.positionSizePct;
     _maxPositions = s.maxPositions;
     _stopLoss = s.stopLossPct.clamp(0.5, 10.0);
-    _takeProfit = s.takeProfitPct.clamp(1.0, 20.0);
+    _takeProfit = s.takeProfitPct.clamp(AppConstants.minTakeProfitPct, AppConstants.maxTakeProfitPct);
     _trailingDistance = s.trailingDistancePct.clamp(0.5, 5.0);
     _maxDailyLoss = s.maxDailyLossPct.clamp(5.0, 15.0);
     ref.read(adminPortfolioModeProvider.notifier).state = s.activePortfolio;
@@ -153,6 +154,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
     setState(() => _isSaving = true);
     try {
       final repo = ref.read(settingsRepositoryProvider);
+      final mode = auth.isAdmin ? ref.read(adminPortfolioModeProvider) : null;
       final result = await repo.updateSettings(auth.user!.id, {
         'tradingEnabled': _tradingEnabled,
         'positionSizePercentage': _positionSize,
@@ -367,13 +369,13 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                   label: 'جني الأرباح',
                   caption: 'يُغلق الصفقة تلقائياً عند تحقيق هذا الربح',
                   value: _takeProfit,
-                  min: 1.0,
-                  max: 20.0,
-                  divisions: 38,
+                  min: AppConstants.minTakeProfitPct,
+                  max: AppConstants.maxTakeProfitPct,
+                  divisions: 49,
                   suffix: '%',
                   fractionDigits: 1,
-                  minLabel: '1%',
-                  maxLabel: '20%',
+                  minLabel: '${AppConstants.minTakeProfitPct.toInt()}%',
+                  maxLabel: '${AppConstants.maxTakeProfitPct.toInt()}%',
                   onChanged: (v) => setState(() {
                     _takeProfit = v;
                     _hasChanges = true;
