@@ -6,6 +6,8 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_icon_button.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
@@ -31,19 +33,19 @@ class ErrorDetailsScreen extends ConsumerWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'تفاصيل الخطأ #$errorId',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () => ref.invalidate(_errorDetailsProvider(errorId)),
-            ),
-          ],
-        ),
-        body: errorAsync.when(
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppScreenHeader(
+                title: 'تفاصيل الخطأ #$errorId',
+                showBack: true,
+                trailing: AppIconButton(
+                  icon: Icons.refresh_rounded,
+                  onTap: () => ref.invalidate(_errorDetailsProvider(errorId)),
+                ),
+              ),
+              Expanded(
+                child: errorAsync.when(
           loading: () => const Padding(
             padding: EdgeInsets.all(SpacingTokens.base),
             child: LoadingShimmer(itemCount: 6, itemHeight: 100),
@@ -102,6 +104,10 @@ class ErrorDetailsScreen extends ConsumerWidget {
                 const SizedBox(height: SpacingTokens.xl),
               ],
             ),
+          ),
+        ),
+              ),
+            ],
           ),
         ),
       ),

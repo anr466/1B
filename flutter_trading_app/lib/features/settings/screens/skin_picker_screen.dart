@@ -4,6 +4,8 @@ import 'package:trading_app/design/skins/skin_manager.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/main.dart';
 
@@ -21,11 +23,14 @@ class SkinPickerScreen extends ConsumerWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text('التصميم', style: TypographyTokens.h3(cs.onSurface)),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(SpacingTokens.base),
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppScreenHeader(title: 'التصميم', showBack: true),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(SpacingTokens.base),
           children: [
             Text(
               'اختر التصميم المفضل',
@@ -66,7 +71,7 @@ class SkinPickerScreen extends ConsumerWidget {
             const SizedBox(height: SpacingTokens.lg),
 
             // ─── Skins ──────────────────────────────
-            Text('التصاميم', style: TypographyTokens.label(cs.onSurface)),
+            const AppSectionLabel(text: 'التصاميم'),
             const SizedBox(height: SpacingTokens.sm),
 
             ...allSkins.map((skin) {
@@ -132,7 +137,11 @@ class SkinPickerScreen extends ConsumerWidget {
                 ),
               );
             }),
+                ],
+              ),
+            ),
           ],
+        ),
         ),
       ),
     );

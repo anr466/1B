@@ -6,6 +6,7 @@ import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
@@ -47,13 +48,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'إدارة المستخدمين',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-        ),
-        body: RefreshIndicator(
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppScreenHeader(title: 'إدارة المستخدمين', showBack: true),
+              Expanded(
+                child: RefreshIndicator(
           color: cs.primary,
           onRefresh: () async => ref.invalidate(adminUsersProvider),
           child: usersAsync.when(
@@ -249,6 +249,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 },
               );
             },
+          ),
+        ),
+              ),
+            ],
           ),
         ),
       ),

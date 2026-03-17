@@ -5,6 +5,8 @@ import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/navigation/route_names.dart';
@@ -37,19 +39,18 @@ class SystemLogsScreen extends ConsumerWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'أخطاء تحتاج تدخل',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-          actions: [
-            _ClearResolvedButton(
-              onDone: () => ref.invalidate(_activeErrorsProvider),
-            ),
-            const SizedBox(width: SpacingTokens.sm),
-          ],
-        ),
-        body: RefreshIndicator(
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppScreenHeader(
+                title: 'أخطاء تحتاج تدخل',
+                showBack: true,
+                trailing: _ClearResolvedButton(
+                  onDone: () => ref.invalidate(_activeErrorsProvider),
+                ),
+              ),
+              Expanded(
+                child: RefreshIndicator(
           color: cs.primary,
           onRefresh: () async => ref.invalidate(_activeErrorsProvider),
           child: errorsAsync.when(
@@ -70,6 +71,10 @@ class SystemLogsScreen extends ConsumerWidget {
                 itemBuilder: (_, i) => _ErrorCard(error: errors[i], ref: ref),
               );
             },
+          ),
+        ),
+              ),
+            ],
           ),
         ),
       ),
@@ -121,20 +126,18 @@ class _ClearResolvedButton extends ConsumerWidget {
           final deleted = await repo.clearResolvedErrors();
           onDone();
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('تم حذف $deleted سجل'),
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppSnackbar.show(
+              context,
+              message: 'تم حذف $deleted سجل',
+              type: SnackType.success,
             );
           }
         } catch (_) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('تعذر إتمام العملية'),
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppSnackbar.show(
+              context,
+              message: 'تعذر إتمام العملية',
+              type: SnackType.error,
             );
           }
         }
