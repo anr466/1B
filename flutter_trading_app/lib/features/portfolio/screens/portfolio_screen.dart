@@ -14,7 +14,6 @@ import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_info_row.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
-import 'package:trading_app/design/widgets/financial_metric_tile.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
@@ -36,7 +35,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       ref.invalidate(portfolioProvider);
-      ref.invalidate(statsProvider);
     });
   }
 
@@ -52,7 +50,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     final auth = ref.watch(authProvider);
     final isAdmin = auth.isAdmin;
     final portfolio = ref.watch(portfolioProvider);
-    final stats = ref.watch(statsProvider);
     final hideBalance = ref.watch(balanceVisibilityProvider);
     final portfolioMode = isAdmin
         ? ref.watch(adminPortfolioModeProvider)
@@ -240,74 +237,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                         context,
                         p,
                         hideBalance,
-                      ),
-                    ),
-
-                    const SizedBox(height: SpacingTokens.base),
-
-                    // ─── Stats Cards ──────────────────────
-                    stats.when(
-                      loading: () =>
-                          const LoadingShimmer(itemCount: 2, itemHeight: 80),
-                      error: (_, __) => const SizedBox.shrink(),
-                      data: (s) => Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'إجمالي الصفقات',
-                                  value: '${s.totalTrades}',
-                                ),
-                              ),
-                              const SizedBox(width: SpacingTokens.sm),
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'نسبة الفوز',
-                                  value: '${s.winRate.toStringAsFixed(1)}%',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: SpacingTokens.sm),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'أفضل صفقة',
-                                  value: '\$${s.bestTrade.toStringAsFixed(2)}',
-                                  isPositive: true,
-                                ),
-                              ),
-                              const SizedBox(width: SpacingTokens.sm),
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'أسوأ صفقة',
-                                  value: '\$${s.worstTrade.toStringAsFixed(2)}',
-                                  isPositive: false,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: SpacingTokens.sm),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'معامل الربح',
-                                  value: s.profitFactor.toStringAsFixed(2),
-                                ),
-                              ),
-                              const SizedBox(width: SpacingTokens.sm),
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'متوسط الربح',
-                                  value: '\$${s.averagePnl.toStringAsFixed(2)}',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
                       ),
                     ),
 
