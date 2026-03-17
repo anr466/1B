@@ -165,6 +165,18 @@ class BackgroundTradingManager:
             health_monitor.health_checkers["group_b"] = self._check_group_b_health
             health_monitor.health_checkers["background_manager"] = self._check_self_health
             
+            # ✅ FIX GAP 1+2: تشغيل Binance health-check loop + تسجيله في SystemHealthMonitor
+            # بدونه: لا يوجد ping دوري → لا reconnect تلقائي → binance_api = UNKNOWN دائماً
+            try:
+                from backend.core.binance_connector import get_binance_connector
+                from backend.utils.system_health_monitor import setup_binance_health_check
+                bc = get_binance_connector()
+                bc.start_health_check()  # 30s ping loop مع auto-reconnect + endpoint failover
+                setup_binance_health_check(bc)  # يسجّل binance_api في SystemHealthMonitor
+                logger.info("✅ تم تهيئة Binance health-check loop (كل 30 ثانية)")
+            except Exception as _binance_hc_err:
+                logger.warning(f"⚠️ فشل تهيئة Binance health-check: {_binance_hc_err}")
+            
             logger.info("✅ تم تهيئة نظام مراقبة الصحة والتعافي التلقائي")
             
         except Exception as e:

@@ -978,10 +978,22 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
     
     @contextmanager
     def get_connection(self):
-        """الحصول على اتصال جديد مباشرة (بدون pool)"""
+        """الحصول على اتصال جديد مع retry عند OperationalError (انقطاع مؤقت بـ PostgreSQL)"""
         conn = None
+        last_err = None
+        for attempt in range(3):
+            try:
+                conn = self._build_connection(timeout=60.0)
+                break
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    wait = 1.5 * (attempt + 1)
+                    self.logger.warning(f"⚠️ DB connect retry {attempt+1}/3 in {wait}s: {e}")
+                    time.sleep(wait)
+        if conn is None:
+            raise last_err
         try:
-            conn = self._build_connection(timeout=60.0)
             yield conn
         finally:
             if conn:
@@ -992,11 +1004,23 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
     
     @contextmanager 
     def get_write_connection(self):
-        """اتصال محمي للكتابة لتجنب التضارب"""
+        """اتصال محمي للكتابة مع retry عند OperationalError"""
         with self._write_lock:
             conn = None
+            last_err = None
+            for attempt in range(3):
+                try:
+                    conn = self._build_connection(timeout=60.0)
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt < 2:
+                        wait = 1.5 * (attempt + 1)
+                        self.logger.warning(f"⚠️ DB write connect retry {attempt+1}/3 in {wait}s: {e}")
+                        time.sleep(wait)
+            if conn is None:
+                raise last_err
             try:
-                conn = self._build_connection(timeout=60.0)
                 yield conn
                 conn.commit()
             except Exception as e:
