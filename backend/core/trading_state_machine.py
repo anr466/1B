@@ -240,6 +240,17 @@ class TradingStateMachine:
                 if 'heartbeat' in subsystems:
                     subsystems['heartbeat']['status'] = 'stopped'
 
+            # Binance connection status — safe import to avoid circular deps
+            binance_connected = False
+            binance_latency_ms = None
+            try:
+                from backend.core.binance_connector import get_binance_connector
+                bc = get_binance_connector()
+                binance_connected = bc.is_connected
+                binance_latency_ms = getattr(bc, 'latency_ms', None)
+            except Exception:
+                binance_connected = True  # assume OK if connector not available
+
             return {
                 'success': True,
                 'trading_state': trading_state,
@@ -262,6 +273,8 @@ class TradingStateMachine:
                 'last_error': last_error,
                 'subsystems': subsystems,
                 'reconcile_stats': self.reconcile_stats,
+                'binance_connected': binance_connected,
+                'binance_latency_ms': binance_latency_ms,
             }
 
         except Exception as e:
