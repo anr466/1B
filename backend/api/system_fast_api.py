@@ -68,7 +68,7 @@ def start_system():
                 conn.execute("""
                     UPDATE system_status 
                     SET trading_state = 'RUNNING',
-                        session_id = ?,
+                        session_id = %s,
                         mode = 'PAPER',
                         initiated_by = 'api_user',
                         last_update = CURRENT_TIMESTAMP

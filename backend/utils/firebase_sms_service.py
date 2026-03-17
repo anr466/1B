@@ -100,9 +100,9 @@ class FirebaseSMSHandler:
                     """
                     UPDATE users
                     SET is_phone_verified = 1,
-                        phone_number = COALESCE(NULLIF(?, ''), phone_number),
+                        phone_number = COALESCE(NULLIF(%s, ''), phone_number),
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    WHERE id = %s
                     """,
                     (phone_number or "", user_id),
                 )

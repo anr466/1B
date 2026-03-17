@@ -99,7 +99,7 @@ def _replace_qmark_params(sql: str) -> str:
             in_double = not in_double
             out.append(ch)
             continue
-        if ch == '?' and not in_single and not in_double:
+        if ch == '%s' and not in_single and not in_double:
             out.append('%s')
         else:
             out.append(ch)
@@ -1013,13 +1013,13 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
     def update_system_status(self, status: str, **kwargs):
         """تحديث حالة النظام العامة"""
         with self.get_write_connection() as conn:
-            update_fields = ["status = ?", "last_update = CURRENT_TIMESTAMP"]
+            update_fields = ["status = %s", "last_update = CURRENT_TIMESTAMP"]
             values = [status]
             
             for key, value in kwargs.items():
                 if key in ['group_b_status', 'total_coins_analyzed', 'successful_coins_count', 'system_uptime_seconds',
                           'trading_status', 'database_status']:
-                    update_fields.append(f"{key} = ?")
+                    update_fields.append(f"{key} = %s")
                     values.append(value)
             
             query = f"UPDATE system_status SET {', '.join(update_fields)} WHERE id = 1"
@@ -1041,7 +1041,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         with self.get_write_connection() as conn:
             conn.execute("""
                 INSERT INTO activity_logs (user_id, component, action, details, status)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             """, (user_id, component, action, details, status))
     
     def get_recent_activities(self, limit: int = 100, user_id: int = None) -> List[Dict[str, Any]]:
@@ -1050,15 +1050,15 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
             if user_id:
                 rows = conn.execute("""
                     SELECT * FROM activity_logs 
-                    WHERE user_id = ? OR user_id IS NULL
+                    WHERE user_id = %s OR user_id IS NULL
                     ORDER BY created_at DESC 
-                    LIMIT ?
+                    LIMIT %s
                 """, (user_id, limit)).fetchall()
             else:
                 rows = conn.execute("""
                     SELECT * FROM activity_logs 
                     ORDER BY created_at DESC 
-                    LIMIT ?
+                    LIMIT %s
                 """, (limit,)).fetchall()
         
         return [dict(row) for row in rows]
@@ -1091,12 +1091,12 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
             # تنظيف الإشارات القديمة المعالجة
             conn.execute("""
                 DELETE FROM trading_signals 
-                WHERE is_processed = TRUE AND generated_at < ?
+                WHERE is_processed = TRUE AND generated_at < %s
             """, (cutoff_date,))
             
             # تنظيف سجل الأنشطة القديم
             conn.execute("""
-                DELETE FROM activity_logs WHERE created_at < ?
+                DELETE FROM activity_logs WHERE created_at < %s
             """, (cutoff_date,))
             
             self.logger.info(f"تم تنظيف البيانات الأقدم من {days} يوم")
@@ -1159,30 +1159,30 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
             with self.get_write_connection() as conn:
                 # إعادة ضبط المحفظة باستخدام الأعمدة الموجودة فعلياً
                 portfolio_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? ORDER BY is_demo DESC, updated_at DESC LIMIT 1
+                    SELECT initial_balance FROM portfolio WHERE user_id = %s ORDER BY is_demo DESC, updated_at DESC LIMIT 1
                 """, (user_id,)).fetchone()
                 initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
                 conn.execute("""
                     UPDATE portfolio 
-                    SET total_balance = ?, available_balance = ?,
+                    SET total_balance = %s, available_balance = %s,
                         invested_balance = 0.0,
                         total_profit_loss = 0.0,
                         total_profit_loss_percentage = 0.0,
                         total_trades = 0, winning_trades = 0, losing_trades = 0,
-                        initial_balance = ?,
+                        initial_balance = %s,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (initial_balance, initial_balance, initial_balance, user_id))
                 
                 # حذف المراكز من active_positions
-                conn.execute("DELETE FROM active_positions WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM active_positions WHERE user_id = %s", (user_id,))
                 
                 # إعادة ضبط الإعدادات للافتراضية
                 conn.execute("""
                     UPDATE user_settings 
-                    SET trading_enabled = 0, 
+                    SET trading_enabled = FALSE, 
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (user_id,))
                 
                 self.logger.info(f"تم إعادة ضبط بيانات المستخدم {user_id}")

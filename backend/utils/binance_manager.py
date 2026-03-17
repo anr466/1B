@@ -60,13 +60,13 @@ class BinanceManager:
             
             with self.db_manager.get_write_connection() as conn:
                 # حذف المفاتيح القديمة إن وجدت
-                conn.execute("DELETE FROM user_binance_keys WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM user_binance_keys WHERE user_id = %s", (user_id,))
                 
                 # إدراج المفاتيح الجديدة
                 conn.execute("""
                     INSERT INTO user_binance_keys 
                     (user_id, api_key, api_secret, is_testnet, is_active)
-                    VALUES (?, ?, ?, ?, FALSE)
+                    VALUES (%s, %s, %s, %s, FALSE)
                 """, (user_id, api_key, encrypted_secret, is_testnet))
                 
             self.logger.info(f"تم حفظ مفاتيح API للمستخدم {user_id}")
@@ -105,9 +105,9 @@ class BinanceManager:
             with self.db_manager.get_write_connection() as conn:
                 conn.execute("""
                     UPDATE user_binance_keys SET is_active = TRUE, 
-                        permissions = ?, 
+                        permissions = %s, 
                         last_verified = CURRENT_TIMESTAMP
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (json.dumps(permissions), user_id))
             
             # مزامنة الرصيد
@@ -134,7 +134,7 @@ class BinanceManager:
                 row = conn.execute("""
                     SELECT api_key, api_secret, is_testnet, is_active, permissions, last_verified
                     FROM user_binance_keys 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (user_id,)).fetchone()
                 
                 if row:
@@ -198,7 +198,7 @@ class BinanceManager:
             
             with self.db_manager.get_write_connection() as conn:
                 # حذف الأرصدة القديمة
-                conn.execute("DELETE FROM user_binance_balance WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM user_binance_balance WHERE user_id = %s", (user_id,))
                 
                 # إدراج الأرصدة الجديدة
                 for balance in account_info['balances']:
@@ -212,7 +212,7 @@ class BinanceManager:
                         conn.execute("""
                             INSERT INTO user_binance_balance 
                             (user_id, asset, free_balance, locked_balance, total_balance)
-                            VALUES (?, ?, ?, ?, ?)
+                            VALUES (%s, %s, %s, %s, %s)
                         """, (user_id, asset, float(free), float(locked), float(total)))
                 
                 # تحديث المحفظة المحلية بالرصيد الحقيقي
@@ -226,7 +226,7 @@ class BinanceManager:
                 # تحديث أو إنشاء سجل المحفظة
                 conn.execute("""
                     INSERT INTO portfolio (user_id, total_balance, available_balance, is_demo, updated_at)
-                    VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, 0, CURRENT_TIMESTAMP)
                     ON CONFLICT(user_id, is_demo) DO UPDATE SET 
                     total_balance = excluded.total_balance, 
                     available_balance = excluded.available_balance,
@@ -462,7 +462,7 @@ class BinanceManager:
                     INSERT INTO user_binance_orders 
                     (user_id, binance_order_id, symbol, side, type, quantity, 
                      price, status, executed_qty, executed_price, commission)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     user_id,
                     order['orderId'],
@@ -501,7 +501,7 @@ class BinanceManager:
                     INSERT INTO user_binance_orders 
                     (user_id, binance_order_id, symbol, side, type, quantity, 
                      price, status, executed_qty, executed_price, commission)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     user_id,
                     order['orderId'],
@@ -530,7 +530,7 @@ class BinanceManager:
                 balances = conn.execute("""
                     SELECT asset, free_balance, locked_balance, total_balance, updated_at
                     FROM user_binance_balance 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY total_balance DESC
                 """, (user_id,)).fetchall()
                 

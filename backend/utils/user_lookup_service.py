@@ -16,6 +16,8 @@ from database.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
+_db = DatabaseManager()
+
 def get_user_by_email(email: str) -> Optional[Dict]:
     """
     البحث عن مستخدم بالإيميل
@@ -27,15 +29,13 @@ def get_user_by_email(email: str) -> Optional[Dict]:
         dict مع بيانات المستخدم أو None
     """
     try:
-        # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-        db = DatabaseManager()
-        with db.get_connection() as conn:
+        with _db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id, username, email, password_hash, email_verified, 
                           user_type, phone_number 
                    FROM users 
-                   WHERE LOWER(email) = LOWER(?)""",
+                   WHERE LOWER(email) = LOWER(%s)""",
                 (email,)
             )
             row = cursor.fetchone()
@@ -66,15 +66,13 @@ def get_user_by_username(username: str) -> Optional[Dict]:
         dict مع بيانات المستخدم أو None
     """
     try:
-        # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-        db = DatabaseManager()
-        with db.get_connection() as conn:
+        with _db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id, username, email, password_hash, email_verified, 
                           user_type, phone_number 
                    FROM users 
-                   WHERE username = ?""",
+                   WHERE username = %s""",
                 (username,)
             )
             row = cursor.fetchone()
@@ -92,9 +90,6 @@ def get_user_by_username(username: str) -> Optional[Dict]:
     except Exception as e:
         logger.error(f"❌ خطأ في البحث عن المستخدم باسم المستخدم: {e}")
         return None
-    finally:
-        if conn:
-            conn.close()
 
 
 def get_user_by_id(user_id: int) -> Optional[Dict]:
@@ -108,15 +103,13 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
         dict مع بيانات المستخدم أو None
     """
     try:
-        # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-        db = DatabaseManager()
-        with db.get_connection() as conn:
+        with _db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id, username, email, password_hash, email_verified, 
                           user_type, phone_number 
                FROM users 
-               WHERE id = ?""",
+               WHERE id = %s""",
                 (user_id,)
             )
             row = cursor.fetchone()

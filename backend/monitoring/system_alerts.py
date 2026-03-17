@@ -52,7 +52,7 @@ class SystemAlertService:
                 cursor.execute("""
                     INSERT INTO system_alerts 
                     (alert_type, title, message, severity, data)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                 """, (alert_type, title, message, severity, data_json))
             
             self.logger.info(f"📢 System Alert: [{severity.upper()}] {title}")
@@ -288,7 +288,7 @@ class SystemAlertService:
                     FROM system_alerts
                     WHERE read = 0
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT %s
                 """, (limit,))
                 
                 alerts = []
@@ -323,7 +323,7 @@ class SystemAlertService:
                 cursor.execute("""
                     UPDATE system_alerts
                     SET read = 1
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (alert_id,))
             
             return True

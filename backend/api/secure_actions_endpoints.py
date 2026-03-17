@@ -103,7 +103,7 @@ def _save_pending_verification(user_id, action, otp, expires_at, method, new_val
         conn.execute("""
             INSERT INTO pending_verifications
             (user_id, action, otp, expires_at, method, new_value, old_password, attempts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 0)
             ON CONFLICT (user_id, action) DO UPDATE SET
                 otp = EXCLUDED.otp,
                 expires_at = EXCLUDED.expires_at,
@@ -120,14 +120,19 @@ def _get_pending_verification(user_id, action):
         row = conn.execute("""
             SELECT otp, expires_at, method, new_value, old_password, attempts
             FROM pending_verifications
-            WHERE user_id = ? AND action = ?
+            WHERE user_id = %s AND action = %s
         """, (user_id, action)).fetchone()
         if row:
             expires_raw = row[1] if isinstance(row, (list, tuple)) else (row['expires_at'] if 'expires_at' in row.keys() else row[1])
             if isinstance(expires_raw, datetime):
                 expires_dt = expires_raw
+                # Ensure timezone-aware so comparison with datetime.now(timezone.utc) works
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
             else:
                 expires_dt = datetime.fromisoformat(str(expires_raw))
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
             return {
                 'otp': row[0] if isinstance(row, (list, tuple)) else row['otp'],
                 'expires': expires_dt,
@@ -143,8 +148,8 @@ def _update_pending_attempts(user_id, action, attempts):
     db = db_manager
     with db.get_write_connection() as conn:
         conn.execute("""
-            UPDATE pending_verifications SET attempts = ?
-            WHERE user_id = ? AND action = ?
+            UPDATE pending_verifications SET attempts = %s
+            WHERE user_id = %s AND action = %s
         """, (attempts, user_id, action))
 
 def _update_pending_otp(user_id, action, otp):
@@ -152,8 +157,8 @@ def _update_pending_otp(user_id, action, otp):
     db = db_manager
     with db.get_write_connection() as conn:
         conn.execute("""
-            UPDATE pending_verifications SET otp = ?
-            WHERE user_id = ? AND action = ?
+            UPDATE pending_verifications SET otp = %s
+            WHERE user_id = %s AND action = %s
         """, (otp, user_id, action))
 
 def _delete_pending_verification(user_id, action):
@@ -162,7 +167,7 @@ def _delete_pending_verification(user_id, action):
     with db.get_write_connection() as conn:
         conn.execute("""
             DELETE FROM pending_verifications
-            WHERE user_id = ? AND action = ?
+            WHERE user_id = %s AND action = %s
         """, (user_id, action))
 
 # ==================== Helper Functions ====================
@@ -551,7 +556,7 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
             
             if action == 'change_name':
                 # الاسم الكامل يمكن أن يكون فارغاً
-                cursor.execute("UPDATE users SET name = ? WHERE id = ?", (new_value.strip() if new_value else '', user_id))
+                cursor.execute("UPDATE users SET name = %s WHERE id = %s", (new_value.strip() if new_value else '', user_id))
                 return {'success': True, 'message': 'تم تغيير الاسم بنجاح'}
             
             elif action == 'change_username':
@@ -559,11 +564,11 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                     return {'success': False, 'error': 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل'}
                 
                 # التحقق من عدم وجود اسم مستخدم مكرر
-                cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (new_value, user_id))
+                cursor.execute("SELECT id FROM users WHERE username = %s AND id != %s", (new_value, user_id))
                 if cursor.fetchone():
                     return {'success': False, 'error': 'اسم المستخدم مستخدم بالفعل'}
                 
-                cursor.execute("UPDATE users SET username = ? WHERE id = ?", (new_value, user_id))
+                cursor.execute("UPDATE users SET username = %s WHERE id = %s", (new_value, user_id))
                 return {'success': True, 'message': 'تم تغيير اسم المستخدم بنجاح'}
             
             elif action == 'change_password':
@@ -571,7 +576,7 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                     return {'success': False, 'error': 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'}
                 
                 new_hash = hash_password(new_value)
-                cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
+                cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user_id))
                 return {'success': True, 'message': 'تم تغيير كلمة المرور بنجاح'}
             
             elif action == 'change_email':
@@ -579,11 +584,11 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                     return {'success': False, 'error': 'الإيميل غير صحيح'}
                 
                 # التحقق من عدم وجود إيميل مكرر
-                cursor.execute("SELECT id FROM users WHERE email = ? AND id != ?", (new_value.lower(), user_id))
+                cursor.execute("SELECT id FROM users WHERE email = %s AND id != %s", (new_value.lower(), user_id))
                 if cursor.fetchone():
                     return {'success': False, 'error': 'الإيميل مستخدم بالفعل'}
                 
-                cursor.execute("UPDATE users SET email = ? WHERE id = ?", (new_value.lower(), user_id))
+                cursor.execute("UPDATE users SET email = %s WHERE id = %s", (new_value.lower(), user_id))
                 return {'success': True, 'message': 'تم تغيير الإيميل بنجاح'}
             
             elif action == 'change_phone':
@@ -591,19 +596,19 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                     return {'success': False, 'error': 'رقم الجوال غير صحيح'}
                 
                 # التحقق من عدم وجود رقم مكرر
-                cursor.execute("SELECT id FROM users WHERE phone_number = ? AND id != ?", (new_value, user_id))
+                cursor.execute("SELECT id FROM users WHERE phone_number = %s AND id != %s", (new_value, user_id))
                 if cursor.fetchone():
                     return {'success': False, 'error': 'رقم الجوال مستخدم بالفعل'}
                 
-                cursor.execute("UPDATE users SET phone_number = ? WHERE id = ?", (new_value, user_id))
+                cursor.execute("UPDATE users SET phone_number = %s WHERE id = %s", (new_value, user_id))
                 return {'success': True, 'message': 'تم تغيير رقم الجوال بنجاح'}
             
             elif action == 'change_biometric':
                 # new_value = 'enable' أو 'disable'
                 enabled = new_value == 'enable'
                 cursor.execute("""
-                    UPDATE user_settings SET biometric_enabled = ? WHERE user_id = ?
-                """, (1 if enabled else 0, user_id))
+                    UPDATE user_settings SET biometric_enabled = %s WHERE user_id = %s
+                """, (enabled, user_id))
                 status = 'تفعيل' if enabled else 'إلغاء'
                 return {'success': True, 'message': f'تم {status} البصمة بنجاح'}
             
@@ -655,7 +660,7 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                 # حفظ أو تحديث المفاتيح
                 cursor.execute("""
                     INSERT INTO user_binance_keys (user_id, api_key, api_secret, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ON CONFLICT (user_id) DO UPDATE SET
                         api_key = EXCLUDED.api_key,
                         api_secret = EXCLUDED.api_secret,
@@ -665,7 +670,7 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                 return {'success': True, 'message': 'تم حفظ مفاتيح Binance بنجاح'}
             
             elif action == 'delete_binance_keys':
-                cursor.execute("DELETE FROM user_binance_keys WHERE user_id = ?", (user_id,))
+                cursor.execute("DELETE FROM user_binance_keys WHERE user_id = %s", (user_id,))
                 return {'success': True, 'message': 'تم حذف مفاتيح Binance بنجاح'}
             
             else:

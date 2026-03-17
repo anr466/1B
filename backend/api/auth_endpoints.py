@@ -155,7 +155,7 @@ def update_user_verification(user_id: int, verified: bool) -> bool:
         with db_manager.get_write_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE users SET email_verified = ? WHERE id = ?",
+                "UPDATE users SET email_verified = %s WHERE id = %s",
                 (1 if verified else 0, user_id)
             )
             return True
@@ -171,8 +171,8 @@ def update_user_password(user_id: int, password_hash: str):
             
             cursor.execute("""
                 UPDATE users 
-                SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET password_hash = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
             """, (password_hash, user_id))
         
     except Exception as e:
@@ -197,7 +197,7 @@ def cleanup_verification_data(email: str):
             # حذف رموز التحقق المنتهية
             cursor.execute("""
                 DELETE FROM verification_codes 
-                WHERE email = ? AND (verified = 1 OR expires_at < ?)
+                WHERE email = %s AND (verified = 1 OR expires_at < %s)
             """, (email, time.time()))
             logger.debug(f"✅ Verification data cleaned up for {email}")
         
@@ -604,7 +604,7 @@ def login_user():
         if password_match and needs_upgrade(user['password_hash']):
             try:
                 new_hash = upgrade_hash(password)
-                db_manager.execute_query("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user['id']))
+                db_manager.execute_query("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user['id']))
                 logger.info(f"✅ Password hash upgraded to bcrypt for user {user['id']}")
             except Exception as upgrade_err:
                 logger.warning(f"⚠️ Password hash upgrade failed: {upgrade_err}")
@@ -824,7 +824,7 @@ def validate_session():
             user = conn.execute("""
                 SELECT id, username, email, user_type
                 FROM users
-                WHERE id = ?
+                WHERE id = %s
             """, (user_id,)).fetchone()
             
             if not user:
@@ -897,7 +897,7 @@ def refresh_token():
             user = conn.execute("""
                 SELECT id, username, email, user_type
                 FROM users
-                WHERE id = ?
+                WHERE id = %s
             """, (user_id,)).fetchone()
             
             if not user:
@@ -1024,7 +1024,7 @@ def delete_account():
             cursor = conn.cursor()
             
             # 6. التحقق من صحة كلمة المرور
-            cursor.execute("SELECT password_hash, username, email FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT password_hash, username, email FROM users WHERE id = %s", (user_id,))
             user = cursor.fetchone()
             
             if not user:
@@ -1048,7 +1048,7 @@ def delete_account():
                 }), 403
             
             # 8. حذف المستخدم (CASCADE سيحذف جميع البيانات المرتبطة - PostgreSQL يدعم FK افتراضياً)
-            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             conn.commit()
             
             logger.info(f"✅ تم حذف حساب المستخدم {user_id} ({user['username']}) نهائياً")

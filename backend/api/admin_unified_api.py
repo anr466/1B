@@ -428,15 +428,15 @@ def get_errors():
         
         # التحقق من صحة severity
         if severity and severity in ['low', 'medium', 'high', 'critical']:
-            query += " AND severity = ?"
+            query += " AND severity = %s"
             params.append(severity)
         
         if resolved is not None and str(resolved).lower() in ['0', '1', 'true', 'false']:
-            query += " AND resolved = ?"
+            query += " AND resolved = %s"
             resolved_bool = str(resolved).lower() in ['1', 'true']
             params.append(1 if resolved_bool else 0)
         
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += " ORDER BY created_at DESC LIMIT %s"
         params.append(limit)
         
         cursor.execute(query, params)
@@ -570,10 +570,10 @@ def resolve_error(error_id):
             UPDATE system_errors
             SET resolved = TRUE,
                 resolved_at = CURRENT_TIMESTAMP,
-                resolved_by = ?,
+                resolved_by = %s,
                 status = 'resolved',
                 requires_admin = FALSE
-            WHERE id = ?
+            WHERE id = %s
             """,
             (resolved_by, error_id)
         )
@@ -681,13 +681,18 @@ def get_group_b_performance():
         
         # 1️⃣ فحص Process — background_trading_manager أو trading state machine
         try:
-            result = subprocess.run(
-                ['pgrep', '-f', 'background_trading_manager.py'],
-                capture_output=True,
-                text=True
-            )
-            is_running = bool(result.stdout.strip())
-            pid = result.stdout.strip().split('\n')[0] if is_running else None
+            import shutil as _shutil
+            if _shutil.which('pgrep'):
+                result = subprocess.run(
+                    ['pgrep', '-f', 'background_trading_manager.py'],
+                    capture_output=True,
+                    text=True
+                )
+                is_running = bool(result.stdout.strip())
+                pid = result.stdout.strip().split('\n')[0] if is_running else None
+            else:
+                is_running = False
+                pid = None
         except Exception:
             is_running = False
             pid = None
@@ -850,7 +855,7 @@ def get_all_users():
                 COALESCE((SELECT trading_mode FROM user_settings WHERE user_id = users.id LIMIT 1), 'demo') as trading_mode
             FROM users 
             ORDER BY created_at DESC 
-            LIMIT ? OFFSET ?
+            LIMIT %s OFFSET %s
         """, (limit, offset))
         
         users = []
@@ -917,7 +922,7 @@ def manage_user(user_id):
         try:
             conn = get_safe_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE id=?", (user_id,))
+            cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
             user = cursor.fetchone()
             conn.close()
             
@@ -946,7 +951,7 @@ def toggle_user_status(user_id):
         cursor = conn.cursor()
 
         cursor.execute("""
-SELECT id, is_active FROM users WHERE id = ?""", (target_user_id,))
+SELECT id, is_active FROM users WHERE id = %s""", (target_user_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
@@ -958,9 +963,9 @@ SELECT id, is_active FROM users WHERE id = ?""", (target_user_id,))
         cursor.execute(
             """
             UPDATE users
-            SET is_active = ?,
+            SET is_active = %s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = %s
             """,
             (next_active, target_user_id),
         )
@@ -1141,7 +1146,7 @@ def reset_demo_account():
             # جلب الرصيد الأولي الفعلي من المحفظة الوهمية
             cursor.execute("""
                 SELECT initial_balance FROM portfolio 
-                WHERE user_id = ? AND is_demo = TRUE
+                WHERE user_id = %s AND is_demo = TRUE
             """, (admin_id,))
             portfolio_row = cursor.fetchone()
             initial_balance = float(portfolio_row[0] or 0) if portfolio_row else 0.0
@@ -1149,14 +1154,14 @@ def reset_demo_account():
             # حذف سجل الصفقات الوهمية للأدمن فقط
             cursor.execute("""
                 DELETE FROM user_trades
-                WHERE user_id = ? AND is_demo = TRUE
+                WHERE user_id = %s AND is_demo = TRUE
             """, (admin_id,))
             deleted_counts['trades'] = cursor.rowcount
             
             # ✅ FIX: حذف الصفقات النشطة الوهمية فقط (ليس الحقيقية!)
             cursor.execute("""
                 DELETE FROM active_positions 
-                WHERE user_id = ? AND is_demo = TRUE
+                WHERE user_id = %s AND is_demo = TRUE
             """, (admin_id,))
             deleted_counts['positions'] = cursor.rowcount
             
@@ -1179,7 +1184,7 @@ def reset_demo_account():
             if history_table_exists:
                 cursor.execute("""
                     DELETE FROM admin_demo_portfolio_history 
-                    WHERE admin_id = ?
+                    WHERE admin_id = %s
                 """, (str(admin_id),))
                 deleted_counts['history'] = cursor.rowcount
             else:
@@ -1188,14 +1193,14 @@ def reset_demo_account():
             # إعادة ضبط المحفظة الوهمية إلى الرصيد الأولي الفعلي
             cursor.execute("""
                 UPDATE portfolio 
-                SET total_balance = ?,
-                    available_balance = ?,
+                SET total_balance = %s,
+                    available_balance = %s,
                     invested_balance = 0.00,
                     total_profit_loss = 0.00,
                     total_profit_loss_percentage = 0.00,
-                    initial_balance = ?,
+                    initial_balance = %s,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ? AND is_demo = TRUE
+                WHERE user_id = %s AND is_demo = TRUE
             """, (initial_balance, initial_balance, initial_balance, admin_id))
             
             # إذا لم يوجد سجل، أنشئ واحداً جديداً
@@ -1204,7 +1209,7 @@ def reset_demo_account():
                     INSERT INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance, 
                      total_profit_loss, total_profit_loss_percentage, initial_balance)
-                    VALUES (?, TRUE, ?, ?, 0.00, 0.00, 0.00, ?)
+                    VALUES (%s, TRUE, %s, %s, 0.00, 0.00, 0.00, %s)
                 """, (admin_id, initial_balance, initial_balance, initial_balance))
             
             # إعادة ضبط إعدادات التداول للقيم الافتراضية
@@ -1217,7 +1222,7 @@ def reset_demo_account():
                     max_positions = 5,
                     trading_enabled = FALSE,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ? AND is_demo = TRUE
+                WHERE user_id = %s AND is_demo = TRUE
             """, (admin_id,))
             
             # portfolio table already updated above — single source of truth
@@ -1333,7 +1338,7 @@ def get_active_positions():
             SELECT id, symbol, entry_price, quantity, strategy, timeframe, 
                    stop_loss, take_profit, created_at, position_type
             FROM active_positions 
-            WHERE user_id = ? AND is_active = 1
+            WHERE user_id = %s AND is_active = 1
             ORDER BY created_at DESC
             LIMIT 20
         """, (admin_id,))
@@ -1423,7 +1428,7 @@ def close_position(position_id):
             """
             SELECT id, user_id, symbol, entry_price, quantity, position_type, is_demo, is_active
             FROM active_positions
-            WHERE id = ?
+            WHERE id = %s
             LIMIT 1
             """,
             (pid,),
@@ -1480,7 +1485,7 @@ def close_position(position_id):
             is_demo = int(position['is_demo'] or 0)
             with get_safe_connection() as balance_conn:
                 bal_row = balance_conn.execute(
-                    "SELECT available_balance FROM portfolio WHERE user_id = ? AND is_demo = ? LIMIT 1",
+                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
                     (user_id, is_demo),
                 ).fetchone()
             if bal_row is not None:
@@ -1534,7 +1539,7 @@ def update_stop_loss(position_id):
             """
             SELECT id, is_active, stop_loss, symbol
             FROM active_positions
-            WHERE id = ?
+            WHERE id = %s
             LIMIT 1
             """,
             (pid,),
@@ -1550,9 +1555,9 @@ def update_stop_loss(position_id):
         cursor.execute(
             """
             UPDATE active_positions
-            SET stop_loss = ?,
+            SET stop_loss = %s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = %s
             """,
             (new_sl, pid),
         )
@@ -1662,7 +1667,7 @@ def get_trades():
         
         conn = get_safe_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM active_positions ORDER BY id DESC LIMIT ? OFFSET ?", (page_size, (page-1)*page_size))
+        cursor.execute("SELECT * FROM active_positions ORDER BY id DESC LIMIT %s OFFSET %s", (page_size, (page-1)*page_size))
         trades = cursor.fetchall()
         conn.close()
         
@@ -1692,7 +1697,7 @@ def export_trades():
                    closed_at AS exit_time, created_at
             FROM active_positions
             ORDER BY id DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (limit,),
         ).fetchall()
@@ -2253,7 +2258,7 @@ def get_binance_status():
         user_id = getattr(g, 'user_id', None) or 1
         conn = get_safe_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT is_active FROM user_binance_keys WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT is_active FROM user_binance_keys WHERE user_id = %s", (user_id,))
         result = cursor.fetchone()
         conn.close()
         
@@ -2281,7 +2286,7 @@ def get_binance_keys():
         cursor.execute("""
             SELECT api_key, api_secret, is_active 
             FROM user_binance_keys 
-            WHERE user_id = ?
+            WHERE user_id = %s
         """, (user_id,))
         result = cursor.fetchone()
         conn.close()
@@ -2351,7 +2356,7 @@ def get_security_audit_log_direct():
                 SELECT id, user_id, action, resource, ip_address, status, details, created_at
                 FROM security_audit_log
                 ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             """, (limit, offset)).fetchall()
         total = int((total_row['count'] if total_row and 'count' in total_row else total_row[0]) if total_row else 0)
         logs = [dict(r) for r in rows]

@@ -136,15 +136,15 @@ class StateManager:
 
                     conn.execute("""
                         UPDATE system_status SET
-                            trading_state = ?,
-                            mode = ?,
-                            session_id = ?,
-                            started_at = ?,
-                            is_running = ?,
-                            status = ?,
-                            message = ?,
-                            pid = ?,
-                            subsystem_status = ?,
+                            trading_state = %s,
+                            mode = %s,
+                            session_id = %s,
+                            started_at = %s,
+                            is_running = %s,
+                            status = %s,
+                            message = %s,
+                            pid = %s,
+                            subsystem_status = %s,
                             last_update = CURRENT_TIMESTAMP
                         WHERE id = 1
                     """, (
@@ -383,7 +383,7 @@ class StateManager:
             with self.db.get_write_connection() as conn:
                 conn.execute("""
                     INSERT INTO activity_logs (action, details, created_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
                 """, ('state_change', details))
                 conn.commit()
                 
@@ -417,7 +417,7 @@ class StateManager:
                     FROM activity_logs
                     WHERE action = 'state_change'
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT %s
                 """, (limit,)).fetchall()
                 
                 entries = []

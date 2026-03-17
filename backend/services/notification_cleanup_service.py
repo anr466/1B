@@ -93,7 +93,7 @@ class NotificationCleanupService:
             params = []
             
             if user_id:
-                where_clause += " AND user_id = ?"
+                where_clause += " AND user_id = %s"
                 params.append(user_id)
             
             query = f"DELETE FROM notifications {where_clause}"
@@ -120,7 +120,7 @@ class NotificationCleanupService:
             params = []
             
             if user_id:
-                where_clause += " AND user_id = ?"
+                where_clause += " AND user_id = %s"
                 params.append(user_id)
             
             query = f"DELETE FROM notifications {where_clause}"
@@ -147,7 +147,7 @@ class NotificationCleanupService:
             params = []
             
             if user_id:
-                where_clause += " AND user_id = ?"
+                where_clause += " AND user_id = %s"
                 params.append(user_id)
             
             query = f"DELETE FROM notifications {where_clause}"
@@ -178,7 +178,7 @@ class NotificationCleanupService:
                     SELECT user_id, COUNT(*) as count
                     FROM notifications
                     GROUP BY user_id
-                    HAVING COUNT(*) > ?
+                    HAVING COUNT(*) > %s
                 """
                 
                 users = self.db.execute_query(query, (self.MAX_NOTIFICATIONS_PER_USER,))
@@ -201,7 +201,7 @@ class NotificationCleanupService:
         """حذف الإشعارات الزائدة لمستخدم معين"""
         try:
             total_result = self.db.execute_query(
-                "SELECT COUNT(*) AS total FROM notifications WHERE user_id = ?",
+                "SELECT COUNT(*) AS total FROM notifications WHERE user_id = %s",
                 (user_id,),
             )
             total_notifications = total_result[0]['total'] if total_result else 0
@@ -211,12 +211,12 @@ class NotificationCleanupService:
             # حذف أقدم الإشعارات الزائدة مع الاحتفاظ بآخر `limit`
             query = """
                 DELETE FROM notifications
-                WHERE user_id = ?
+                WHERE user_id = %s
                 AND id IN (
                     SELECT id FROM notifications
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY created_at DESC, id DESC
-                    OFFSET ?
+                    OFFSET %s
                 )
             """
             
@@ -273,7 +273,7 @@ class NotificationCleanupService:
                     SELECT user_id, COUNT(*) as notification_count
                     FROM notifications
                     GROUP BY user_id
-                    HAVING COUNT(*) > ?
+                    HAVING COUNT(*) > %s
                 )
             """
             excess_result = self.db.execute_query(excess_query, (self.MAX_NOTIFICATIONS_PER_USER,))

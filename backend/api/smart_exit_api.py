@@ -59,7 +59,7 @@ def get_smart_exit_settings(user_id):
                     trading_enabled,
                     daily_loss_limit
                 FROM user_settings
-                WHERE user_id = ?
+                WHERE user_id = %s
             """, (user_id,))
             
             result = cursor.fetchone()
@@ -129,16 +129,16 @@ def update_smart_exit_settings(user_id):
             cursor.execute("""
                 UPDATE user_settings
                 SET 
-                    stop_loss_pct = ?,
-                    take_profit_pct = ?,
-                    trailing_distance = ?,
-                    volatility_buffer = ?,
-                    min_signal_strength = ?,
-                    max_positions = ?,
-                    position_size_percentage = ?,
-                    trading_enabled = ?,
-                    daily_loss_limit = ?
-                WHERE user_id = ?
+                    stop_loss_pct = %s,
+                    take_profit_pct = %s,
+                    trailing_distance = %s,
+                    volatility_buffer = %s,
+                    min_signal_strength = %s,
+                    max_positions = %s,
+                    position_size_percentage = %s,
+                    trading_enabled = %s,
+                    daily_loss_limit = %s
+                WHERE user_id = %s
             """, (
                 stop_loss_pct,
                 take_profit_pct,
@@ -290,7 +290,7 @@ def get_detailed_statistics(user_id):
                     MAX(profit_pct) as max_profit_pct,
                     MIN(profit_pct) as min_profit_pct
                 FROM smart_exit_stats
-                WHERE user_id = ?
+                WHERE user_id = %s
             """, (user_id,))
             
             result = cursor.fetchone()
@@ -310,7 +310,7 @@ def get_detailed_statistics(user_id):
                     AVG(profit_pct) as avg_profit,
                     SUM(profit_loss) as total_profit
                 FROM smart_exit_stats
-                WHERE user_id = ?
+                WHERE user_id = %s
                 GROUP BY exit_type
             """, (user_id,))
             
@@ -358,9 +358,9 @@ def get_exit_errors(user_id):
                     error_message,
                     error_timestamp
                 FROM smart_exit_errors
-                WHERE user_id = ?
+                WHERE user_id = %s
                 ORDER BY error_timestamp DESC
-                LIMIT ?
+                LIMIT %s
             """, (user_id, limit))
             
             errors = []

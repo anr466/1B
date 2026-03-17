@@ -5,7 +5,7 @@ Mobile API Endpoints - Trading AI Bot
 
 ✅ كل مستخدم يرى بياناته فقط
 ✅ التحقق من الهوية في كل طلب
-✅ عزل كامل بـ WHERE user_id = ?
+✅ عزل كامل بـ WHERE user_id = %s
 """
 
 from flask import Blueprint, request, jsonify, g
@@ -151,7 +151,7 @@ def get_user_portfolio(user_id):
     """
     الحصول على بيانات محفظة المستخدم
     
-    ✅ عزل كامل: WHERE user_id = ?
+    ✅ عزل كامل: WHERE user_id = %s
     ✅ التحقق من الهوية
     ✅ بيانات حقيقية من Binance أو 0 إذا لم توجد مفاتيح
     
@@ -250,7 +250,7 @@ def get_user_portfolio(user_id):
         if should_backfill_from_db and (initial_balance == 0 or invested_balance == 0):
             try:
                 extra = db.execute_query(
-                    "SELECT initial_balance, invested_balance FROM portfolio WHERE user_id = ? AND is_demo = ?",
+                    "SELECT initial_balance, invested_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",
                     (portfolio_owner_id, is_demo)
                 )
                 if extra and len(extra) > 0:
@@ -307,7 +307,7 @@ def get_user_stats(user_id):
     """
     الحصول على إحصائيات التداول للمستخدم
     
-    ✅ عزل كامل: WHERE user_id = ?
+    ✅ عزل كامل: WHERE user_id = %s
     ✅ حساب من جدول active_positions (المصدر الوحيد للبيانات)
     
     Returns:
@@ -401,13 +401,13 @@ def get_user_stats(user_id):
                 COALESCE(SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN profit_loss ELSE 0 END), 0) as gross_profit,
                 COALESCE(ABS(SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN profit_loss ELSE 0 END)), 0) as gross_loss
             FROM active_positions
-            WHERE user_id = ? AND is_demo = ?
+            WHERE user_id = %s AND is_demo = %s
         """
 
         active_trades_query = """
             SELECT COUNT(*) as active_trades
             FROM active_positions
-            WHERE user_id = ? AND is_demo = ? AND is_active = TRUE
+            WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
         """
 
         stats_result = db.execute_query(stats_query, (portfolio_owner_id, is_demo))
@@ -417,7 +417,7 @@ def get_user_stats(user_id):
         initial_balance_query = """
             SELECT initial_balance, total_balance 
             FROM portfolio 
-            WHERE user_id = ? AND is_demo = ?
+            WHERE user_id = %s AND is_demo = %s
         """
         portfolio_result = db.execute_query(initial_balance_query, (portfolio_owner_id, is_demo))
         initial_balance = 0.0

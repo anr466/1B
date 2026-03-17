@@ -47,7 +47,7 @@ class DbTradingMixin:
             
             if removed_coins:
                 removed_symbols = [c[0] for c in removed_coins]
-                placeholders = ','.join(['?' for _ in removed_symbols])
+                placeholders = ','.join(['%s' for _ in removed_symbols])
                 conn.execute(f"""
                     UPDATE successful_coins SET is_active = FALSE 
                     WHERE symbol IN ({placeholders})
@@ -75,7 +75,7 @@ class DbTradingMixin:
                 INSERT OR REPLACE INTO successful_coins 
                 (symbol, strategy, timeframe, score, profit_pct, win_rate, 
                  total_trades, market_trend, analysis_date, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
             """, (
                 str(symbol),
                 str(data.get('strategy', 'unknown')),
@@ -133,7 +133,7 @@ class DbTradingMixin:
                 INSERT OR REPLACE INTO successful_coins 
                 (symbol, strategy, timeframe, score, profit_pct, win_rate, 
                  total_trades, market_trend, analysis_date, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
             """, (
                 coin_data['symbol'],
                 coin_data['strategy'],
@@ -232,8 +232,8 @@ class DbTradingMixin:
                     (user_id, symbol, strategy, timeframe, position_type, entry_date,
                      entry_price, quantity, stop_loss, take_profit, trailing_sl_price,
                      is_active, created_at, updated_at, signal_metadata)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, TRUE, 
-                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+                    VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, TRUE, 
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, %s)
                 """, (user_id, symbol, strategy, timeframe, position_type,
                       entry_price, quantity, stop_loss, take_profit, trailing_sl_price,
                       signal_metadata))
@@ -251,13 +251,13 @@ class DbTradingMixin:
                     conn.execute("""
                         UPDATE active_positions 
                         SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ? AND symbol = ? AND strategy = ? AND is_active = TRUE
+                        WHERE user_id = %s AND symbol = %s AND strategy = %s AND is_active = TRUE
                     """, (user_id, symbol, strategy))
                 else:
                     conn.execute("""
                         UPDATE active_positions 
                         SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ? AND symbol = ? AND is_active = TRUE
+                        WHERE user_id = %s AND symbol = %s AND is_active = TRUE
                     """, (user_id, symbol))
                 
                 self.logger.info(f"تم إغلاق الصفقة: {symbol}")
@@ -272,14 +272,14 @@ class DbTradingMixin:
                 if strategy:
                     conn.execute("""
                         UPDATE active_positions 
-                        SET trailing_sl_price = ?, updated_at = ?
-                        WHERE user_id = ? AND symbol = ? AND strategy = ? AND is_active = TRUE
+                        SET trailing_sl_price = %s, updated_at = %s
+                        WHERE user_id = %s AND symbol = %s AND strategy = %s AND is_active = TRUE
                     """, (trailing_sl_price, datetime.now().isoformat(), user_id, symbol, strategy))
                 else:
                     conn.execute("""
                         UPDATE active_positions 
-                        SET trailing_sl_price = ?, updated_at = ?
-                        WHERE user_id = ? AND symbol = ? AND is_active = TRUE
+                        SET trailing_sl_price = %s, updated_at = %s
+                        WHERE user_id = %s AND symbol = %s AND is_active = TRUE
                     """, (trailing_sl_price, datetime.now().isoformat(), user_id, symbol))
                 
         except Exception as e:
@@ -291,7 +291,7 @@ class DbTradingMixin:
             with self.get_connection() as conn:
                 rows = conn.execute("""
                     SELECT * FROM active_positions 
-                    WHERE user_id = ? AND is_active = TRUE
+                    WHERE user_id = %s AND is_active = TRUE
                     ORDER BY created_at DESC
                 """, (user_id,)).fetchall()
                 
@@ -307,7 +307,7 @@ class DbTradingMixin:
             with self.get_connection() as conn:
                 rows = conn.execute("""
                     SELECT * FROM active_positions 
-                    WHERE user_id = ? AND is_active = TRUE
+                    WHERE user_id = %s AND is_active = TRUE
                     ORDER BY created_at DESC
                 """, (user_id,)).fetchall()
                 
@@ -326,11 +326,11 @@ class DbTradingMixin:
             
             with self.get_connection() as conn:
                     
-                where_clauses = ['user_id = ?']
+                where_clauses = ['user_id = %s']
                 params = [user_id]
                 
                 if is_demo is not None:
-                    where_clauses.append('is_demo = ?')
+                    where_clauses.append('is_demo = %s')
                     params.append(is_demo)
                 
                 if status == 'open':
@@ -339,11 +339,11 @@ class DbTradingMixin:
                     where_clauses.append('is_active = FALSE')
                 
                 if date_from:
-                    where_clauses.append('COALESCE(entry_date, created_at::text) >= ?')
+                    where_clauses.append('COALESCE(entry_date, created_at::text) >= %s')
                     params.append(date_from)
                 
                 if date_to:
-                    where_clauses.append('COALESCE(entry_date, created_at::text) <= ?')
+                    where_clauses.append('COALESCE(entry_date, created_at::text) <= %s')
                     params.append(date_to)
                 
                 where_sql = ' AND '.join(where_clauses)
@@ -367,7 +367,7 @@ class DbTradingMixin:
                     FROM active_positions
                     WHERE {where_sql}
                     ORDER BY COALESCE(entry_date, created_at::text) DESC
-                    LIMIT ? OFFSET ?
+                    LIMIT %s OFFSET %s
                 """
                 params.extend([limit, offset])
                 
@@ -435,7 +435,7 @@ class DbTradingMixin:
                 
                 result = conn.execute("""
                     DELETE FROM active_positions 
-                    WHERE is_active = FALSE AND updated_at < ?
+                    WHERE is_active = FALSE AND updated_at < %s
                 """, (cutoff_date,))
                 
                 deleted_count = result.rowcount
@@ -466,7 +466,7 @@ class DbTradingMixin:
                 conn.execute("""
                     INSERT OR REPLACE INTO trading_signals 
                     (symbol, strategy, timeframe, signal_type, price, confidence, generated_at, is_processed)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
                 """, (
                     signal['symbol'],
                     signal['strategy'],
@@ -483,7 +483,7 @@ class DbTradingMixin:
         """الحصول على الإشارات غير المعالجة لمستخدم معين"""
         with self.get_connection() as conn:
             settings = conn.execute("""
-                SELECT trading_enabled, max_positions FROM user_settings WHERE user_id = ?
+                SELECT trading_enabled, max_positions FROM user_settings WHERE user_id = %s
             """, (user_id,)).fetchone()
             
             if not settings or not settings['trading_enabled']:
@@ -491,7 +491,7 @@ class DbTradingMixin:
             
             active_trades = conn.execute("""
                 SELECT COUNT(*) as count FROM active_positions
-                WHERE user_id = ? AND is_active = TRUE
+                WHERE user_id = %s AND is_active = TRUE
             """, (user_id,)).fetchone()['count']
             
             if active_trades >= settings['max_positions']:
@@ -509,7 +509,7 @@ class DbTradingMixin:
         """تحديد إشارة كمعالجة"""
         with self.get_write_connection() as conn:
             conn.execute("""
-                UPDATE trading_signals SET is_processed = TRUE WHERE id = ?
+                UPDATE trading_signals SET is_processed = TRUE WHERE id = %s
             """, (signal_id,))
 
     # ==================== دوال GroupBSystem ====================
@@ -521,12 +521,12 @@ class DbTradingMixin:
                 bool_true = True if getattr(self, 'is_postgres', lambda: False)() else 1
                 query = """
                     SELECT * FROM active_positions 
-                    WHERE user_id = ? AND is_active = TRUE
+                    WHERE user_id = %s AND is_active = TRUE
                 """
                 params = [user_id]
                 
                 if is_demo is not None:
-                    query += " AND is_demo = ?"
+                    query += " AND is_demo = %s"
                     params.append(bool(is_demo) if getattr(self, 'is_postgres', lambda: False)() else (1 if is_demo else 0))
                 
                 query += " ORDER BY created_at DESC"
@@ -566,7 +566,7 @@ class DbTradingMixin:
                  stop_loss, take_profit, is_demo, order_id, entry_commission,
                  position_size, position_type, timeframe, entry_date,
                  is_active, created_at, highest_price, signal_metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP, %s, %s)
             """, (
                 user_id,
                 symbol,
@@ -631,7 +631,7 @@ class DbTradingMixin:
                         existing = conn.execute(
                             """
                             SELECT id, is_active FROM active_positions
-                            WHERE user_id = ? AND symbol = ? AND strategy = ?
+                            WHERE user_id = %s AND symbol = %s AND strategy = %s
                             LIMIT 1
                             """,
                             (user_id, symbol, signal_type)
@@ -642,30 +642,30 @@ class DbTradingMixin:
                             conn.execute(
                                 """
                                 UPDATE active_positions
-                                SET entry_price = ?,
-                                    quantity = ?,
-                                    stop_loss = ?,
-                                    take_profit = ?,
-                                    is_demo = ?,
-                                    order_id = ?,
-                                    entry_commission = ?,
+                                SET entry_price = %s,
+                                    quantity = %s,
+                                    stop_loss = %s,
+                                    take_profit = %s,
+                                    is_demo = %s,
+                                    order_id = %s,
+                                    entry_commission = %s,
                                     exit_commission = 0,
-                                    position_size = ?,
-                                    position_type = ?,
-                                    timeframe = ?,
+                                    position_size = %s,
+                                    position_type = %s,
+                                    timeframe = %s,
                                     entry_date = CURRENT_TIMESTAMP,
                                     is_active = TRUE,
                                     created_at = CURRENT_TIMESTAMP,
                                     updated_at = CURRENT_TIMESTAMP,
-                                    highest_price = ?,
-                                    signal_metadata = ?,
+                                    highest_price = %s,
+                                    signal_metadata = %s,
                                     exit_reason = NULL,
                                     exit_price = NULL,
                                     profit_loss = NULL,
                                     profit_pct = NULL,
                                     closed_at = NULL,
                                     exit_order_id = NULL
-                                WHERE id = ?
+                                WHERE id = %s
                                 """,
                                 (
                                     entry_price,
@@ -707,7 +707,7 @@ class DbTradingMixin:
                               exit_order_id: str = None) -> bool:
         """إغلاق صفقة على اتصال خارجي (للعمليات الذرية)"""
         position = conn.execute(
-            "SELECT * FROM active_positions WHERE id = ?", (position_id,)
+            "SELECT * FROM active_positions WHERE id = %s", (position_id,)
         ).fetchone()
 
         if position:
@@ -721,10 +721,10 @@ class DbTradingMixin:
 
         conn.execute("""
             UPDATE active_positions
-            SET is_active = FALSE, exit_price = ?, exit_reason = ?,
-                profit_loss = ?, profit_pct = ?, exit_commission = ?, exit_order_id = ?,
+            SET is_active = FALSE, exit_price = %s, exit_reason = %s,
+                profit_loss = %s, profit_pct = %s, exit_commission = %s, exit_order_id = %s,
                 closed_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = %s
         """, (exit_price, exit_reason, pnl, pnl_pct, exit_commission, exit_order_id, position_id))
 
         self.logger.info(f"تم إغلاق الصفقة {position_id}: {exit_reason}")
@@ -749,7 +749,7 @@ class DbTradingMixin:
         invested_row = conn.execute("""
             SELECT COALESCE(SUM(position_size), 0) as invested
             FROM active_positions
-            WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
+            WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
         """, (user_id, is_demo_flag)).fetchone()
         invested_balance = invested_row[0] if invested_row else 0
 
@@ -763,7 +763,7 @@ class DbTradingMixin:
                 SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                 SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
             FROM active_positions
-            WHERE user_id = ? AND is_demo = ?
+            WHERE user_id = %s AND is_demo = %s
         """, (user_id, is_demo_flag)).fetchone()
         
         total_pnl = stats_row[0] if stats_row else 0
@@ -773,18 +773,18 @@ class DbTradingMixin:
         
         # حساب نسبة نمو المحفظة
         initial_balance_row = conn.execute("""
-            SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?
+            SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
         """, (user_id, is_demo_flag)).fetchone()
         initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
         portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
 
         conn.execute("""
             UPDATE portfolio
-            SET total_balance = ?, available_balance = ?, invested_balance = ?,
-                total_profit_loss = ?, total_profit_loss_percentage = ?,
-                total_trades = ?, winning_trades = ?, losing_trades = ?,
+            SET total_balance = %s, available_balance = %s, invested_balance = %s,
+                total_profit_loss = %s, total_profit_loss_percentage = %s,
+                total_trades = %s, winning_trades = %s, losing_trades = %s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ? AND is_demo = ?
+            WHERE user_id = %s AND is_demo = %s
         """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
               total_trades, winning_trades, losing_trades, user_id, is_demo_flag))
 
@@ -798,7 +798,7 @@ class DbTradingMixin:
                 invested_row = conn.execute("""
                     SELECT COALESCE(SUM(position_size), 0) as invested
                     FROM active_positions
-                    WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
+                    WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
                 """, (user_id, is_demo_flag)).fetchone()
                 invested_balance = invested_row[0] if invested_row else 0
                 
@@ -812,7 +812,7 @@ class DbTradingMixin:
                         SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                         SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                 """, (user_id, is_demo_flag)).fetchone()
                 
                 total_pnl = stats_row[0] if stats_row else 0
@@ -822,18 +822,18 @@ class DbTradingMixin:
                 
                 # حساب نسبة نمو المحفظة
                 initial_balance_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?
+                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
                 """, (user_id, is_demo_flag)).fetchone()
                 initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
                 portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
                 
                 conn.execute("""
                     UPDATE portfolio 
-                    SET total_balance = ?, available_balance = ?, invested_balance = ?,
-                        total_profit_loss = ?, total_profit_loss_percentage = ?,
-                        total_trades = ?, winning_trades = ?, losing_trades = ?,
+                    SET total_balance = %s, available_balance = %s, invested_balance = %s,
+                        total_profit_loss = %s, total_profit_loss_percentage = %s,
+                        total_trades = %s, winning_trades = %s, losing_trades = %s,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                 """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
                       total_trades, winning_trades, losing_trades, user_id, is_demo_flag))
                 
@@ -848,8 +848,8 @@ class DbTradingMixin:
             with self.get_write_connection() as conn:
                 conn.execute("""
                     UPDATE active_positions 
-                    SET trailing_sl_price = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    SET trailing_sl_price = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
                 """, (new_price, position_id))
                 
                 # get_write_connection يعمل commit تلقائياً

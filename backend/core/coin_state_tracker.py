@@ -46,7 +46,7 @@ class CoinStateTracker:
             cursor.execute("""
                 INSERT INTO coin_trade_history 
                 (symbol, entry_time, exit_time, pnl, profit_pct, exit_reason, strategy, timeframe, market_regime)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 symbol,
                 datetime.now().isoformat(),
@@ -60,7 +60,7 @@ class CoinStateTracker:
             ))
             
             # 2. جلب الحالة الحالية أو إنشاء جديدة
-            cursor.execute("SELECT * FROM coin_states WHERE symbol = ?", (symbol,))
+            cursor.execute("SELECT * FROM coin_states WHERE symbol = %s", (symbol,))
             row = cursor.fetchone()
             
             if row:
@@ -128,7 +128,7 @@ class CoinStateTracker:
                 (symbol, state, position_size_multiplier, stop_loss_multiplier,
                  consecutive_wins, consecutive_losses, total_trades, winning_trades,
                  total_pnl, blacklist_until, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (symbol) DO UPDATE SET
                     state = EXCLUDED.state,
                     position_size_multiplier = EXCLUDED.position_size_multiplier,
@@ -167,7 +167,7 @@ class CoinStateTracker:
         with self.db_manager.get_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute("SELECT * FROM coin_states WHERE symbol = ?", (symbol,))
+            cursor.execute("SELECT * FROM coin_states WHERE symbol = %s", (symbol,))
             row = cursor.fetchone()
         
         if not row:
@@ -225,8 +225,8 @@ class CoinStateTracker:
                     consecutive_wins = 0,
                     consecutive_losses = 0,
                     blacklist_until = NULL,
-                    last_updated = ?
-                WHERE symbol = ?
+                    last_updated = %s
+                WHERE symbol = %s
             """, (datetime.now().isoformat(), symbol))
     
     def get_recent_trades(self, symbol: str, n: int = 5) -> List[Dict]:
@@ -237,9 +237,9 @@ class CoinStateTracker:
             cursor.execute("""
                 SELECT pnl, profit_pct, exit_reason, strategy, timeframe, market_regime, exit_time
                 FROM coin_trade_history
-                WHERE symbol = ?
+                WHERE symbol = %s
                 ORDER BY exit_time DESC
-                LIMIT ?
+                LIMIT %s
             """, (symbol, n))
             
             rows = cursor.fetchall()

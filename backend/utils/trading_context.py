@@ -13,7 +13,7 @@ def get_effective_trading_mode(db, user_id: int) -> str:
     mode_query = """
         SELECT is_demo, trading_mode
         FROM user_settings
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY
           CASE WHEN trading_enabled = TRUE THEN 0 ELSE 1 END,
           COALESCE(updated_at, created_at) DESC

@@ -12,10 +12,10 @@ class SafeLogger:
     """Logger يخفي البيانات الحساسة"""
     
     SENSITIVE_PATTERNS = [
-        (r'password["\']?\s*[:=]\s*["\']?([^"\'}\s,]+)', 'password: ***'),
-        (r'api[_-]?key["\']?\s*[:=]\s*["\']?([^"\'}\s,]+)', 'api_key: ***'),
-        (r'secret["\']?\s*[:=]\s*["\']?([^"\'}\s,]+)', 'secret: ***'),
-        (r'token["\']?\s*[:=]\s*["\']?([^"\'}\s,]+)', 'token: ***'),
+        (r'password["\']%s\s*[:=]\s*["\']?([^"\'}\s,]+)', 'password: ***'),
+        (r'api[_-]?key["\']%s\s*[:=]\s*["\']?([^"\'}\s,]+)', 'api_key: ***'),
+        (r'secret["\']%s\s*[:=]\s*["\']?([^"\'}\s,]+)', 'secret: ***'),
+        (r'token["\']%s\s*[:=]\s*["\']?([^"\'}\s,]+)', 'token: ***'),
     ]
     
     def __init__(self, name: str):

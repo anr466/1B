@@ -96,7 +96,7 @@ class UserOnboardingService:
                 
                 # فحص: هل التداول مُفعّل؟
                 cursor.execute("""
-                    SELECT trading_enabled FROM user_settings WHERE user_id = ?
+                    SELECT trading_enabled FROM user_settings WHERE user_id = %s
                 """, (user_id,))
                 settings = cursor.fetchone()
                 
@@ -106,7 +106,7 @@ class UserOnboardingService:
                 # فحص: هل لديه مفاتيح Binance مُفعّلة؟
                 cursor.execute("""
                     SELECT is_active FROM user_binance_keys 
-                    WHERE user_id = ? AND is_active = 1
+                    WHERE user_id = %s AND is_active = 1
                 """, (user_id,))
                 keys = cursor.fetchone()
                 
@@ -115,14 +115,14 @@ class UserOnboardingService:
                 
                 # فحص: هل لديه مفاتيح (غير مُفعّلة)؟
                 cursor.execute("""
-                    SELECT id FROM user_binance_keys WHERE user_id = ?
+                    SELECT id FROM user_binance_keys WHERE user_id = %s
                 """, (user_id,))
                 if cursor.fetchone():
                     return UserStage.KEYS_ADDED
                 
                 # فحص: هل أكمل الملف الشخصي؟
                 cursor.execute("""
-                    SELECT name, phone_number FROM users WHERE id = ?
+                    SELECT name, phone_number FROM users WHERE id = %s
                 """, (user_id,))
                 user = cursor.fetchone()
                 
@@ -178,7 +178,7 @@ class UserOnboardingService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id FROM user_onboarding 
-                    WHERE user_id = ? AND step = ?
+                    WHERE user_id = %s AND step = %s
                 """, (user_id, step.value))
                 return cursor.fetchone() is not None
         except Exception:
@@ -191,7 +191,7 @@ class UserOnboardingService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO user_onboarding (user_id, step, shown_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (user_id, step) DO NOTHING
                 """, (user_id, step))
                 return True
@@ -207,14 +207,14 @@ class UserOnboardingService:
                 cursor.execute("""
                     UPDATE user_onboarding 
                     SET dismissed_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ? AND step = ?
+                    WHERE user_id = %s AND step = %s
                 """, (user_id, step))
                 
                 # إذا لم تكن موجودة، أضفها
                 if cursor.rowcount == 0:
                     cursor.execute("""
                         INSERT INTO user_onboarding (user_id, step, shown_at, dismissed_at)
-                        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id, step))
                 
                 return True

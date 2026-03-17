@@ -102,8 +102,8 @@ class DailyResetScheduler:
                 recent_logs = self.db.execute_query("""
                     SELECT action, details 
                     FROM activity_logs 
-                    WHERE user_id = ? 
-                    AND action LIKE ?
+                    WHERE user_id = %s 
+                    AND action LIKE %s
                     ORDER BY created_at DESC 
                     LIMIT 1
                 """, (user_id, '%daily_loss%'))
@@ -147,7 +147,7 @@ class DailyResetScheduler:
                 # إضافة إشعار
                 self.db.execute_query("""
                     INSERT INTO notifications (user_id, title, message, type, created_at)
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                 """, (
                     admin_id,
                     '🔄 إعادة تعيين الحدود اليومية',

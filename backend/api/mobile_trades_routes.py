@@ -61,7 +61,7 @@ def register_mobile_trades_routes(bp, shared):
                         COALESCE(entry_date, created_at::text) AS opened_at,
                         closed_at
                     FROM active_positions
-                    WHERE id = ? AND user_id = ?
+                    WHERE id = %s AND user_id = %s
                 """, (trade_id, user_id))
                 
                 row = cursor.fetchone()
@@ -111,7 +111,7 @@ def register_mobile_trades_routes(bp, shared):
         - date_from: من تاريخ (ISO format)
         - date_to: إلى تاريخ (ISO format)
         
-        ✅ عزل كامل: WHERE user_id = ?
+        ✅ عزل كامل: WHERE user_id = %s
         ✅ Pagination لتحسين الأداء
         ✅ Cache support
         """
@@ -352,11 +352,11 @@ def register_mobile_trades_routes(bp, shared):
                        SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                        SUM(CASE WHEN profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
                 FROM active_positions
-                WHERE user_id = ?
-                  AND is_demo = ?
+                WHERE user_id = %s
+                  AND is_demo = %s
                   AND closed_at IS NOT NULL
                   AND is_active = FALSE
-                  AND closed_at >= (CURRENT_TIMESTAMP - (?::text || ' days')::interval)
+                  AND closed_at >= (CURRENT_TIMESTAMP - (%s::text || ' days')::interval)
                 GROUP BY DATE(closed_at)
                 ORDER BY date DESC
             """
@@ -419,8 +419,8 @@ def register_mobile_trades_routes(bp, shared):
                     rows = conn.execute("""
                         SELECT date, total_balance, daily_pnl, daily_pnl_percentage
                         FROM portfolio_growth_history
-                        WHERE user_id = ? AND is_demo = ?
-                        AND date >= CURRENT_DATE - (?::integer)
+                        WHERE user_id = %s AND is_demo = %s
+                        AND date >= CURRENT_DATE - (%s::integer)
                         ORDER BY date ASC
                     """, (portfolio_owner_id, is_demo, days)).fetchall()
                 except Exception:
@@ -467,8 +467,8 @@ def register_mobile_trades_routes(bp, shared):
                     rows = conn.execute("""
                         SELECT date, total_balance, daily_pnl, daily_pnl_percentage
                         FROM portfolio_growth_history
-                        WHERE user_id = ? AND is_demo = TRUE
-                        AND date >= CURRENT_DATE - (?::integer)
+                        WHERE user_id = %s AND is_demo = TRUE
+                        AND date >= CURRENT_DATE - (%s::integer)
                         ORDER BY date ASC
                     """, (admin_id, days)).fetchall()
                 except Exception:
@@ -514,7 +514,7 @@ def register_mobile_trades_routes(bp, shared):
             
             with db_manager.get_write_connection() as conn:
                 trade = conn.execute(
-                    "SELECT id, user_id FROM active_positions WHERE id = ?",
+                    "SELECT id, user_id FROM active_positions WHERE id = %s",
                     (trade_id,)
                 ).fetchone()
                 
@@ -526,7 +526,7 @@ def register_mobile_trades_routes(bp, shared):
                     return jsonify({'success': False, 'error': 'غير مصرح بتعديل صفقة مستخدم آخر'}), 403
                 
                 conn.execute(
-                    "UPDATE active_positions SET is_favorite = ? WHERE id = ?",
+                    "UPDATE active_positions SET is_favorite = %s WHERE id = %s",
                     (True if is_favorite else False, trade_id)
                 )
                 
@@ -561,7 +561,7 @@ def register_mobile_trades_routes(bp, shared):
                                COALESCE(entry_date, created_at::text) AS entry_time,
                                closed_at AS exit_time, strategy, is_favorite
                         FROM active_positions
-                        WHERE user_id = ? AND is_demo = ? AND is_favorite = TRUE
+                        WHERE user_id = %s AND is_demo = %s AND is_favorite = TRUE
                         ORDER BY COALESCE(closed_at, updated_at) DESC
                     """, (portfolio_owner_id, is_demo))
                 except Exception:
@@ -576,7 +576,7 @@ def register_mobile_trades_routes(bp, shared):
                                COALESCE(entry_date, created_at::text) AS entry_time,
                                closed_at AS exit_time, strategy, FALSE as is_favorite
                         FROM active_positions
-                        WHERE user_id = ? AND is_demo = ?
+                        WHERE user_id = %s AND is_demo = %s
                         ORDER BY COALESCE(closed_at, updated_at) DESC
                     """, (portfolio_owner_id, is_demo))
                 trades = cursor.fetchall()
@@ -614,13 +614,13 @@ def register_mobile_trades_routes(bp, shared):
                         MAX(profit_loss) as best_trade,
                         MIN(profit_loss) as worst_trade
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ? AND is_active = 0
+                    WHERE user_id = %s AND is_demo = %s AND is_active = 0
                 """, (portfolio_owner_id, is_demo)).fetchone()
                 
                 by_symbol = conn.execute("""
                     SELECT symbol, COUNT(*) as count, SUM(profit_loss) as total
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ? AND is_active = 0
+                    WHERE user_id = %s AND is_demo = %s AND is_active = 0
                     GROUP BY symbol
                     ORDER BY total DESC
                     LIMIT 10
@@ -629,7 +629,7 @@ def register_mobile_trades_routes(bp, shared):
                 by_strategy = conn.execute("""
                     SELECT strategy, COUNT(*) as count, AVG(profit_loss) as avg
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ? AND is_active = 0
+                    WHERE user_id = %s AND is_demo = %s AND is_active = 0
                     GROUP BY strategy
                     ORDER BY count DESC
                     LIMIT 5
@@ -686,7 +686,7 @@ def register_mobile_trades_routes(bp, shared):
             
             with db.get_connection() as conn:
                 portfolio_balance_row = conn.execute(
-                    "SELECT available_balance FROM portfolio WHERE user_id = ? AND is_demo = ? ORDER BY updated_at DESC LIMIT 1",
+                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s ORDER BY updated_at DESC LIMIT 1",
                     (portfolio_owner_id, is_demo)
                 ).fetchone()
 
@@ -695,7 +695,7 @@ def register_mobile_trades_routes(bp, shared):
                     dashboard_data['portfolio']['balance'] = portfolio_balance_row[0] or 0
                 elif is_demo == 0:
                     balance_row = conn.execute(
-                        "SELECT total_balance FROM user_binance_balance WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
+                        "SELECT total_balance FROM user_binance_balance WHERE user_id = %s ORDER BY updated_at DESC LIMIT 1",
                         (user_id,)
                     ).fetchone()
                     dashboard_data['portfolio']['balance'] = balance_row[0] if balance_row else 0
@@ -709,7 +709,7 @@ def register_mobile_trades_routes(bp, shared):
                         SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades,
                         SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END) as total_pnl
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                 """, (portfolio_owner_id, is_demo)).fetchone()
                 
                 dashboard_data['stats'] = {
@@ -725,7 +725,7 @@ def register_mobile_trades_routes(bp, shared):
                         id, symbol, position_type, entry_price, quantity,
                         stop_loss, take_profit, COALESCE(entry_date, created_at::text) as created_at
                     FROM active_positions 
-                    WHERE user_id = ? AND is_demo = ? AND is_active = TRUE
+                    WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
                     ORDER BY COALESCE(entry_date, created_at::text) DESC
                     LIMIT 5
                 """, (portfolio_owner_id, is_demo)).fetchall()
@@ -745,7 +745,7 @@ def register_mobile_trades_routes(bp, shared):
                 ]
                 
                 settings_row = conn.execute(
-                    "SELECT trading_mode, risk_level FROM user_settings WHERE user_id = ? AND is_demo = ? LIMIT 1",
+                    "SELECT trading_mode, risk_level FROM user_settings WHERE user_id = %s AND is_demo = %s LIMIT 1",
                     (user_id, is_demo)
                 ).fetchone()
                 

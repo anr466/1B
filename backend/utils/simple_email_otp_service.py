@@ -40,7 +40,7 @@ class SimpleEmailOTPService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT created_at FROM verification_codes
-                    WHERE email = ? AND purpose = ?
+                    WHERE email = %s AND purpose = %s
                     ORDER BY created_at DESC
                     LIMIT 1
                 """, (email.lower(), purpose))
@@ -90,7 +90,7 @@ class SimpleEmailOTPService:
                 # حذف أي رموز قديمة لنفس الإيميل
                 cursor.execute("""
                     DELETE FROM verification_codes 
-                    WHERE email = ? AND purpose = ?
+                    WHERE email = %s AND purpose = %s
                 """, (email.lower(), purpose))
                 
                 # إضافة الرمز الجديد
@@ -99,7 +99,7 @@ class SimpleEmailOTPService:
                 cursor.execute("""
                     INSERT INTO verification_codes (
                         email, otp_code, purpose, expires_at, created_at
-                    ) VALUES (?, ?, ?, ?, ?)
+                    ) VALUES (%s, %s, %s, %s, %s)
                 """, (
                     email.lower(),
                     otp_code,
@@ -143,7 +143,7 @@ class SimpleEmailOTPService:
                 # حذف OTPs المنتهية
                 cursor.execute("""
                     DELETE FROM verification_codes 
-                    WHERE expires_at < ?
+                    WHERE expires_at < %s
                 """, (datetime.now().timestamp(),))
                 
                 deleted_expired = cursor.rowcount
@@ -152,7 +152,7 @@ class SimpleEmailOTPService:
                 yesterday = (datetime.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
                     DELETE FROM verification_codes 
-                    WHERE verified = TRUE AND verified_at < ?
+                    WHERE verified = TRUE AND verified_at < %s
                 """, (yesterday,))
                 
                 deleted_verified = cursor.rowcount
@@ -182,7 +182,7 @@ class SimpleEmailOTPService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     DELETE FROM verification_codes 
-                    WHERE email = ? AND purpose = ?
+                    WHERE email = %s AND purpose = %s
                 """, (email.lower(), purpose))
                 
                 deleted = cursor.rowcount > 0
@@ -204,7 +204,7 @@ class SimpleEmailOTPService:
                 cursor.execute("""
                     SELECT otp_code, expires_at, attempts, verified
                     FROM verification_codes
-                    WHERE email = ? AND purpose = ?
+                    WHERE email = %s AND purpose = %s
                     ORDER BY created_at DESC
                     LIMIT 1
                 """, (email.lower(), purpose))
@@ -233,7 +233,7 @@ class SimpleEmailOTPService:
                     cursor.execute("""
                         UPDATE verification_codes
                         SET attempts = attempts + 1
-                        WHERE email = ? AND otp_code = ? AND purpose = ?
+                        WHERE email = %s AND otp_code = %s AND purpose = %s
                     """, (email.lower(), stored_code, purpose))
                     
                     # التحقق من تجاوز الحد بعد الزيادة
@@ -246,8 +246,8 @@ class SimpleEmailOTPService:
                 # ✅ التحقق ناجح - تعيين verified = TRUE بدلاً من الحذف
                 cursor.execute("""
                     UPDATE verification_codes
-                    SET verified = TRUE, verified_at = ?
-                    WHERE email = ? AND otp_code = ? AND purpose = ?
+                    SET verified = TRUE, verified_at = %s
+                    WHERE email = %s AND otp_code = %s AND purpose = %s
                 """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), email.lower(), code, purpose))
                 
                 return True, {'message': 'تم التحقق بنجاح'}

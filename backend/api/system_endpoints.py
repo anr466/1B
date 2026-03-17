@@ -99,27 +99,27 @@ def reset_account_data():
         
         with db.get_write_connection() as conn:
             # حذف المراكز النشطة (demo فقط)
-            conn.execute("DELETE FROM active_positions WHERE user_id = ? AND is_demo = 1", (user_id,))
+            conn.execute("DELETE FROM active_positions WHERE user_id = %s AND is_demo = 1", (user_id,))
             
             # إعادة تعيين المحفظة (demo فقط)
             portfolio_row = conn.execute("""
-                SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = 1 LIMIT 1
+                SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = 1 LIMIT 1
             """, (user_id,)).fetchone()
             initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
             conn.execute("""
                 UPDATE portfolio
-                SET total_balance = ?,
-                    available_balance = ?,
+                SET total_balance = %s,
+                    available_balance = %s,
                     invested_balance = 0,
                     total_profit_loss = 0,
                     total_profit_loss_percentage = 0,
-                    initial_balance = ?,
+                    initial_balance = %s,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ? AND is_demo = 1
+                WHERE user_id = %s AND is_demo = 1
             """, (initial_balance, initial_balance, initial_balance, user_id))
             
             # حذف الإشعارات
-            conn.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM notifications WHERE user_id = %s", (user_id,))
         
         logger.info(f"✅ إعادة تعيين بيانات الحساب للمستخدم {user_id}")
         return jsonify({

@@ -246,7 +246,7 @@ class AuthService:
             # الحصول على المستخدم
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT password_hash, username FROM users WHERE id = ?", (user_id,))
+                cursor.execute("SELECT password_hash, username FROM users WHERE id = %s", (user_id,))
                 user = cursor.fetchone()
                 
                 if not user:
@@ -261,7 +261,7 @@ class AuthService:
                     return False, {'error': 'لا يمكن حذف حساب الأدمن الرئيسي'}
                 
                 # حذف المستخدم (CASCADE سيحذف جميع البيانات)
-                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             
             return True, {'message': 'تم حذف حسابك نهائياً'}
         
@@ -276,7 +276,7 @@ class AuthService:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT id, username, email, password_hash, user_type FROM users WHERE username = ?",
+                    "SELECT id, username, email, password_hash, user_type FROM users WHERE username = %s",
                     (username,)
                 )
                 row = cursor.fetchone()
@@ -298,7 +298,7 @@ class AuthService:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT id, username, email, password_hash, user_type FROM users WHERE email = ?",
+                    "SELECT id, username, email, password_hash, user_type FROM users WHERE email = %s",
                     (email.lower(),)
                 )
                 row = cursor.fetchone()
@@ -321,7 +321,7 @@ class AuthService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO users (username, email, password_hash, phone_number, user_type, created_at)
-                    VALUES (?, ?, ?, ?, 'user', CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, %s, 'user', CURRENT_TIMESTAMP)
                 """, (username, email.lower(), password_hash, phone_number))
                 return cursor.lastrowid
         except Exception:
@@ -333,7 +333,7 @@ class AuthService:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    "UPDATE users SET password_hash = %s WHERE id = %s",
                     (new_hash, user_id)
                 )
                 return True
@@ -346,7 +346,7 @@ class AuthService:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = %s",
                     (user_id,)
                 )
         except Exception:

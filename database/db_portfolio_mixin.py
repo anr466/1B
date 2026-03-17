@@ -25,7 +25,7 @@ class DbPortfolioMixin:
                         COALESCE(SUM(CASE WHEN t.status = 'open' THEN t.quantity * t.entry_price ELSE 0 END), 0) as invested_amount
                     FROM portfolio p
                     LEFT JOIN active_positions t ON p.user_id = t.user_id AND t.is_active = 1
-                    WHERE p.user_id = ?
+                    WHERE p.user_id = %s
                     GROUP BY p.user_id, p.total_balance
                 """, (user_id,))
                 
@@ -39,8 +39,8 @@ class DbPortfolioMixin:
                         updated = conn.execute(
                             """
                             UPDATE portfolio
-                            SET invested_balance = ?, available_balance = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = ?
+                            SET invested_balance = %s, available_balance = %s, updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = %s
                             """,
                             (invested_amount, available_balance, user_id),
                         )
@@ -52,7 +52,7 @@ class DbPortfolioMixin:
                                     user_id, is_demo, total_balance, available_balance,
                                     invested_balance, initial_balance, updated_at
                                 )
-                                VALUES (?, FALSE, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                                VALUES (%s, FALSE, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                                 """,
                                 (user_id, total_balance, available_balance, invested_amount, total_balance),
                             )
@@ -101,12 +101,12 @@ class DbPortfolioMixin:
                     mapped_updates[target] = value
 
             for field_name, field_value in mapped_updates.items():
-                update_fields.append(f"{field_name} = ?")
+                update_fields.append(f"{field_name} = %s")
                 values.append(field_value)
             
             if values:
                 values.extend([user_id, bool(is_demo)])
-                query = f"UPDATE portfolio SET {', '.join(update_fields)} WHERE user_id = ? AND is_demo = ?"
+                query = f"UPDATE portfolio SET {', '.join(update_fields)} WHERE user_id = %s AND is_demo = %s"
                 conn.execute(query, values)
                 try:
                     from backend.utils.simple_cache import response_cache
@@ -125,7 +125,7 @@ class DbPortfolioMixin:
                 INSERT INTO active_positions 
                 (user_id, symbol, strategy, timeframe, side, entry_price, quantity, 
                  stop_loss, take_profit, is_active, is_demo, entry_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, CURRENT_TIMESTAMP)
             """, (
                 user_id,
                 trade_data['symbol'],
@@ -173,7 +173,7 @@ class DbPortfolioMixin:
                     CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                     stop_loss, take_profit, created_at
                 FROM active_positions
-                WHERE user_id = ? AND is_active = 1
+                WHERE user_id = %s AND is_active = 1
                 ORDER BY COALESCE(entry_date, created_at) DESC
             """, (user_id,)).fetchall()
             
@@ -183,7 +183,7 @@ class DbPortfolioMixin:
         """إغلاق صفقة المستخدم"""
         with self.get_write_connection() as conn:
             trade = conn.execute("""
-                SELECT entry_price, quantity FROM active_positions WHERE id = ?
+                SELECT entry_price, quantity FROM active_positions WHERE id = %s
             """, (trade_id,)).fetchone()
             
             if trade:
@@ -195,9 +195,9 @@ class DbPortfolioMixin:
             
             conn.execute("""
                 UPDATE active_positions 
-                SET exit_price = ?, profit_loss = ?, profit_pct = ?, 
+                SET exit_price = %s, profit_loss = %s, profit_pct = %s, 
                     is_active = FALSE, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = %s
             """, (
                 exit_price,
                 profit_loss,
@@ -211,51 +211,51 @@ class DbPortfolioMixin:
         """إعادة ضبط الحساب التجريبي - مسح جميع البيانات وإعادة تعيين الرصيد"""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("DELETE FROM active_positions WHERE user_id = ? AND is_demo = TRUE", (user_id,))
+                conn.execute("DELETE FROM active_positions WHERE user_id = %s AND is_demo = TRUE", (user_id,))
                 self.logger.info(f"تم مسح صفقات الحساب التجريبي للمستخدم {user_id})")
                 
-                conn.execute("DELETE FROM user_binance_orders WHERE user_id = ? AND is_demo = TRUE", (user_id,))
+                conn.execute("DELETE FROM user_binance_orders WHERE user_id = %s AND is_demo = TRUE", (user_id,))
                 self.logger.info(f"تم مسح أوامر Binance التجريبية للمستخدم {user_id}")
                 
                 try:
-                    conn.execute("DELETE FROM user_binance_balance WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM user_binance_balance WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح user_binance_balance للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول user_binance_balance غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM user_binance_balances WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM user_binance_balances WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح user_binance_balances للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول user_binance_balances غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM notifications WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح إشعارات المستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول notifications غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM notification_history WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM notification_history WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح سجل الإشعارات للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول notification_history غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM activity_logs WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM activity_logs WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح سجل الأنشطة للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول activity_logs غير موجود: {e}")
                 
                 portfolio_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = TRUE LIMIT 1
+                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1
                 """, (user_id,)).fetchone()
                 resolved_initial_balance = float(portfolio_row[0] or initial_balance or 0.0) if portfolio_row else float(initial_balance or 0.0)
                 conn.execute("""
                     INSERT OR REPLACE INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance,
                      total_profit_loss, total_profit_loss_percentage, initial_balance, updated_at)
-                    VALUES (?, TRUE, ?, ?, 0.0, 0.0, 0.0, ?, CURRENT_TIMESTAMP)
+                    VALUES (%s, TRUE, %s, %s, 0.0, 0.0, 0.0, %s, CURRENT_TIMESTAMP)
                 """, (user_id, resolved_initial_balance, resolved_initial_balance, resolved_initial_balance))
                 
                 conn.execute("""
@@ -263,7 +263,7 @@ class DbPortfolioMixin:
                     (user_id, is_demo, trade_amount, max_positions, risk_level, stop_loss_pct,
                      take_profit_pct, trailing_distance, position_size_percentage, trading_enabled,
                      max_daily_loss_pct, daily_loss_limit, trading_mode, updated_at)
-                    VALUES (?, TRUE, 100.00, 5, 'medium', 3.00, 6.00, 3.00, 10.00, FALSE, 10.00, 100.00, 'demo', CURRENT_TIMESTAMP)
+                    VALUES (%s, TRUE, 100.00, 5, 'medium', 3.00, 6.00, 3.00, 10.00, FALSE, 10.00, 100.00, 'demo', CURRENT_TIMESTAMP)
                 """, (user_id,))
                 
                 self.logger.info(f"تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} بنجاح - الرصيد: {resolved_initial_balance}$")
@@ -276,7 +276,7 @@ class DbPortfolioMixin:
     def get_user_trades_simple(self, user_id: int, status: Optional[str] = None, is_demo: Optional[int] = None) -> List[Dict[str, Any]]:
         """الحصول على صفقات المستخدم — يقرأ من active_positions (المصدر الوحيد للبيانات)"""
         with self.get_connection() as conn:
-            conditions = ["user_id = ?"]
+            conditions = ["user_id = %s"]
             params = [user_id]
             
             if status == 'open':
@@ -285,7 +285,7 @@ class DbPortfolioMixin:
                 conditions.append("is_active = 0")
             
             if is_demo is not None:
-                conditions.append("is_demo = ?")
+                conditions.append("is_demo = %s")
                 params.append(is_demo)
             
             query = f"""
@@ -426,16 +426,16 @@ class DbPortfolioMixin:
                         (
                             SELECT COALESCE(SUM(position_size), 0)
                             FROM active_positions ap
-                            WHERE ap.user_id = ? AND ap.is_active = 1 AND ap.is_demo = 0
+                            WHERE ap.user_id = %s AND ap.is_active = 1 AND ap.is_demo = 0
                         ) as invested
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = 0
+                    WHERE user_id = %s AND is_demo = 0
                 """, (user_id, user_id)).fetchone()
                 
                 daily_result = conn.execute("""
                     SELECT COALESCE(SUM(profit_loss), 0) as daily_pnl
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = 0
+                    WHERE user_id = %s AND is_demo = 0
                     AND is_active = 0
                     AND DATE(closed_at) = DATE('now')
                 """, (user_id,)).fetchone()
@@ -443,7 +443,7 @@ class DbPortfolioMixin:
                 active_result = conn.execute("""
                     SELECT COUNT(*) as active_trades
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = 0 AND is_active = 1
+                    WHERE user_id = %s AND is_demo = 0 AND is_active = 1
                 """, (user_id,)).fetchone()
                 
                 total_pnl = total_result[0] if total_result else 0
@@ -483,7 +483,7 @@ class DbPortfolioMixin:
             with self.get_write_connection() as conn:
                 result = conn.execute("""
                     SELECT initial_balance FROM portfolio
-                    WHERE user_id = ? AND is_demo = FALSE
+                    WHERE user_id = %s AND is_demo = FALSE
                 """, (user_id,)).fetchone()
                 
                 if result and result[0] and result[0] > 0:
@@ -498,12 +498,12 @@ class DbPortfolioMixin:
                         """
                         UPDATE portfolio
                         SET initial_balance = CASE
-                                WHEN initial_balance IS NULL OR initial_balance = 0 THEN ?
+                                WHEN initial_balance IS NULL OR initial_balance = 0 THEN %s
                                 ELSE initial_balance
                             END,
-                            total_balance = ?,
+                            total_balance = %s,
                             updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ? AND is_demo = FALSE
+                        WHERE user_id = %s AND is_demo = FALSE
                         """,
                         (current_balance, current_balance, user_id),
                     )
@@ -512,7 +512,7 @@ class DbPortfolioMixin:
                         conn.execute(
                             """
                             INSERT INTO portfolio (user_id, total_balance, available_balance, initial_balance, is_demo, updated_at)
-                            VALUES (?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP)
+                            VALUES (%s, %s, %s, %s, FALSE, CURRENT_TIMESTAMP)
                             """,
                             (user_id, current_balance, current_balance, current_balance),
                         )
@@ -532,7 +532,7 @@ class DbPortfolioMixin:
                            initial_balance, total_profit_loss, total_profit_loss_percentage,
                            updated_at
                     FROM portfolio
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                     LIMIT 1
                 """, (user_id, is_demo)).fetchone()
 
@@ -542,7 +542,7 @@ class DbPortfolioMixin:
                 daily_result = conn.execute("""
                     SELECT COALESCE(SUM(profit_loss), 0) as daily_pnl
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ? AND is_active = FALSE
+                    WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                     AND DATE(closed_at) = DATE('now')
                 """, (user_id, is_demo)).fetchone()
 
@@ -551,7 +551,7 @@ class DbPortfolioMixin:
                         COUNT(*) as trades_count,
                         COALESCE(SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END), 0) as winning_trades
                     FROM active_positions
-                    WHERE user_id = ? AND is_demo = ? AND is_active = FALSE
+                    WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                 """, (user_id, is_demo)).fetchone()
 
                 total_balance = float(portfolio_result[0] or 0)
@@ -606,13 +606,13 @@ class DbPortfolioMixin:
                         AVG(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN profit_loss END) as avg_loss,
                         MAX(CASE WHEN is_active = FALSE THEN closed_at ELSE NULL END) as last_trade_date
                     FROM active_positions
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (user_id,)).fetchone()
 
                 active_row = conn.execute("""
                     SELECT COUNT(*) as active_trades
                     FROM active_positions
-                    WHERE user_id = ? AND is_active = TRUE
+                    WHERE user_id = %s AND is_active = TRUE
                 """, (user_id,)).fetchone()
                 
                 if stats_row:
@@ -682,9 +682,9 @@ class DbPortfolioMixin:
                             CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                             timeframe, created_at
                         FROM active_positions
-                        WHERE user_id = ? AND is_demo = ?
+                        WHERE user_id = %s AND is_demo = %s
                         ORDER BY COALESCE(entry_date, created_at) DESC
-                        LIMIT ?
+                        LIMIT %s
                     """, (user_id, is_demo, limit)).fetchall()
                 else:
                     rows = conn.execute("""
@@ -699,9 +699,9 @@ class DbPortfolioMixin:
                             CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                             timeframe, created_at
                         FROM active_positions
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         ORDER BY COALESCE(entry_date, created_at) DESC
-                        LIMIT ?
+                        LIMIT %s
                     """, (user_id, limit)).fetchall()
                 
                 trades = []
@@ -743,7 +743,7 @@ class DbPortfolioMixin:
                 
                 row = conn.execute("""
                     SELECT api_key, api_secret, is_active, created_at 
-                    FROM user_binance_keys WHERE user_id = ? AND is_active = 1
+                    FROM user_binance_keys WHERE user_id = %s AND is_active = 1
                     ORDER BY created_at DESC LIMIT 1
                 """, (user_id,)).fetchone()
                 
@@ -802,13 +802,13 @@ class DbPortfolioMixin:
             
             with self.get_write_connection() as conn:
                 conn.execute("""
-                    DELETE FROM user_binance_keys WHERE user_id = ?
+                    DELETE FROM user_binance_keys WHERE user_id = %s
                 """, (user_id,))
                 
                 conn.execute("""
                     INSERT INTO user_binance_keys 
                     (user_id, api_key, api_secret, is_active)
-                    VALUES (?, ?, ?, TRUE)
+                    VALUES (%s, %s, %s, TRUE)
                 """, (user_id, encrypted_api_key, encrypted_secret_key))
                 self.logger.info(f"✅ تم تحديث مفاتيح Binance للمستخدم {user_id} (مشفرة)")
                 return True
@@ -821,7 +821,7 @@ class DbPortfolioMixin:
         """حذف مفاتيح Binance للمستخدم"""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("DELETE FROM user_binance_keys WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM user_binance_keys WHERE user_id = %s", (user_id,))
                 self.logger.info(f"تم حذف مفاتيح Binance للمستخدم {user_id}")
                 return True
                 
@@ -835,7 +835,7 @@ class DbPortfolioMixin:
             with self.get_write_connection() as conn:
                 admin_user = conn.execute("""
                     SELECT id, username, user_type FROM users 
-                    WHERE id = ? AND (user_type = 'admin' OR username = 'admin')
+                    WHERE id = %s AND (user_type = 'admin' OR username = 'admin')
                 """, (user_id,)).fetchone()
                 
                 if not admin_user:
@@ -845,38 +845,38 @@ class DbPortfolioMixin:
                 self.logger.info(f"بدء إعادة ضبط بيانات الحساب للأدمن {user_id}")
                 
                 try:
-                    conn.execute("DELETE FROM trades WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM trades WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح جميع الصفقات للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول trades غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM active_positions WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM active_positions WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح سجل التداول للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول active_positions غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM user_orders WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM user_orders WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح الأوامر المعلقة للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول user_orders غير موجود: {e}")
                 
                 try:
-                    conn.execute("DELETE FROM notification_history WHERE user_id = ?", (user_id,))
+                    conn.execute("DELETE FROM notification_history WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح سجل الإشعارات للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول notification_history غير موجود: {e}")
                 
                 portfolio_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = TRUE LIMIT 1
+                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1
                 """, (user_id,)).fetchone()
                 resolved_initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
                 conn.execute("""
                     INSERT OR REPLACE INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance,
                      total_profit_loss, total_profit_loss_percentage, initial_balance, updated_at)
-                    VALUES (?, TRUE, ?, ?, 0.0, 0.0, 0.0, ?, datetime('now'))
+                    VALUES (%s, TRUE, %s, %s, 0.0, 0.0, 0.0, %s, datetime('now'))
                 """, (user_id, resolved_initial_balance, resolved_initial_balance, resolved_initial_balance))
                 
                 try:
@@ -886,7 +886,7 @@ class DbPortfolioMixin:
                          take_profit_pct, trade_amount, position_size_percentage,
                          trailing_distance, trading_enabled, max_daily_loss_pct,
                          daily_loss_limit, trading_mode, updated_at)
-                        VALUES (?, TRUE, 'medium', 5, 2.0, 6.0, 100.0, 10.0, 3.0, FALSE, 10.0, 100.0, 'demo', CURRENT_TIMESTAMP)
+                        VALUES (%s, TRUE, 'medium', 5, 2.0, 6.0, 100.0, 10.0, 3.0, FALSE, 10.0, 100.0, 'demo', CURRENT_TIMESTAMP)
                     """, (user_id,))
                     
                     self.logger.info(f"تم إعادة ضبط إعدادات التداول للمستخدم {user_id}")
@@ -909,7 +909,7 @@ class DbPortfolioMixin:
             with self.get_connection() as conn:
                 # جلب بيانات المحفظة الحالية
                 portfolio_row = conn.execute(
-                    "SELECT total_balance, initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ?",
+                    "SELECT total_balance, initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",
                     (user_id, is_demo)
                 ).fetchone()
 
@@ -923,8 +923,8 @@ class DbPortfolioMixin:
                 daily_pnl = conn.execute(
                     """SELECT COALESCE(SUM(profit_loss), 0)
                        FROM active_positions
-                       WHERE user_id = ? AND is_demo = ? AND is_active = 0
-                       AND date(COALESCE(closed_at, updated_at)) = ?""",
+                       WHERE user_id = %s AND is_demo = %s AND is_active = 0
+                       AND date(COALESCE(closed_at, updated_at)) = %s""",
                     (user_id, is_demo, today)
                 ).fetchone()[0] or 0
                 daily_pnl = float(daily_pnl)
@@ -933,7 +933,7 @@ class DbPortfolioMixin:
 
                 # عدد الصفقات المفتوحة
                 active_count = conn.execute(
-                    "SELECT COUNT(*) FROM active_positions WHERE user_id = ? AND is_demo = ? AND is_active = 1",
+                    "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_demo = %s AND is_active = 1",
                     (user_id, is_demo)
                 ).fetchone()[0] or 0
 

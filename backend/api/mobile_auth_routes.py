@@ -93,7 +93,7 @@ def register_mobile_auth_routes(bp, shared):
                     conn.execute("""
                         INSERT INTO biometric_auth 
                         (user_id, biometric_hash, device_id, is_active, created_at, updated_at)
-                        VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         ON CONFLICT (user_id) DO UPDATE SET
                             biometric_hash = EXCLUDED.biometric_hash,
                             device_id = EXCLUDED.device_id,

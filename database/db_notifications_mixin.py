@@ -23,9 +23,9 @@ class DbNotificationsMixin:
                     rows = conn.execute("""
                         SELECT id, title, message, notification_type as type, data, created_at, status as read_status
                         FROM notification_history 
-                        WHERE user_id = ? 
+                        WHERE user_id = %s 
                         ORDER BY created_at DESC 
-                        LIMIT ?
+                        LIMIT %s
                     """, (user_id, limit)).fetchall()
                 except Exception:
                     try:
@@ -41,9 +41,9 @@ class DbNotificationsMixin:
                                created_at,
                                status as read_status
                         FROM notification_history
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         ORDER BY created_at DESC
-                        LIMIT ?
+                        LIMIT %s
                     """, (user_id, limit)).fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -58,7 +58,7 @@ class DbNotificationsMixin:
                     conn.execute("""
                         INSERT INTO notification_history 
                         (user_id, title, message, notification_type, data, created_at, status)
-                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'pending')
+                        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'pending')
                     """, (user_id, title, message, notification_type, json.dumps(data) if data else None))
                 except Exception:
                     try:
@@ -68,7 +68,7 @@ class DbNotificationsMixin:
                     conn.execute("""
                         INSERT INTO notification_history 
                         (user_id, title, message, notification_type, type, created_at, status)
-                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'pending')
+                        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'pending')
                     """, (user_id, title, message, notification_type, notification_type))
                 return True
         except Exception as e:
@@ -80,16 +80,16 @@ class DbNotificationsMixin:
         try:
             with self.get_write_connection() as conn:
                 existing = conn.execute("""
-                    SELECT id FROM user_notification_settings WHERE user_id = ?
+                    SELECT id FROM user_notification_settings WHERE user_id = %s
                 """, (user_id,)).fetchone()
                 
                 if existing:
                     conn.execute("""
                         UPDATE user_notification_settings 
-                        SET push_enabled = ?, email_enabled = ?, sms_enabled = ?,
-                            trade_notifications = ?, price_alerts = ?, system_notifications = ?,
+                        SET push_enabled = %s, email_enabled = %s, sms_enabled = %s,
+                            trade_notifications = %s, price_alerts = %s, system_notifications = %s,
                             updated_at = datetime('now')
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                     """, (
                         settings.get('push_enabled', True),
                         settings.get('email_enabled', True), 
@@ -104,7 +104,7 @@ class DbNotificationsMixin:
                         INSERT INTO user_notification_settings 
                         (user_id, push_enabled, email_enabled, sms_enabled, 
                          trade_notifications, price_alerts, system_notifications, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, datetime('now'))
                     """, (
                         user_id,
                         settings.get('push_enabled', True),
@@ -125,7 +125,7 @@ class DbNotificationsMixin:
         try:
             with self.get_write_connection() as conn:
                 existing = conn.execute("""
-                    SELECT id FROM user_devices WHERE user_id = ? AND push_token = ?
+                    SELECT id FROM user_devices WHERE user_id = %s AND push_token = %s
                 """, (user_id, fcm_token)).fetchone()
 
                 if not existing:
@@ -133,18 +133,18 @@ class DbNotificationsMixin:
                     conn.execute("""
                         INSERT INTO user_devices 
                         (user_id, device_id, device_type, device_name, push_token, is_trusted, created_at)
-                        VALUES (?, ?, ?, ?, ?, 1, datetime('now'))
+                        VALUES (%s, %s, %s, %s, %s, 1, datetime('now'))
                     """, (user_id, device_id, platform, 'Mobile App', fcm_token))
                 else:
                     conn.execute("""
                         UPDATE user_devices 
                         SET is_trusted = 1, last_login = datetime('now')
-                        WHERE user_id = ? AND push_token = ?
+                        WHERE user_id = %s AND push_token = %s
                     """, (user_id, fcm_token))
 
                 conn.execute("""
                     INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at)
-                    VALUES (?, ?, ?, datetime('now'))
+                    VALUES (%s, %s, %s, datetime('now'))
                     ON CONFLICT (fcm_token) DO UPDATE SET platform = EXCLUDED.platform
                 """, (user_id, fcm_token, platform))
                 conn.commit()
@@ -159,11 +159,11 @@ class DbNotificationsMixin:
             with self.get_write_connection() as conn:
                 conn.execute("""
                     DELETE FROM fcm_tokens 
-                    WHERE user_id = ? AND fcm_token = ?
+                    WHERE user_id = %s AND fcm_token = %s
                 """, (user_id, fcm_token))
                 conn.execute("""
                     DELETE FROM user_devices
-                    WHERE user_id = ? AND push_token = ?
+                    WHERE user_id = %s AND push_token = %s
                 """, (user_id, fcm_token))
                 conn.commit()
                 return True
@@ -177,7 +177,7 @@ class DbNotificationsMixin:
             with self.get_connection() as conn:
                 rows = conn.execute("""
                     SELECT fcm_token, platform FROM fcm_tokens 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """, (user_id,)).fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -192,9 +192,9 @@ class DbNotificationsMixin:
             with self.get_connection() as conn:
                 rows = conn.execute("""
                     SELECT * FROM activity_logs 
-                    WHERE user_id = ? 
+                    WHERE user_id = %s 
                     ORDER BY created_at DESC 
-                    LIMIT ?
+                    LIMIT %s
                 """, (user_id, limit)).fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -210,7 +210,7 @@ class DbNotificationsMixin:
                 conn.execute("""
                     INSERT OR REPLACE INTO user_sessions 
                     (user_id, session_token, expires_at, created_at)
-                    VALUES (?, ?, datetime('now', '+7 days'), datetime('now'))
+                    VALUES (%s, %s, datetime('now', '+7 days'), datetime('now'))
                 """, (user_id, token))
                 
                 self.logger.info(f"تم إنشاء جلسة جديدة للمستخدم {user_id}")
@@ -229,7 +229,7 @@ class DbNotificationsMixin:
                     SELECT us.*, u.username, u.user_type 
                     FROM user_sessions us
                     JOIN users u ON us.user_id = u.id
-                    WHERE us.session_token = ? AND us.expires_at > datetime('now')
+                    WHERE us.session_token = %s AND us.expires_at > datetime('now')
                 """, (token,)).fetchone()
                 
                 if session:
@@ -246,7 +246,7 @@ class DbNotificationsMixin:
             with self.get_write_connection() as conn:
                 conn.execute("""
                     DELETE FROM user_sessions 
-                    WHERE session_token = ?
+                    WHERE session_token = %s
                 """, (token,))
                 
                 self.logger.info(f"تم إلغاء الجلسة: {token[:20]}...")
@@ -264,7 +264,7 @@ class DbNotificationsMixin:
                 sessions = conn.execute("""
                     SELECT session_token, created_at, expires_at
                     FROM user_sessions 
-                    WHERE user_id = ? AND expires_at > datetime('now')
+                    WHERE user_id = %s AND expires_at > datetime('now')
                     ORDER BY created_at DESC
                 """, (user_id,)).fetchall()
                 
@@ -284,13 +284,13 @@ class DbNotificationsMixin:
                 
                 conn.execute("""
                     DELETE FROM user_biometric_auth 
-                    WHERE user_id = ? AND biometric_type = ?
+                    WHERE user_id = %s AND biometric_type = %s
                 """, (user_id, biometric_type))
                 
                 conn.execute("""
                     INSERT INTO user_biometric_auth 
                     (user_id, biometric_type, biometric_hash, device_id, created_at, is_active)
-                    VALUES (?, ?, ?, ?, datetime('now'), 1)
+                    VALUES (%s, %s, %s, %s, datetime('now'), 1)
                 """, (
                     user_id,
                     biometric_type,
@@ -314,7 +314,7 @@ class DbNotificationsMixin:
                 stored_biometric = conn.execute("""
                     SELECT biometric_hash, biometric_type 
                     FROM user_biometric_auth 
-                    WHERE user_id = ? AND biometric_type = ? AND is_active = 1
+                    WHERE user_id = %s AND biometric_type = %s AND is_active = 1
                 """, (user_id, biometric_data.get('biometric_type'))).fetchone()
                 
                 if stored_biometric:
@@ -334,7 +334,7 @@ class DbNotificationsMixin:
                 biometrics = conn.execute("""
                     SELECT biometric_type, device_id, created_at, is_active
                     FROM user_biometric_auth 
-                    WHERE user_id = ? AND is_active = 1
+                    WHERE user_id = %s AND is_active = 1
                 """, (user_id,)).fetchall()
                 
                 return [dict(biometric) for biometric in biometrics]
@@ -352,7 +352,7 @@ class DbNotificationsMixin:
                 conn.execute("""
                     INSERT OR REPLACE INTO user_devices 
                     (user_id, device_id, device_name, device_type, device_model, created_at)
-                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    VALUES (%s, %s, %s, %s, %s, datetime('now'))
                 """, (
                     user_id,
                     device_data.get('device_id'),
@@ -376,7 +376,7 @@ class DbNotificationsMixin:
                 devices = conn.execute("""
                     SELECT device_id, device_name, device_type, device_model, created_at
                     FROM user_devices 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY created_at DESC
                 """, (user_id,)).fetchall()
                 

@@ -643,7 +643,7 @@ class UnifiedExitSystem:
                 min_profit = entry * (1 + self.config['trailing']['min_profit_lock'])
                 state.trailing_stop = max(new_trail, min_profit)
             
-            # فحص: هل ضرب Trailing?
+            # فحص: هل ضرب Trailing%s
             if price <= state.trailing_stop:
                 # === حماية الاتجاه (V5 - من النظام الأصلي) ===
                 if self.config['trailing']['trend_protection'] and candle_data:

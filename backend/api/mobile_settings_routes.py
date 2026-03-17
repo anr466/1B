@@ -62,7 +62,7 @@ def register_mobile_settings_routes(bp, shared):
                            take_profit_pct, max_positions, trading_mode, is_demo,
                            max_daily_loss_pct
                     FROM user_settings 
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                     LIMIT 1
                 """
                 result = db.execute_query(settings_query, (user_id, is_demo))
@@ -74,7 +74,7 @@ def register_mobile_settings_routes(bp, shared):
                            take_profit_pct, max_positions, trading_mode, is_demo,
                            max_daily_loss_pct
                     FROM user_settings 
-                    WHERE user_id = ? AND is_demo = FALSE
+                    WHERE user_id = %s AND is_demo = FALSE
                     LIMIT 1
                 """
                 result = db.execute_query(settings_query, (user_id, ))
@@ -85,7 +85,7 @@ def register_mobile_settings_routes(bp, shared):
                     conn.execute(
                         """
                         INSERT INTO user_settings (user_id, is_demo, trading_mode)
-                        VALUES (?, ?, ?)
+                        VALUES (%s, %s, %s)
                         ON CONFLICT (user_id, is_demo) DO NOTHING
                         """,
                         (user_id, effective_is_demo, 'demo' if effective_is_demo else 'real'),
@@ -121,7 +121,7 @@ def register_mobile_settings_routes(bp, shared):
                     return fallback
 
             # ✅ فحص وجود مفاتيح Binance
-            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
+            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
             keys_result = db.execute_query(keys_query, (user_id,))
             has_keys = keys_result[0]['count'] > 0 if keys_result else False
 
@@ -347,7 +347,7 @@ def register_mobile_settings_routes(bp, shared):
             if trading_enabled:
                 # ✅ فحص نوع المستخدم ووضع التداول لتحديد الاستثناءات
                 # ملاحظة: حجم الصفقة وعدد المراكز يتحكم فيها backend تلقائياً — لا نتحقق منها هنا
-                user_type_query = "SELECT user_type FROM users WHERE id = ?"
+                user_type_query = "SELECT user_type FROM users WHERE id = %s"
                 user_type_result = db.execute_query(user_type_query, (user_id,))
                 is_admin_user = user_type_result[0]['user_type'] == 'admin' if user_type_result else False
 
@@ -361,7 +361,7 @@ def register_mobile_settings_routes(bp, shared):
 
                 if not skip_binance_check:
                     # 1️⃣ فحص وجود مفاتيح Binance (مطلوب للتداول الحقيقي)
-                    keys_query = "SELECT api_key, api_secret FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
+                    keys_query = "SELECT api_key, api_secret FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
                     keys_result = db.execute_query(keys_query, (user_id,))
                     has_keys = keys_result and len(keys_result) > 0 and keys_result[0].get('api_key')
 
@@ -379,7 +379,7 @@ def register_mobile_settings_routes(bp, shared):
                 if 'tradeAmount' in data:
                     trade_amount = float(data['tradeAmount'])
                 else:
-                    _amt_q = "SELECT trade_amount FROM user_settings WHERE user_id = ? AND is_demo = ?"
+                    _amt_q = "SELECT trade_amount FROM user_settings WHERE user_id = %s AND is_demo = %s"
                     _amt_r = db.execute_query(_amt_q, (user_id, current_is_demo))
                     trade_amount = float(_amt_r[0]['trade_amount'] or 100.0) if _amt_r else 100.0
                 available_balance = 0.0
@@ -387,7 +387,7 @@ def register_mobile_settings_routes(bp, shared):
 
                 if skip_binance_check:
                     # ✅ الأدمن في الوضع التجريبي: جلب الرصيد من قاعدة البيانات
-                    demo_query = "SELECT available_balance FROM portfolio WHERE user_id = ? AND is_demo = TRUE"
+                    demo_query = "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE"
                     demo_result = db.execute_query(demo_query, (user_id,))
                     available_balance = float(demo_result[0]['available_balance'] or 0) if demo_result else 0.0
                     logger.info(f"✅ Demo balance for admin {user_id}: {available_balance:.2f} USDT")
@@ -436,7 +436,7 @@ def register_mobile_settings_routes(bp, shared):
                 positions_query = """
                     SELECT COUNT(*) as count, SUM(COALESCE(quantity * entry_price, 0)) as locked_amount
                     FROM active_positions 
-                    WHERE user_id = ? AND is_active = TRUE AND is_demo = ?
+                    WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
                 """
                 positions_result = db.execute_query(positions_query, (user_id, current_is_demo))
                 open_positions = positions_result[0]['count'] if positions_result else 0
@@ -461,7 +461,7 @@ def register_mobile_settings_routes(bp, shared):
                     max_daily_loss = 15.0
 
             # ✅ تحديد المحفظة المستهدفة (للأدمن حسب trading_mode، للمستخدمين دائماً وهمية)
-            user_query = "SELECT user_type FROM users WHERE id = ?"
+            user_query = "SELECT user_type FROM users WHERE id = %s"
             user_result = db.execute_query(user_query, (user_id,))
             is_admin = user_result[0]['user_type'] == 'admin' if user_result else False
 
@@ -475,7 +475,7 @@ def register_mobile_settings_routes(bp, shared):
                 current_mode = 'real'
 
             # فحص وجود إعدادات للمحفظة المستهدفة
-            check_query = "SELECT id FROM user_settings WHERE user_id = ? AND is_demo = ?"
+            check_query = "SELECT id FROM user_settings WHERE user_id = %s AND is_demo = %s"
             existing = db.execute_query(check_query, (user_id, target_is_demo))
             stop_loss_value = data.get('stopLossPercentage') or data.get('stopLossPct') or data.get('stop_loss_pct', 3.0)
             take_profit_value = data.get('takeProfitPercentage') or data.get('takeProfitPct') or data.get('take_profit_pct', 6.0)
@@ -517,11 +517,11 @@ def register_mobile_settings_routes(bp, shared):
                 if max_daily_loss is not None:
                     field_map['max_daily_loss_pct'] = float(max_daily_loss)
                 field_map['trading_mode'] = effective_mode  # دائماً نحدّث وضع التداول
-                set_clauses = ', '.join(f"{k} = ?" for k in field_map.keys())
+                set_clauses = ', '.join(f"{k} = %s" for k in field_map.keys())
                 update_query = f"""
                     UPDATE user_settings
                     SET {set_clauses}, updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                 """
                 db.execute_query(update_query, (*field_map.values(), user_id, target_is_demo))
             else:
@@ -531,7 +531,7 @@ def register_mobile_settings_routes(bp, shared):
                         position_size_percentage, stop_loss_pct, take_profit_pct, trailing_distance,
                         max_positions, risk_level, max_daily_loss_pct, trading_mode, 
                         created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """
                 db.execute_query(insert_query, (
                     user_id, target_is_demo,
@@ -555,9 +555,9 @@ def register_mobile_settings_routes(bp, shared):
                             total_profit_loss, total_profit_loss_percentage, initial_balance,
                             is_demo, created_at, updated_at
                         )
-                        SELECT ?, ?, ?, 0.0, 0.0, 0.0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        SELECT %s, %s, %s, 0.0, 0.0, 0.0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                         WHERE NOT EXISTS (
-                            SELECT 1 FROM portfolio WHERE user_id = ? AND is_demo = ?
+                            SELECT 1 FROM portfolio WHERE user_id = %s AND is_demo = %s
                         )
                         """,
                         (user_id, initial_balance, initial_balance, initial_balance, target_is_demo, user_id, target_is_demo)
@@ -603,7 +603,7 @@ def register_mobile_settings_routes(bp, shared):
         try:
             db = db_manager
 
-            user_query = "SELECT user_type FROM users WHERE id = ?"
+            user_query = "SELECT user_type FROM users WHERE id = %s"
             user_result = db.execute_query(user_query, (user_id,))
 
             if not user_result:
@@ -614,7 +614,7 @@ def register_mobile_settings_routes(bp, shared):
 
             current_mode = get_trading_context(db, user_id)['trading_mode']
 
-            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
+            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
             keys_result = db.execute_query(keys_query, (user_id,))
             has_keys = keys_result[0]['count'] > 0 if keys_result else False
 
@@ -652,7 +652,7 @@ def register_mobile_settings_routes(bp, shared):
             db = db_manager
 
             # فحص نوع المستخدم
-            user_query = "SELECT user_type FROM users WHERE id = ?"
+            user_query = "SELECT user_type FROM users WHERE id = %s"
             user_result = db.execute_query(user_query, (user_id,))
 
             if not user_result:
@@ -662,7 +662,7 @@ def register_mobile_settings_routes(bp, shared):
 
             # إذا كان real، تحقق من المفاتيح
             if new_mode == 'real':
-                keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
+                keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
                 keys_result = db.execute_query(keys_query, (user_id,))
                 has_keys = keys_result[0]['count'] > 0 if keys_result else False
 
@@ -677,14 +677,14 @@ def register_mobile_settings_routes(bp, shared):
 
             # ضمان وجود صف إعدادات للمحفظة المستهدفة قبل التبديل لتفادي دورة إعدادات غير مكتملة
             target_is_demo = new_mode == 'demo'
-            target_row_query = "SELECT id FROM user_settings WHERE user_id = ? AND is_demo = ? LIMIT 1"
+            target_row_query = "SELECT id FROM user_settings WHERE user_id = %s AND is_demo = %s LIMIT 1"
             target_row = db.execute_query(target_row_query, (user_id, target_is_demo))
             if not target_row:
                 source_query = """
                     SELECT trade_amount, position_size_percentage, stop_loss_pct, take_profit_pct,
                            trailing_distance, max_positions, risk_level, max_daily_loss_pct
                     FROM user_settings
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY COALESCE(updated_at, created_at) DESC
                     LIMIT 1
                 """
@@ -697,7 +697,7 @@ def register_mobile_settings_routes(bp, shared):
                             user_id, is_demo, trading_enabled, trade_amount, position_size_percentage,
                             stop_loss_pct, take_profit_pct, trailing_distance, max_positions,
                             risk_level, max_daily_loss_pct, trading_mode, created_at, updated_at
-                        ) VALUES (?, ?, FALSE, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (%s, %s, FALSE, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """,
                         (
                             user_id,
@@ -722,9 +722,9 @@ def register_mobile_settings_routes(bp, shared):
                                 total_profit_loss, total_profit_loss_percentage, initial_balance,
                                 is_demo, created_at, updated_at
                             )
-                            SELECT ?, ?, ?, 0.0, 0.0, 0.0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            SELECT %s, %s, %s, 0.0, 0.0, 0.0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                             WHERE NOT EXISTS (
-                                SELECT 1 FROM portfolio WHERE user_id = ? AND is_demo = ?
+                                SELECT 1 FROM portfolio WHERE user_id = %s AND is_demo = %s
                             )
                             """,
                             (
@@ -744,7 +744,7 @@ def register_mobile_settings_routes(bp, shared):
                             user_id, is_demo, trading_enabled, trade_amount, position_size_percentage,
                             stop_loss_pct, take_profit_pct, trailing_distance, max_positions,
                             risk_level, max_daily_loss_pct, trading_mode, created_at, updated_at
-                        ) VALUES (?, ?, FALSE, 100.0, 10.0, 3.0, 6.0, 3.0, 5, 'medium', 10.0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (%s, %s, FALSE, 100.0, 10.0, 3.0, 6.0, 3.0, 5, 'medium', 10.0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """,
                         (user_id, target_is_demo, new_mode),
                     )
@@ -757,9 +757,9 @@ def register_mobile_settings_routes(bp, shared):
                                 total_profit_loss, total_profit_loss_percentage, initial_balance,
                                 is_demo, created_at, updated_at
                             )
-                            SELECT ?, ?, ?, 0.0, 0.0, 0.0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            SELECT %s, %s, %s, 0.0, 0.0, 0.0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                             WHERE NOT EXISTS (
-                                SELECT 1 FROM portfolio WHERE user_id = ? AND is_demo = ?
+                                SELECT 1 FROM portfolio WHERE user_id = %s AND is_demo = %s
                             )
                             """,
                             (
@@ -777,8 +777,8 @@ def register_mobile_settings_routes(bp, shared):
             # trading_mode يجب أن يكون متزامن في كلا الصفين
             update_query = """
                 UPDATE user_settings
-                SET trading_mode = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
+                SET trading_mode = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
             """
             db.execute_query(update_query, (new_mode, user_id))
 
@@ -839,7 +839,7 @@ def register_mobile_settings_routes(bp, shared):
             db = db_manager
 
             # جلب المفاتيح المشفرة
-            keys_query = "SELECT id, api_key, is_active, created_at FROM user_binance_keys WHERE user_id = ? AND is_active = TRUE"
+            keys_query = "SELECT id, api_key, is_active, created_at FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
             result = db.execute_query(keys_query, (user_id,))
 
             if result and len(result) > 0:
@@ -958,9 +958,9 @@ def register_mobile_settings_routes(bp, shared):
                 }), 500
 
             # حذف القديم وإضافة الجديد
-            db.execute_query("UPDATE user_binance_keys SET is_active = 0 WHERE user_id = ?", (user_id,))
+            db.execute_query("UPDATE user_binance_keys SET is_active = 0 WHERE user_id = %s", (user_id,))
             db.execute_query(
-                "INSERT INTO user_binance_keys (user_id, api_key, api_secret, is_active, created_at) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)",
+                "INSERT INTO user_binance_keys (user_id, api_key, api_secret, is_active, created_at) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP)",
                 (user_id, encrypted_key, encrypted_secret)
             )
 
@@ -982,13 +982,13 @@ def register_mobile_settings_routes(bp, shared):
             db = db_manager
             user_id = g.current_user_id
 
-            check_query = "SELECT user_id FROM user_binance_keys WHERE id = ?"
+            check_query = "SELECT user_id FROM user_binance_keys WHERE id = %s"
             result = db.execute_query(check_query, (key_id,))
 
             if not result or result[0]['user_id'] != user_id:
                 return error_response('لا توجد صلاحيات', 'UNAUTHORIZED', 403)
 
-            db.execute_query("UPDATE user_binance_keys SET is_active = 0 WHERE id = ?", (key_id,))
+            db.execute_query("UPDATE user_binance_keys SET is_active = 0 WHERE id = %s", (key_id,))
             return success_response(None, 'تم حذف المفتاح')
         except Exception as e:
             logger.error(f"❌ خطأ Delete Key: {e}")
@@ -1173,7 +1173,7 @@ def register_mobile_settings_routes(bp, shared):
         try:
             db = db_manager
 
-            profile_query = "SELECT id, username, name, email, phone_number, user_type, is_active, created_at, last_login_at FROM users WHERE id = ?"
+            profile_query = "SELECT id, username, name, email, phone_number, user_type, is_active, created_at, last_login_at FROM users WHERE id = %s"
             result = db.execute_query(profile_query, (user_id,))
 
             if result and len(result) > 0:
@@ -1219,21 +1219,21 @@ def register_mobile_settings_routes(bp, shared):
                 phone_number = data.get('phoneNumber') or data.get('phone_number') or data.get('phone')
 
                 if full_name is not None:
-                    updates.append("name = ?")
+                    updates.append("name = %s")
                     params.append((full_name or '').strip() or None)
                 if 'bio' in data:
-                    updates.append("bio = ?")
+                    updates.append("bio = %s")
                     params.append((data['bio'] or '').strip() or None)
                 if 'avatar' in data:
-                    updates.append("avatar = ?")
+                    updates.append("avatar = %s")
                     params.append((data['avatar'] or '').strip() or None)
                 if phone_number is not None:
-                    updates.append("phone_number = ?")
+                    updates.append("phone_number = %s")
                     params.append((phone_number or '').strip() or None)
 
                 if updates:
                     params.append(user_id)
-                    query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+                    query = f"UPDATE users SET {', '.join(updates)} WHERE id = %s"
                     cursor.execute(query, params)
 
             return success_response(None, 'تم تحديث الملف الشخصي بنجاح')
@@ -1259,35 +1259,35 @@ def register_mobile_settings_routes(bp, shared):
             return jsonify(response_data), status_code
 
         try:
-            user_row = db_manager.execute_query("SELECT user_type FROM users WHERE id = ?", (user_id,))
+            user_row = db_manager.execute_query("SELECT user_type FROM users WHERE id = %s", (user_id,))
             is_admin_user = user_row[0]['user_type'] == 'admin' if user_row else False
             reset_mode = 'demo' if is_admin_user else 'real'
             reset_is_demo = is_admin_user
 
             with db_manager.get_write_connection() as conn:
                 # حذف المراكز النشطة
-                conn.execute("DELETE FROM active_positions WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM active_positions WHERE user_id = %s", (user_id,))
 
                 # إعادة ضبط المحفظة (استخدام الأعمدة الصحيحة)
                 # ✅ FIX: الرصيد الافتراضي = 1000 USDT (يتطابق مع UI والتوثيق)
                 portfolio_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = ? AND is_demo = ? LIMIT 1
+                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1
                 """, (user_id, reset_is_demo)).fetchone()
                 initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
                 conn.execute("""
                     UPDATE portfolio 
-                    SET total_balance = ?, available_balance = ?, 
+                    SET total_balance = %s, available_balance = %s, 
                         invested_balance = 0.0, total_profit_loss = 0.0, 
-                        total_profit_loss_percentage = 0.0, initial_balance = ?
-                    WHERE user_id = ? AND is_demo = ?
+                        total_profit_loss_percentage = 0.0, initial_balance = %s
+                    WHERE user_id = %s AND is_demo = %s
                 """, (initial_balance, initial_balance, initial_balance, user_id, reset_is_demo))
 
                 # إعادة ضبط الإعدادات للقيم الافتراضية
                 conn.execute("""
                     UPDATE user_settings 
-                    SET trading_mode = ?, stop_loss_pct = 2.0, take_profit_pct = 5.0,
+                    SET trading_mode = %s, stop_loss_pct = 2.0, take_profit_pct = 5.0,
                         max_positions = 5, trading_enabled = TRUE
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                 """, (reset_mode, user_id, reset_is_demo))
 
                 conn.commit()
@@ -1327,7 +1327,7 @@ def register_mobile_settings_routes(bp, shared):
                 settings_row = conn.execute("""
                     SELECT max_daily_loss_pct
                     FROM user_settings
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                     ORDER BY COALESCE(updated_at, created_at) DESC
                     LIMIT 1
                 """, (user_id, is_demo)).fetchone()
@@ -1338,7 +1338,7 @@ def register_mobile_settings_routes(bp, shared):
                 port_row = conn.execute("""
                     SELECT COALESCE(initial_balance, total_balance, 0.0) as base
                     FROM portfolio
-                    WHERE user_id = ? AND is_demo = ?
+                    WHERE user_id = %s AND is_demo = %s
                     LIMIT 1
                 """, (portfolio_owner_id, is_demo)).fetchone()
                 base_balance = float(port_row[0]) if port_row else 0.0
@@ -1348,10 +1348,10 @@ def register_mobile_settings_routes(bp, shared):
                     SELECT COALESCE(SUM(profit_loss), 0.0) as daily_pnl,
                            COUNT(*) as trades_today
                     FROM active_positions
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                       AND is_active = 0
-                      AND is_demo = ?
-                      AND DATE(COALESCE(closed_at, updated_at)) = ?
+                      AND is_demo = %s
+                      AND DATE(COALESCE(closed_at, updated_at)) = %s
                 """, (portfolio_owner_id, is_demo, today)).fetchone()
 
                 daily_pnl = float(pnl_row[0]) if pnl_row else 0.0

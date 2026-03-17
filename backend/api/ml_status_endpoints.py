@@ -412,7 +412,7 @@ def get_monitored_coins():
                         ROUND(SUM(pnl), 2) as total_pnl,
                         MAX(created_at) as last_trade
                     FROM trade_learning_log
-                    WHERE created_at > ?
+                    WHERE created_at > %s
                     GROUP BY symbol
                     ORDER BY avg_pnl_pct DESC
                 """, (cutoff,)).fetchall()

@@ -168,28 +168,30 @@ def get_background_status():
         pid = None
         
         try:
-            result = subprocess.run(
-                ['pgrep', '-f', 'background_trading_manager.py'],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                pid = result.stdout.strip().split('\n')[0]
-                process_running = True
-                
-                # جلب وقت البدء
-                ps_result = subprocess.run(
-                    ['ps', '-p', pid, '-o', 'lstart='],
+            import shutil
+            if shutil.which('pgrep'):
+                result = subprocess.run(
+                    ['pgrep', '-f', 'background_trading_manager.py'],
                     capture_output=True,
                     text=True,
                     timeout=2
                 )
-                if ps_result.returncode == 0 and ps_result.stdout.strip():
-                    start_time_str = ps_result.stdout.strip()
-                    start_time = datetime.strptime(start_time_str, '%a %b %d %H:%M:%S %Y')
-                    started_at = start_time.isoformat()
-                    uptime = int((datetime.now() - start_time).total_seconds())
+                if result.returncode == 0 and result.stdout.strip():
+                    pid = result.stdout.strip().split('\n')[0]
+                    process_running = True
+                    
+                    # جلب وقت البدء
+                    ps_result = subprocess.run(
+                        ['ps', '-p', pid, '-o', 'lstart='],
+                        capture_output=True,
+                        text=True,
+                        timeout=2
+                    )
+                    if ps_result.returncode == 0 and ps_result.stdout.strip():
+                        start_time_str = ps_result.stdout.strip()
+                        start_time = datetime.strptime(start_time_str, '%a %b %d %H:%M:%S %Y')
+                        started_at = start_time.isoformat()
+                        uptime = int((datetime.now() - start_time).total_seconds())
         except Exception as proc_error:
             logger.warning(f"⚠️ فشل فحص العملية: {proc_error}")
         

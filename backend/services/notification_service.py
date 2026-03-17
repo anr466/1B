@@ -65,7 +65,7 @@ class NotificationService:
                 cursor.execute("""
                     INSERT INTO notifications 
                     (user_id, title, message, type, is_read, created_at, data)
-                    VALUES (?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP, ?)
+                    VALUES (%s, %s, %s, %s, FALSE, CURRENT_TIMESTAMP, %s)
                 """, (
                     user_id,
                     title,
@@ -102,9 +102,9 @@ class NotificationService:
                                    CASE WHEN COALESCE(is_read, FALSE) THEN 'read' ELSE 'sent' END as status,
                                    created_at
                             FROM notifications
-                            WHERE user_id = ? AND created_at > ?
+                            WHERE user_id = %s AND created_at > %s
                             ORDER BY created_at DESC
-                            LIMIT ?
+                            LIMIT %s
                         """, (user_id, last_check, limit))
                     else:
                         cursor.execute("""
@@ -113,9 +113,9 @@ class NotificationService:
                                    CASE WHEN COALESCE(is_read, FALSE) THEN 'read' ELSE 'sent' END as status,
                                    created_at
                             FROM notifications
-                            WHERE user_id = ?
+                            WHERE user_id = %s
                             ORDER BY created_at DESC
-                            LIMIT ?
+                            LIMIT %s
                         """, (user_id, limit))
                 except Exception:
                     try:
@@ -129,10 +129,10 @@ class NotificationService:
                                        title, message, data, NULL as priority,
                                        status, created_at
                                 FROM notification_history
-                                WHERE user_id = ? AND status IN ('pending', 'sent')
-                                AND created_at > ?
+                                WHERE user_id = %s AND status IN ('pending', 'sent')
+                                AND created_at > %s
                                 ORDER BY created_at DESC
-                                LIMIT ?
+                                LIMIT %s
                             """, (user_id, last_check, limit))
                         except Exception:
                             try:
@@ -144,10 +144,10 @@ class NotificationService:
                                        title, message, NULL as data, NULL as priority,
                                        status, created_at
                                 FROM notification_history
-                                WHERE user_id = ? AND status IN ('pending', 'sent')
-                                AND created_at > ?
+                                WHERE user_id = %s AND status IN ('pending', 'sent')
+                                AND created_at > %s
                                 ORDER BY created_at DESC
-                                LIMIT ?
+                                LIMIT %s
                             """, (user_id, last_check, limit))
                     else:
                         try:
@@ -156,9 +156,9 @@ class NotificationService:
                                        title, message, data, NULL as priority,
                                        status, created_at
                                 FROM notification_history
-                                WHERE user_id = ? AND status IN ('pending', 'sent')
+                                WHERE user_id = %s AND status IN ('pending', 'sent')
                                 ORDER BY created_at DESC
-                                LIMIT ?
+                                LIMIT %s
                             """, (user_id, limit))
                         except Exception:
                             try:
@@ -170,9 +170,9 @@ class NotificationService:
                                        title, message, NULL as data, NULL as priority,
                                        status, created_at
                                 FROM notification_history
-                                WHERE user_id = ? AND status IN ('pending', 'sent')
+                                WHERE user_id = %s AND status IN ('pending', 'sent')
                                 ORDER BY created_at DESC
-                                LIMIT ?
+                                LIMIT %s
                             """, (user_id, limit))
 
                 notifications = []
@@ -206,7 +206,7 @@ class NotificationService:
                     cursor.execute("""
                         UPDATE notification_history
                         SET status = 'delivered'
-                        WHERE id = ?
+                        WHERE id = %s
                     """, (notification_id,))
                     return True
                 except Exception:
@@ -217,7 +217,7 @@ class NotificationService:
                     cursor.execute("""
                         UPDATE notifications
                         SET is_read = COALESCE(is_read, FALSE)
-                        WHERE id = ?
+                        WHERE id = %s
                     """, (notification_id,))
                     return True
         
@@ -233,7 +233,7 @@ class NotificationService:
                     cursor.execute("""
                         UPDATE notifications
                         SET is_read = TRUE
-                        WHERE id = ?
+                        WHERE id = %s
                     """, (notification_id,))
                     return True
                 except Exception:
@@ -244,7 +244,7 @@ class NotificationService:
                     cursor.execute("""
                         UPDATE notification_history
                         SET status = 'read', read_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
+                        WHERE id = %s
                     """, (notification_id,))
                     return True
         
@@ -266,9 +266,9 @@ class NotificationService:
                                created_at,
                                NULL as delivered_at
                         FROM notifications
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         ORDER BY created_at DESC
-                        LIMIT ?
+                        LIMIT %s
                     """, (user_id, limit))
                 except Exception:
                     try:
@@ -281,9 +281,9 @@ class NotificationService:
                                    title, message, data, NULL as priority,
                                    status, created_at, NULL as delivered_at
                             FROM notification_history
-                            WHERE user_id = ?
+                            WHERE user_id = %s
                             ORDER BY created_at DESC
-                            LIMIT ?
+                            LIMIT %s
                         """, (user_id, limit))
                     except Exception:
                         try:
@@ -295,9 +295,9 @@ class NotificationService:
                                    title, message, NULL as data, NULL as priority,
                                    status, created_at, NULL as delivered_at
                             FROM notification_history
-                            WHERE user_id = ?
+                            WHERE user_id = %s
                             ORDER BY created_at DESC
-                            LIMIT ?
+                            LIMIT %s
                         """, (user_id, limit))
 
                 history = []
@@ -336,7 +336,7 @@ class NotificationService:
                             COUNT(CASE WHEN COALESCE(type, '') LIKE 'trade%' THEN 1 END) as trade_notifications,
                             0 as high_priority
                         FROM notifications
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
                     """, (user_id,))
                 except Exception:
@@ -352,7 +352,7 @@ class NotificationService:
                             COUNT(CASE WHEN COALESCE(type, notification_type, '') LIKE 'trade%' THEN 1 END) as trade_notifications,
                             0 as high_priority
                         FROM notification_history
-                        WHERE user_id = ?
+                        WHERE user_id = %s
                         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
                     """, (user_id,))
                 

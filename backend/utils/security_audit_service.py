@@ -107,7 +107,7 @@ class SecurityAuditService:
                 conn.execute("""
                     INSERT INTO security_audit_log 
                     (user_id, action, resource, ip_address, user_agent, status, details)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (
                     user_id,
                     action,
@@ -162,9 +162,9 @@ class SecurityAuditService:
                 cursor = conn.execute("""
                     SELECT action, resource, status, ip_address, created_at
                     FROM security_audit_log
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT %s
                 """, (user_id, limit))
                 
                 return [
@@ -189,7 +189,7 @@ class SecurityAuditService:
                 cursor = conn.execute("""
                     SELECT COUNT(*) FROM security_audit_log
                     WHERE action = 'LOGIN_FAILED'
-                    AND resource = ?
+                    AND resource = %s
                     AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute')
                 """, (email, minutes))
                 
@@ -207,8 +207,8 @@ class SecurityAuditService:
             with self.db_manager.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT COUNT(*) FROM security_audit_log
-                    WHERE action = ?
-                    AND resource = ?
+                    WHERE action = %s
+                    AND resource = %s
                     AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute')
                 """, (action, email, minutes))
                 

@@ -361,7 +361,7 @@ class PositionManagerMixin:
                     try:
                         with self.db.get_write_connection() as conn:
                             conn.execute(
-                                "UPDATE active_positions SET highest_price = ? WHERE id = ?",
+                                "UPDATE active_positions SET highest_price = %s WHERE id = %s",
                                 (updated['peak'], position_id))
                     except Exception as e:
                         self.logger.warning(f"⚠️ Failed to update peak: {e}")
@@ -955,7 +955,7 @@ class PositionManagerMixin:
         try:
             with self.db.get_write_connection() as conn:
                 conn.execute(
-                    "UPDATE active_positions SET stop_loss = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    "UPDATE active_positions SET stop_loss = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                     (new_sl, position_id))
             self.logger.debug(f"   🛡️ SL updated to ${new_sl:.4f} (breakeven)")
         except Exception as e:

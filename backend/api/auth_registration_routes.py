@@ -65,7 +65,7 @@ def register_registration_routes(bp, shared):
                     cursor.execute("""
                         SELECT COUNT(*) FROM activity_logs 
                         WHERE action = 'availability_check' 
-                        AND details LIKE ? 
+                        AND details LIKE %s 
                         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '1 minute')
                     """, (client_ip,))
                     request_count = cursor.fetchone()[0]
@@ -90,17 +90,17 @@ def register_registration_routes(bp, shared):
                     phone_available = True
                     
                     if email:
-                        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+                        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
                         if cursor.fetchone():
                             email_available = False
                     
                     if username:
-                        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+                        cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
                         if cursor.fetchone():
                             username_available = False
                     
                     if phone:
-                        cursor.execute("SELECT id FROM users WHERE phone_number = ?", (phone,))
+                        cursor.execute("SELECT id FROM users WHERE phone_number = %s", (phone,))
                         if cursor.fetchone():
                             phone_available = False
                     
@@ -142,7 +142,7 @@ def register_registration_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+                    cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
                     if cursor.fetchone():
                         return jsonify({'success': False, 'error': 'البريد الإلكتروني مسجل مسبقاً'}), 409
             except Exception as e:
@@ -227,7 +227,7 @@ def register_registration_routes(bp, shared):
                 try:
                     with db_manager.get_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("SELECT id FROM users WHERE email = ?", (email_check,))
+                        cursor.execute("SELECT id FROM users WHERE email = %s", (email_check,))
                         existing = cursor.fetchone()
                         if existing:
                             logger.info(f"⚠️ المستخدم موجود مسبقاً: {email_check} - توجيه لتسجيل الدخول")
@@ -294,19 +294,19 @@ def register_registration_routes(bp, shared):
                     try:
                         duplicate_query = """
                             SELECT id FROM users
-                            WHERE LOWER(email) = LOWER(?)
-                               OR LOWER(username) = LOWER(?)
+                            WHERE LOWER(email) = LOWER(%s)
+                               OR LOWER(username) = LOWER(%s)
                         """
                         duplicate_params = [email, username]
 
                         if normalized_phone:
                             if getattr(db_manager, 'is_postgres', lambda: False)():
                                 duplicate_query += """
-                                   OR REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = ?
+                                   OR REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = %s
                                 """
                             else:
                                 duplicate_query += """
-                                   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = ?
+                                   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = %s
                                 """
                             duplicate_params.append(normalized_phone)
 
@@ -319,7 +319,7 @@ def register_registration_routes(bp, shared):
                         user_insert_cursor = conn.execute("""
                             INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
                                 is_phone_verified, preferred_verification_method, created_at, user_type)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'user')
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'user')
                         """, (username, email, password_hash, phone_number, full_name, is_verified, bool(is_phone_verified), verification_method))
                         
                         user_id = user_insert_cursor.lastrowid
@@ -329,19 +329,19 @@ def register_registration_routes(bp, shared):
                             INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount, 
                                 position_size_percentage, stop_loss_pct, take_profit_pct, max_positions, risk_level, 
                                 max_daily_loss_pct, trading_mode)
-                            VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
+                            VALUES (%s, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
                         """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO portfolio (user_id, total_balance, available_balance, 
                                 invested_balance, total_profit_loss, total_profit_loss_percentage, is_demo)
-                            VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
+                            VALUES (%s, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
                         """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO user_notification_settings (
                                 user_id, settings_data
-                            ) VALUES (?, ?)
+                            ) VALUES (%s, %s)
                             ON CONFLICT DO NOTHING
                         """, (user_id, '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}'))
                         
@@ -357,7 +357,7 @@ def register_registration_routes(bp, shared):
                     with db_manager.get_write_connection() as onboarding_conn:
                         onboarding_conn.execute("""
                             INSERT INTO user_onboarding (user_id, step, shown_at)
-                            VALUES (?, 'welcome', CURRENT_TIMESTAMP)
+                            VALUES (%s, 'welcome', CURRENT_TIMESTAMP)
                         """, (user_id,))
                 except Exception as onboarding_error:
                     logger.warning(f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}")
@@ -489,7 +489,7 @@ def register_registration_routes(bp, shared):
                         cursor.execute("""
                             SELECT id, COALESCE(email_verified, FALSE) AS email_verified
                             FROM users
-                            WHERE email = ? OR LOWER(username) = ?
+                            WHERE email = %s OR LOWER(username) = %s
                             LIMIT 1
                         """, (email, username))
                         existing_user = cursor.fetchone()
@@ -501,22 +501,22 @@ def register_registration_routes(bp, shared):
                             user_id = existing_user['id']
                             cursor.execute("""
                                 UPDATE users
-                                SET username = ?,
-                                    email = ?,
-                                    password_hash = ?,
-                                    phone_number = ?,
-                                    name = ?,
+                                SET username = %s,
+                                    email = %s,
+                                    password_hash = %s,
+                                    phone_number = %s,
+                                    name = %s,
                                     email_verified = TRUE,
                                     is_phone_verified = FALSE,
                                     preferred_verification_method = 'email'
-                                WHERE id = ?
+                                WHERE id = %s
                             """, (username, email, password_hash, phone_number, full_name, user_id))
                             logger.info(f"🔹 Existing pending user activated via OTP: {user_id}")
                         else:
                             user_insert_cursor = conn.execute("""
                                 INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
                                     is_phone_verified, preferred_verification_method, created_at, user_type)
-                                VALUES (?, ?, ?, ?, ?, TRUE, FALSE, 'email', CURRENT_TIMESTAMP, 'user')
+                                VALUES (%s, %s, %s, %s, %s, TRUE, FALSE, 'email', CURRENT_TIMESTAMP, 'user')
                             """, (username, email, password_hash, phone_number, full_name))
                             
                             user_id = user_insert_cursor.lastrowid
@@ -526,25 +526,25 @@ def register_registration_routes(bp, shared):
                                 INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount, 
                                     position_size_percentage, stop_loss_pct, take_profit_pct, max_positions, risk_level, 
                                     max_daily_loss_pct, trading_mode)
-                                VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
+                                VALUES (%s, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
                             """, (user_id,))
                             
                             cursor.execute("""
                                 INSERT INTO portfolio (user_id, total_balance, available_balance, 
                                     invested_balance, total_profit_loss, total_profit_loss_percentage, is_demo)
-                                VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
+                                VALUES (%s, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
                             """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO user_notification_settings (
                                 user_id, settings_data
-                            ) VALUES (?, ?)
+                            ) VALUES (%s, %s)
                             ON CONFLICT DO NOTHING
                         """, (user_id, '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}'))
                         
                         cursor.execute("""
                             DELETE FROM verification_codes 
-                            WHERE email = ? AND purpose = 'registration'
+                            WHERE email = %s AND purpose = 'registration'
                         """, (email,))
                         
                         conn.commit()
@@ -559,7 +559,7 @@ def register_registration_routes(bp, shared):
                     with db_manager.get_write_connection() as onboarding_conn:
                         onboarding_conn.execute("""
                             INSERT INTO user_onboarding (user_id, step, shown_at)
-                            VALUES (?, 'welcome', CURRENT_TIMESTAMP)
+                            VALUES (%s, 'welcome', CURRENT_TIMESTAMP)
                         """, (user_id,))
                 except Exception as onboarding_error:
                     logger.warning(f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}")
@@ -628,7 +628,7 @@ def register_registration_routes(bp, shared):
                     cursor = conn.cursor()
                     
                     try:
-                        cursor.execute("SELECT id FROM users WHERE phone_number = ? OR username = ?", (phone, username))
+                        cursor.execute("SELECT id FROM users WHERE phone_number = %s OR username = %s", (phone, username))
                         if cursor.fetchone():
                             conn.rollback()
                             return jsonify({'success': False, 'error': 'رقم الهاتف أو اسم المستخدم مسجل مسبقاً'}), 409
@@ -638,7 +638,7 @@ def register_registration_routes(bp, shared):
                                 username, email, phone_number, password_hash, name,
                                 email_verified, is_phone_verified, preferred_verification_method,
                                 user_type, is_active, created_at
-                            ) VALUES (?, ?, ?, ?, ?, TRUE, TRUE, 'sms', 'user', TRUE, ?)
+                            ) VALUES (%s, %s, %s, %s, %s, TRUE, TRUE, 'sms', 'user', TRUE, %s)
                         """, (username, email, phone, password_hash, full_name,
                               time.strftime('%Y-%m-%d %H:%M:%S')))
                         
@@ -649,14 +649,14 @@ def register_registration_routes(bp, shared):
                                 user_id, is_demo, trading_enabled, trade_amount,
                                 position_size_percentage, stop_loss_pct, take_profit_pct,
                                 max_positions, risk_level, max_daily_loss_pct, trading_mode
-                            ) VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
+                            ) VALUES (%s, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
                             ON CONFLICT (user_id, is_demo) DO NOTHING
                         """, (user_id,))
                         
                         cursor.execute("""
                             INSERT INTO portfolio 
                             (user_id, total_balance, available_balance, initial_balance, is_demo, updated_at)
-                            VALUES (?, 0.0, 0.0, 0.0, FALSE, CURRENT_TIMESTAMP)
+                            VALUES (%s, 0.0, 0.0, 0.0, FALSE, CURRENT_TIMESTAMP)
                             ON CONFLICT (user_id, is_demo) DO NOTHING
                         """, (user_id,))
                         

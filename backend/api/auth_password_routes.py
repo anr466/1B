@@ -190,7 +190,7 @@ def register_password_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT id FROM users WHERE email = ? AND id != ?", (new_email, user_id))
+                    cursor.execute("SELECT id FROM users WHERE email = %s AND id != %s", (new_email, user_id))
                     if cursor.fetchone():
                         return jsonify({'success': False, 'error': 'الإيميل الجديد مستخدم بالفعل'}), 409
             except Exception as e:
@@ -239,7 +239,7 @@ def register_password_routes(bp, shared):
                     try:
                         with db_manager.get_write_connection() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("UPDATE users SET email = ?, email_verified = TRUE WHERE id = ?", (new_email, user_id))
+                            cursor.execute("UPDATE users SET email = %s, email_verified = TRUE WHERE id = %s", (new_email, user_id))
                             logger.info(f"✅ تم تغيير الإيميل للمستخدم {user_id}")
                             return jsonify({'success': True, 'message': 'تم تغيير الإيميل بنجاح', 'email': new_email})
                     except Exception as e:
@@ -273,7 +273,7 @@ def register_password_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT id, email, password_hash FROM users WHERE id = ?", (user_id,))
+                    cursor.execute("SELECT id, email, password_hash FROM users WHERE id = %s", (user_id,))
                     user = cursor.fetchone()
                     
                     if not user:
@@ -323,7 +323,7 @@ def register_password_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+                    cursor.execute("SELECT email FROM users WHERE id = %s", (user_id,))
                     user = cursor.fetchone()
                     if not user:
                         return jsonify({'success': False, 'error': 'المستخدم غير موجود'}), 404
@@ -348,7 +348,7 @@ def register_password_routes(bp, shared):
                         
                         with db_manager.get_write_connection() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+                            cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
                             logger.info(f"✅ تم تغيير كلمة المرور للمستخدم {user_id}")
                             return jsonify({'success': True, 'message': 'تم تغيير كلمة المرور بنجاح'})
                     except Exception as e:
@@ -478,7 +478,7 @@ def register_password_routes(bp, shared):
                 update_user_password(user_id, new_password_hash)
                 
                 try:
-                    db_manager.execute_query("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+                    db_manager.execute_query("DELETE FROM user_sessions WHERE user_id = %s", (user_id,))
                 except Exception as e:
                     logger.debug(f"فشل حذف الجلسات القديمة: {e}")
                 

@@ -279,7 +279,7 @@ class UnifiedSystemManager:
             with db.get_write_connection() as conn:
                 conn.execute("""
                     UPDATE system_status 
-                    SET status = ?, is_running = ?, last_update = CURRENT_TIMESTAMP, message = ?
+                    SET status = %s, is_running = %s, last_update = CURRENT_TIMESTAMP, message = %s
                     WHERE id = 1
                 """, (status, 1 if is_running else 0, message))
         except Exception as e:

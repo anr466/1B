@@ -209,8 +209,8 @@ def resolve_error(error_id):
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE system_errors 
-                SET resolved = 1, resolved_at = ?
-                WHERE id = ?
+                SET resolved = 1, resolved_at = %s
+                WHERE id = %s
             """, (datetime.now().isoformat(), error_id))
         
         return jsonify({

@@ -160,7 +160,7 @@ class ScannerMixin:
                                 if not sig_score.get('should_trade', True):
                                     self.logger.info(
                                         f"   📈 [{symbol}] Signal REJECTED: "
-                                        f"{sig_score.get('reason', '?')} "
+                                        f"{sig_score.get('reason', '%s')} "
                                         f"(WR={predicted_wr:.0%})")
                                     continue
                             except Exception as e:

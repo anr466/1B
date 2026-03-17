@@ -65,7 +65,7 @@ def register_admin_users_routes(bp, shared):
                         """
                         SELECT trading_enabled
                         FROM user_settings
-                        WHERE user_id = ? AND is_demo = ?
+                        WHERE user_id = %s AND is_demo = %s
                         ORDER BY COALESCE(updated_at, created_at) DESC
                         LIMIT 1
                         """,
@@ -126,7 +126,7 @@ def register_admin_users_routes(bp, shared):
                         user_type, is_active, created_at,
                         last_login_at AS last_login
                     FROM users
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (user_id,))
 
                 row = cursor.fetchone()
@@ -188,18 +188,18 @@ def register_admin_users_routes(bp, shared):
                 duplicate_cursor = conn.execute(
                     """
                     SELECT id, username, email, phone_number FROM users
-                    WHERE LOWER(username) = LOWER(?)
-                       OR LOWER(email) = LOWER(?)
-                       OR (? <> '' AND REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = ?)
+                    WHERE LOWER(username) = LOWER(%s)
+                       OR LOWER(email) = LOWER(%s)
+                       OR (%s <> '' AND REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = %s)
                     LIMIT 1
                     """,
                     (normalized_username, normalized_email, normalized_phone, normalized_phone)
                 ) if getattr(db, 'is_postgres', lambda: False)() else conn.execute(
                     """
                     SELECT id, username, email, phone_number FROM users
-                    WHERE LOWER(username) = LOWER(?)
-                       OR LOWER(email) = LOWER(?)
-                       OR (? <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = ?)
+                    WHERE LOWER(username) = LOWER(%s)
+                       OR LOWER(email) = LOWER(%s)
+                       OR (%s <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = %s)
                     LIMIT 1
                     """,
                     (normalized_username, normalized_email, normalized_phone, normalized_phone)
@@ -222,7 +222,7 @@ def register_admin_users_routes(bp, shared):
                     INSERT INTO users (
                         username, email, password_hash, name, phone_number,
                         user_type, is_active, email_verified, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, TRUE, TRUE, CURRENT_TIMESTAMP)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, TRUE, TRUE, CURRENT_TIMESTAMP)
                 """, (
                     normalized_username,
                     normalized_email,
@@ -242,7 +242,7 @@ def register_admin_users_routes(bp, shared):
                         position_size_percentage, stop_loss_pct, take_profit_pct,
                         max_positions, risk_level, max_daily_loss_pct, trading_mode,
                         created_at, updated_at
-                    ) VALUES (?, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (%s, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, (user_id,))
 
                 conn.execute("""
@@ -250,7 +250,7 @@ def register_admin_users_routes(bp, shared):
                         user_id, total_balance, available_balance, invested_balance,
                         total_profit_loss, total_profit_loss_percentage, initial_balance,
                         is_demo, created_at, updated_at
-                    ) VALUES (?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (%s, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, (user_id,))
 
                 if is_admin_user:
@@ -260,14 +260,14 @@ def register_admin_users_routes(bp, shared):
                             position_size_percentage, stop_loss_pct, take_profit_pct,
                             max_positions, risk_level, max_daily_loss_pct, trading_mode,
                             created_at, updated_at
-                        ) VALUES (?, TRUE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'demo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (%s, TRUE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'demo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id,))
                     conn.execute("""
                         INSERT INTO portfolio (
                             user_id, total_balance, available_balance, invested_balance,
                             total_profit_loss, total_profit_loss_percentage, initial_balance,
                             is_demo, created_at, updated_at
-                        ) VALUES (?, 10000.0, 10000.0, 0.0, 0.0, 0.0, 10000.0, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (%s, 10000.0, 10000.0, 0.0, 0.0, 0.0, 10000.0, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """, (user_id,))
 
                 if audit_logger:
@@ -313,7 +313,7 @@ def register_admin_users_routes(bp, shared):
 
             db = db_manager
             with db.get_write_connection() as conn:
-                cursor = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+                cursor = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,))
                 if not cursor.fetchone():
                     return jsonify({'success': False, 'error': 'المستخدم غير موجود'}), 404
 
@@ -331,11 +331,11 @@ def register_admin_users_routes(bp, shared):
                     duplicate_cursor = conn.execute(
                         """
                         SELECT id FROM users
-                        WHERE id <> ?
+                        WHERE id <> %s
                           AND (
-                              (? <> '' AND LOWER(username) = LOWER(?))
-                              OR (? <> '' AND LOWER(email) = LOWER(?))
-                              OR (? <> '' AND REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = ?)
+                              (%s <> '' AND LOWER(username) = LOWER(%s))
+                              OR (%s <> '' AND LOWER(email) = LOWER(%s))
+                              OR (%s <> '' AND REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = %s)
                           )
                         LIMIT 1
                         """,
@@ -343,11 +343,11 @@ def register_admin_users_routes(bp, shared):
                     ) if getattr(db, 'is_postgres', lambda: False)() else conn.execute(
                         """
                         SELECT id FROM users
-                        WHERE id <> ?
+                        WHERE id <> %s
                           AND (
-                              (? <> '' AND LOWER(username) = LOWER(?))
-                              OR (? <> '' AND LOWER(email) = LOWER(?))
-                              OR (? <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = ?)
+                              (%s <> '' AND LOWER(username) = LOWER(%s))
+                              OR (%s <> '' AND LOWER(email) = LOWER(%s))
+                              OR (%s <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', '') = %s)
                           )
                         LIMIT 1
                         """,
@@ -374,14 +374,14 @@ def register_admin_users_routes(bp, shared):
                             value = candidate_username
                         elif input_key == 'email':
                             value = candidate_email
-                        update_fields.append(f"{column_name} = ?")
+                        update_fields.append(f"{column_name} = %s")
                         update_values.append(value)
 
                 if not update_fields:
                     return jsonify({'success': False, 'error': 'لا توجد حقول للتحديث'}), 400
 
                 update_values.append(user_id)
-                query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+                query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s"
 
                 conn.execute(query, update_values)
 
@@ -416,11 +416,11 @@ def register_admin_users_routes(bp, shared):
 
             with db.get_write_connection() as conn:
                 existing = conn.execute(
-                    "SELECT id FROM user_settings WHERE user_id=? AND is_demo=? LIMIT 1", (user_id, target_is_demo)
+                    "SELECT id FROM user_settings WHERE user_id=%s AND is_demo=%s LIMIT 1", (user_id, target_is_demo)
                 ).fetchone()
                 if existing:
                     conn.execute(
-                        "UPDATE user_settings SET trading_enabled=?, trading_mode=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND is_demo=?",
+                        "UPDATE user_settings SET trading_enabled=%s, trading_mode=%s, updated_at=CURRENT_TIMESTAMP WHERE user_id=%s AND is_demo=%s",
                         (bool(enabled), target_mode, user_id, target_is_demo)
                     )
                 else:
@@ -431,7 +431,7 @@ def register_admin_users_routes(bp, shared):
                             position_size_percentage, stop_loss_pct, take_profit_pct,
                             max_positions, risk_level, max_daily_loss_pct, trading_mode,
                             created_at, updated_at
-                        ) VALUES (?, ?, ?, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ) VALUES (%s, %s, %s, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """,
                         (user_id, target_is_demo, bool(enabled), target_mode)
                     )
@@ -443,9 +443,9 @@ def register_admin_users_routes(bp, shared):
                                 total_profit_loss, total_profit_loss_percentage, initial_balance,
                                 is_demo, created_at, updated_at
                             )
-                            SELECT ?, ?, ?, 0.0, 0.0, 0.0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            SELECT %s, %s, %s, 0.0, 0.0, 0.0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                             WHERE NOT EXISTS (
-                                SELECT 1 FROM portfolio WHERE user_id = ? AND is_demo = ?
+                                SELECT 1 FROM portfolio WHERE user_id = %s AND is_demo = %s
                             )
                             """,
                             (
@@ -480,7 +480,7 @@ def register_admin_users_routes(bp, shared):
         try:
             db = db_manager
             with db.get_write_connection() as conn:
-                conn.execute("UPDATE users SET is_active = FALSE WHERE id = ?", (user_id,))
+                conn.execute("UPDATE users SET is_active = FALSE WHERE id = %s", (user_id,))
 
                 if audit_logger:
                     audit_logger.log(

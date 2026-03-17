@@ -65,7 +65,7 @@ def revoke_token(token: str, user_id: int = None, expires_at: datetime = None) -
             conn.execute(
                 """
                 INSERT INTO revoked_tokens (token_hash, user_id, expires_at)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
                 ON CONFLICT (token_hash) DO NOTHING
                 """,
                 (_token_hash(token), user_id, expires_at),
@@ -81,7 +81,7 @@ def is_token_revoked(token: str) -> bool:
         return False
     try:
         result = _db.execute_query(
-            "SELECT 1 FROM revoked_tokens WHERE token_hash = ?",
+            "SELECT 1 FROM revoked_tokens WHERE token_hash = %s",
             (_token_hash(token),),
         )
         return bool(result)

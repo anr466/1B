@@ -69,6 +69,9 @@ class SystemStateRecovery:
                 if pid_text.isdigit():
                     return True
 
+            import shutil as _shutil
+            if not _shutil.which('pgrep'):
+                return False
             result = subprocess.run(
                 ['pgrep', '-f', 'background_trading_manager.py'],
                 capture_output=True,
@@ -120,7 +123,7 @@ class SystemStateRecovery:
                 
                 conn.execute("""
                     UPDATE system_status 
-                    SET status = ?, trading_state = ?, is_running = ?, last_update = CURRENT_TIMESTAMP, message = ?
+                    SET status = %s, trading_state = %s, is_running = %s, last_update = CURRENT_TIMESTAMP, message = %s
                     WHERE id = 1
                 """, (status, trading_state, is_running, message))
             

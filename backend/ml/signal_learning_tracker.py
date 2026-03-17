@@ -272,7 +272,7 @@ class SignalLearningTracker:
                     signal_id, timestamp, combination, symbol, strategy, timeframe,
                     entry_price, entry_rsi, entry_macd, entry_volume,
                     market_regime, volatility, support_distance, resistance_distance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             self.db.execute_query(query, (
@@ -304,12 +304,12 @@ class SignalLearningTracker:
         try:
             query = """
                 UPDATE signal_learning
-                SET actual_profit_pct = ?,
-                    exit_reason = ?,
-                    signal_quality_score = ?,
-                    was_correct = ?,
-                    holding_time_minutes = ?
-                WHERE signal_id = ?
+                SET actual_profit_pct = %s,
+                    exit_reason = %s,
+                    signal_quality_score = %s,
+                    was_correct = %s,
+                    holding_time_minutes = %s
+                WHERE signal_id = %s
             """
             
             self.db.execute_query(query, (

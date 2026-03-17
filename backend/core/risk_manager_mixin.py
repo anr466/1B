@@ -108,8 +108,8 @@ class RiskManagerMixin:
                 rows = conn.execute("""
                     SELECT profit_loss, closed_at
                     FROM active_positions
-                    WHERE user_id = ? AND is_active = FALSE
-                      AND DATE(closed_at) = ?
+                    WHERE user_id = %s AND is_active = FALSE
+                      AND DATE(closed_at) = %s
                     ORDER BY closed_at ASC
                 """, (self.user_id, today_str)).fetchall()
             

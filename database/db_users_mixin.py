@@ -19,7 +19,7 @@ class DbUsersMixin:
         """الحصول على بيانات المستخدم باسم المستخدم"""
         with self.get_connection() as conn:
             row = conn.execute("""
-                SELECT * FROM users WHERE username = ?
+                SELECT * FROM users WHERE username = %s
             """, (username,)).fetchone()
             
             if row:
@@ -30,7 +30,7 @@ class DbUsersMixin:
         """الحصول على بيانات المستخدم بالبريد الإلكتروني"""
         with self.get_connection() as conn:
             row = conn.execute("""
-                SELECT * FROM users WHERE email = ?
+                SELECT * FROM users WHERE email = %s
             """, (email,)).fetchone()
             
             if row:
@@ -70,7 +70,7 @@ class DbUsersMixin:
                 
                 cursor = conn.execute("""
                     INSERT INTO users (username, email, password_hash, user_type, created_at, is_active)
-                    VALUES (?, ?, ?, 'user', datetime('now'), 1)
+                    VALUES (%s, %s, %s, 'user', datetime('now'), 1)
                 """, (username, email, password_hash))
                 
                 user_id = cursor.lastrowid
@@ -100,7 +100,7 @@ class DbUsersMixin:
                         max_positions, risk_level, max_daily_loss_pct, daily_loss_limit,
                         trading_mode, volatility_buffer, min_signal_strength,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, (
                     user_id, 0, False, 100.0,
                     10.0, 2.0, 5.0, 3.0,
@@ -115,7 +115,7 @@ class DbUsersMixin:
         """الحصول على بيانات المستخدم بمعرف المستخدم"""
         with self.get_connection() as conn:
             row = conn.execute("""
-                SELECT * FROM users WHERE id = ?
+                SELECT * FROM users WHERE id = %s
             """, (user_id,)).fetchone()
             
             if row:
@@ -126,7 +126,7 @@ class DbUsersMixin:
         """الحصول على إعدادات المستخدم مع إنشاء افتراضية إذا لم توجد"""
         with self.get_connection() as conn:
             row = conn.execute("""
-                SELECT * FROM user_settings WHERE user_id = ?
+                SELECT * FROM user_settings WHERE user_id = %s
             """, (user_id,)).fetchone()
             
             if row:
@@ -137,7 +137,7 @@ class DbUsersMixin:
             self._create_default_user_settings(user_id)
             
             row = conn.execute("""
-                SELECT * FROM user_settings WHERE user_id = ?
+                SELECT * FROM user_settings WHERE user_id = %s
             """, (user_id,)).fetchone()
             
             return dict(row) if row else {}
@@ -150,7 +150,7 @@ class DbUsersMixin:
         try:
             with self.get_write_connection() as conn:
                 existing = conn.execute("""
-                    SELECT user_id FROM user_settings WHERE user_id = ?
+                    SELECT user_id FROM user_settings WHERE user_id = %s
                 """, (user_id,)).fetchone()
                 
                 if not existing:
@@ -161,13 +161,13 @@ class DbUsersMixin:
                 values = []
                 
                 for key, value in settings.items():
-                    update_fields.append(f"{key} = ?")
+                    update_fields.append(f"{key} = %s")
                     values.append(value)
                 
                 update_fields.append("updated_at = CURRENT_TIMESTAMP")
                 values.append(user_id)
                 
-                query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ?"
+                query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = %s"
                 result = conn.execute(query, values)
                 conn.commit()
                 
@@ -199,7 +199,7 @@ class DbUsersMixin:
                                max_daily_loss_pct, trading_mode, trailing_distance,
                                volatility_buffer, min_signal_strength, position_size_percentage,
                                daily_loss_limit, created_at, updated_at
-                        FROM user_settings WHERE user_id = ? AND is_demo = ?
+                        FROM user_settings WHERE user_id = %s AND is_demo = %s
                     """, (user_id, is_demo)).fetchone()
                 else:
                     settings_row = conn.execute("""
@@ -208,7 +208,7 @@ class DbUsersMixin:
                                max_daily_loss_pct, trading_mode, trailing_distance,
                                volatility_buffer, min_signal_strength, position_size_percentage,
                                daily_loss_limit, created_at, updated_at
-                        FROM user_settings WHERE user_id = ? LIMIT 1
+                        FROM user_settings WHERE user_id = %s LIMIT 1
                     """, (user_id,)).fetchone()
                 
                 if not settings_row:
@@ -337,11 +337,11 @@ class DbUsersMixin:
                     if not filtered_updates:
                         return True
 
-                    update_fields = [f"{key} = ?" for key in filtered_updates.keys()]
+                    update_fields = [f"{key} = %s" for key in filtered_updates.keys()]
                     update_fields.append("updated_at = CURRENT_TIMESTAMP")
                     values = list(filtered_updates.values()) + [user_id]
                     
-                    query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = ? AND is_demo = ?"
+                    query = f"UPDATE user_settings SET {', '.join(update_fields)} WHERE user_id = %s AND is_demo = %s"
                     conn.execute(query, values + [is_demo])
                     self.logger.info(f"تم تحديث إعدادات التداول للمستخدم {user_id}")
             
@@ -368,7 +368,7 @@ class DbUsersMixin:
                 FROM users u
                 LEFT JOIN user_settings us
                     ON us.user_id = u.id AND us.is_demo = FALSE
-                WHERE u.id = ?
+                WHERE u.id = %s
             """, (user_id,)).fetchone()
 
             if row:
@@ -390,14 +390,14 @@ class DbUsersMixin:
                 
                 for field in allowed_fields:
                     if field in profile_data:
-                        update_fields.append(f"{field} = ?")
+                        update_fields.append(f"{field} = %s")
                         values.append(profile_data[field])
                 
                 if update_fields:
                     update_fields.append("updated_at = CURRENT_TIMESTAMP")
                     values.append(user_id)
                     
-                    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+                    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s"
                     conn.execute(query, values)
                     self.logger.info(f"تم تحديث الملف الشخصي للمستخدم {user_id}")
                 
@@ -421,12 +421,12 @@ class DbUsersMixin:
                         MAX(CASE WHEN is_active = 0 THEN profit_loss END) as max_profit,
                         MIN(CASE WHEN is_active = 0 THEN profit_loss END) as min_profit
                     FROM active_positions
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                 """
                 
                 params = [user_id]
                 if is_demo is not None:
-                    trades_query += " AND is_demo = ?"
+                    trades_query += " AND is_demo = %s"
                     params.append(1 if is_demo else 0)
                 
                 cursor = conn.execute(trades_query, params)
@@ -457,11 +457,11 @@ class DbUsersMixin:
                 
                 active_query = """
                     SELECT COUNT(*) FROM active_positions 
-                    WHERE user_id = ? AND is_active = 1
+                    WHERE user_id = %s AND is_active = 1
                 """
                 active_params = [user_id]
                 if is_demo is not None:
-                    active_query += " AND is_demo = ?"
+                    active_query += " AND is_demo = %s"
                     active_params.append(1 if is_demo else 0)
                 
                 cursor = conn.execute(active_query, active_params)
@@ -524,8 +524,8 @@ class DbUsersMixin:
                     conn.execute(
                         """
                         UPDATE user_settings
-                        SET notifications_enabled = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ?
+                        SET notifications_enabled = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s
                         """,
                         (int(notifications_enabled), user_id),
                     )
@@ -546,7 +546,7 @@ class DbUsersMixin:
                 conn.execute("""
                     INSERT OR REPLACE INTO verification_codes 
                     (email, otp_code, purpose, created_at, expires_at, attempts, verified)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (
                     verification_data['email'],
                     verification_data['otp_code'],
@@ -570,20 +570,20 @@ class DbUsersMixin:
                 conn.execute("""
                     UPDATE verification_codes 
                     SET verified = TRUE, verified_at = datetime('now')
-                    WHERE email = ? AND verified = FALSE
+                    WHERE email = %s AND verified = FALSE
                 """, (email,))
                 
                 try:
                     conn.execute("""
                         UPDATE users 
                         SET email_verified = TRUE, email_verified_at = datetime('now')
-                        WHERE email = ?
+                        WHERE email = %s
                     """, (email,))
                 except Exception:
                     conn.execute("""
                         UPDATE users 
                         SET email_verified = TRUE
-                        WHERE email = ?
+                        WHERE email = %s
                     """, (email,))
                 
                 conn.commit()
@@ -600,7 +600,7 @@ class DbUsersMixin:
                 cursor = conn.execute("""
                     SELECT verified, verified_at, created_at
                     FROM verification_codes 
-                    WHERE email = ? 
+                    WHERE email = %s 
                     ORDER BY created_at DESC 
                     LIMIT 1
                 """, (email,))
@@ -624,7 +624,7 @@ class DbUsersMixin:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT expires_at FROM verification_codes 
-                    WHERE email = ? 
+                    WHERE email = %s 
                     ORDER BY created_at DESC 
                     LIMIT 1
                 """, (email,))
@@ -644,7 +644,7 @@ class DbUsersMixin:
                 conn.execute("""
                     UPDATE verification_codes 
                     SET attempts = attempts + 1 
-                    WHERE email = ?
+                    WHERE email = %s
                 """, (email,))
                 conn.commit()
                 self.logger.info(f"تم زيادة محاولات التحقق للإيميل {email}")
@@ -657,7 +657,7 @@ class DbUsersMixin:
         """مسح بيانات التحقق من الإيميل"""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("DELETE FROM verification_codes WHERE email = ?", (email,))
+                conn.execute("DELETE FROM verification_codes WHERE email = %s", (email,))
                 self.logger.info(f"تم مسح بيانات التحقق للإيميل {email}")
                 return True
         except Exception as e:

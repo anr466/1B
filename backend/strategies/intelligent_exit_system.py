@@ -342,7 +342,7 @@ class IntelligentExitSystem:
             if new_trail > tracker.trailing_stop:
                 tracker.trailing_stop = new_trail
             
-            # فحص: هل ضرب Trailing?
+            # فحص: هل ضرب Trailing%s
             if price <= tracker.trailing_stop:
                 # === منطق ذكي: إذا الاتجاه لا يزال صاعد، توسيع قليلاً ===
                 if trend in [TrendStatus.STRONG_BULLISH, TrendStatus.BULLISH]:

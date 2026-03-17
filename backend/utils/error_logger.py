@@ -203,7 +203,7 @@ class ErrorLogger:
                     """
                     SELECT id, attempt_count, status, requires_admin
                     FROM system_errors
-                    WHERE resolved = FALSE AND error_fingerprint = ?
+                    WHERE resolved = FALSE AND error_fingerprint = %s
                     ORDER BY id DESC
                     LIMIT 1
                     """,
@@ -220,18 +220,18 @@ class ErrorLogger:
                     conn.execute(
                         """
                         UPDATE system_errors
-                        SET error_type = ?,
-                            error_message = ?,
-                            severity = ?,
-                            source = ?,
-                            details = ?,
-                            traceback = ?,
-                            status = ?,
-                            attempt_count = ?,
+                        SET error_type = %s,
+                            error_message = %s,
+                            severity = %s,
+                            source = %s,
+                            details = %s,
+                            traceback = %s,
+                            status = %s,
+                            attempt_count = %s,
                             last_attempt_at = CURRENT_TIMESTAMP,
-                            requires_admin = ?,
-                            auto_action = COALESCE(?, auto_action)
-                        WHERE id = ?
+                            requires_admin = %s,
+                            auto_action = COALESCE(%s, auto_action)
+                        WHERE id = %s
                         """,
                         (
                             source.value,
@@ -255,7 +255,7 @@ class ErrorLogger:
                     (error_type, error_message, severity, source, details, traceback,
                      error_fingerprint, status, attempt_count, last_attempt_at,
                      requires_admin, auto_action)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
                 """, (
                     source.value,  # error_type
                     message,       # error_message
@@ -309,7 +309,7 @@ class ErrorLogger:
                     WHERE resolved = FALSE
                       AND COALESCE(status, 'new') IN ('new', 'auto_processing', 'escalated')
                     ORDER BY created_at ASC
-                    LIMIT ?
+                    LIMIT %s
                     """,
                     (max(1, int(limit)),)
                 ).fetchall()
@@ -335,10 +335,10 @@ class ErrorLogger:
                                     resolved_by = 'auto-healer',
                                     status = 'auto_resolved',
                                     requires_admin = FALSE,
-                                    auto_action = ?,
-                                    attempt_count = ?,
+                                    auto_action = %s,
+                                    attempt_count = %s,
                                     last_attempt_at = CURRENT_TIMESTAMP
-                                WHERE id = ?
+                                WHERE id = %s
                                 """,
                                 (action, next_attempt, error_id),
                             )
@@ -348,11 +348,11 @@ class ErrorLogger:
                                 """
                                 UPDATE system_errors
                                 SET status = 'auto_processing',
-                                    auto_action = ?,
-                                    attempt_count = ?,
+                                    auto_action = %s,
+                                    attempt_count = %s,
                                     last_attempt_at = CURRENT_TIMESTAMP,
                                     requires_admin = FALSE
-                                WHERE id = ?
+                                WHERE id = %s
                                 """,
                                 (action, next_attempt, error_id),
                             )
@@ -363,10 +363,10 @@ class ErrorLogger:
                             UPDATE system_errors
                             SET status = 'escalated',
                                 requires_admin = TRUE,
-                                auto_action = ?,
-                                attempt_count = ?,
+                                auto_action = %s,
+                                attempt_count = %s,
                                 last_attempt_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
+                            WHERE id = %s
                             """,
                             (action, next_attempt, error_id),
                         )
@@ -427,19 +427,19 @@ class ErrorLogger:
             params = []
             
             if level:
-                query += " AND severity = ?"
+                query += " AND severity = %s"
                 params.append(level)
             
             if source:
-                query += " AND (source = ? OR error_type = ?)"
+                query += " AND (source = %s OR error_type = %s)"
                 params.append(source)
                 params.append(source)
             
             if resolved is not None:
-                query += " AND resolved = ?"
+                query += " AND resolved = %s"
                 params.append(resolved)
             
-            query += " ORDER BY created_at DESC LIMIT ?"
+            query += " ORDER BY created_at DESC LIMIT %s"
             params.append(limit)
             
             with self.db_manager.get_connection() as conn:
@@ -475,8 +475,8 @@ class ErrorLogger:
                     UPDATE system_errors
                     SET resolved = TRUE, 
                         resolved_at = CURRENT_TIMESTAMP,
-                        resolved_by = ?
-                    WHERE id = ?
+                        resolved_by = %s
+                    WHERE id = %s
                 """, (resolved_by, error_id))
             
             self.logger.info(f"تم حل الخطأ #{error_id} بواسطة {resolved_by}")
@@ -499,7 +499,7 @@ class ErrorLogger:
                     UPDATE system_errors
                     SET resolved = TRUE,
                         resolved_at = CURRENT_TIMESTAMP,
-                        resolved_by = ?
+                        resolved_by = %s
                     WHERE resolved = FALSE
                 """, (resolved_by,))
                 
@@ -580,7 +580,7 @@ class ErrorLogger:
                 cursor = conn.execute("""
                     DELETE FROM system_errors
                     WHERE resolved = TRUE
-                    AND created_at < (CURRENT_TIMESTAMP - (? * INTERVAL '1 day'))
+                    AND created_at < (CURRENT_TIMESTAMP - (%s * INTERVAL '1 day'))
                 """, (retention_days,))
                 
                 count = cursor.rowcount

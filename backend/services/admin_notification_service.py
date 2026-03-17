@@ -175,7 +175,7 @@ class AdminNotificationService:
                 cursor.execute("""
                     INSERT INTO system_alerts 
                     (alert_type, title, message, severity, data)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                 """, (alert_type, title, message, severity, data_json))
             
         except Exception as e:
@@ -489,17 +489,17 @@ class AdminNotificationService:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE admin_notification_settings SET
-                        telegram_enabled = ?,
-                        telegram_bot_token = ?,
-                        telegram_chat_id = ?,
-                        email_enabled = ?,
-                        admin_email = ?,
-                        webhook_enabled = ?,
-                        webhook_url = ?,
-                        push_enabled = ?,
-                        notify_on_error = ?,
-                        notify_on_trade = ?,
-                        notify_on_warning = ?,
+                        telegram_enabled = %s,
+                        telegram_bot_token = %s,
+                        telegram_chat_id = %s,
+                        email_enabled = %s,
+                        admin_email = %s,
+                        webhook_enabled = %s,
+                        webhook_url = %s,
+                        push_enabled = %s,
+                        notify_on_error = %s,
+                        notify_on_trade = %s,
+                        notify_on_warning = %s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
@@ -554,7 +554,7 @@ class AdminNotificationService:
                     SELECT * FROM system_alerts 
                     WHERE read = 0 
                     ORDER BY created_at DESC 
-                    LIMIT ?
+                    LIMIT %s
                 """, (limit,))
                 
                 alerts = []
@@ -602,7 +602,7 @@ class AdminNotificationService:
             
             with db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE system_alerts SET read = 1 WHERE id = ?", (alert_id,))
+                cursor.execute("UPDATE system_alerts SET read = 1 WHERE id = %s", (alert_id,))
             
             return True
         except Exception as e:

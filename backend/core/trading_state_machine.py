@@ -555,16 +555,16 @@ class TradingStateMachine:
 
     def _transition(self, conn, new_state: str, **kwargs):
         """Execute a state transition in the DB."""
-        updates = ['trading_state = ?', 'last_update = CURRENT_TIMESTAMP']
+        updates = ['trading_state = %s', 'last_update = CURRENT_TIMESTAMP']
         params = [new_state]
 
         # Also sync the legacy is_running column
         is_running = new_state in (STARTING, RUNNING)
-        updates.append('is_running = ?')
+        updates.append('is_running = %s')
         params.append(is_running)
 
         # Also sync legacy status column (lowercase)
-        updates.append('status = ?')
+        updates.append('status = %s')
         params.append(new_state.lower())
 
         field_map = {
@@ -581,7 +581,7 @@ class TradingStateMachine:
                 # pid doesn't have its own column — encode it in message
                 if key == 'pid':
                     continue
-                updates.append(f'{col} = ?')
+                updates.append(f'{col} = %s')
                 params.append(kwargs[key])
 
         sql = f"UPDATE system_status SET {', '.join(updates)} WHERE id = 1"
@@ -679,8 +679,8 @@ class TradingStateMachine:
                 is_running = state in (STARTING, RUNNING)
                 conn.execute("""
                     UPDATE system_status
-                    SET trading_state = ?, status = ?, is_running = ?,
-                        message = ?, last_update = CURRENT_TIMESTAMP
+                    SET trading_state = %s, status = %s, is_running = %s,
+                        message = %s, last_update = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (state, state.lower(), is_running, message))
                 conn.commit()

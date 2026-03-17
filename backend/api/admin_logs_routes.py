@@ -65,13 +65,13 @@ def register_admin_logs_routes(bp, shared):
                     where_clauses = []
                     params = []
                     if user_id is not None:
-                        where_clauses.append('user_id = ?')
+                        where_clauses.append('user_id = %s')
                         params.append(user_id)
                     if action:
-                        where_clauses.append('action = ?')
+                        where_clauses.append('action = %s')
                         params.append(action)
                     if status:
-                        where_clauses.append('status = ?')
+                        where_clauses.append('status = %s')
                         params.append(status)
 
                     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
@@ -85,7 +85,7 @@ def register_admin_logs_routes(bp, shared):
                         FROM activity_logs
                         {where_sql}
                         ORDER BY created_at DESC
-                        LIMIT ? OFFSET ?
+                        LIMIT %s OFFSET %s
                     """
                     cursor.execute(data_sql, tuple(params + [limit, offset]))
                     rows = cursor.fetchall()
@@ -135,16 +135,16 @@ def register_admin_logs_routes(bp, shared):
             params = []
             
             if severity:
-                where_clauses.append('severity = ?')
+                where_clauses.append('severity = %s')
                 params.append(severity)
             if source:
-                where_clauses.append('source = ?')
+                where_clauses.append('source = %s')
                 params.append(source)
             if status:
-                where_clauses.append('status = ?')
+                where_clauses.append('status = %s')
                 params.append(status)
             if requires_admin:
-                where_clauses.append('requires_admin = ?')
+                where_clauses.append('requires_admin = %s')
                 params.append(requires_admin.lower() == 'true')
             
             where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
@@ -172,7 +172,7 @@ def register_admin_logs_routes(bp, shared):
                         ELSE 4
                     END,
                     created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             """
             cursor.execute(data_sql, tuple(params + [limit, offset]))
             rows = cursor.fetchall()
@@ -237,7 +237,7 @@ def register_admin_logs_routes(bp, shared):
                     error_fingerprint, status, attempt_count, last_attempt_at,
                     requires_admin, auto_action
                 FROM system_errors
-                WHERE id = ?
+                WHERE id = %s
             """, (error_id,))
             row = cursor.fetchone()
             
@@ -253,7 +253,7 @@ def register_admin_logs_routes(bp, shared):
                 cursor.execute("""
                     SELECT COUNT(*), MAX(created_at) as last_occurrence
                     FROM system_errors
-                    WHERE error_fingerprint = ? AND id != ?
+                    WHERE error_fingerprint = %s AND id != %s
                 """, (error['error_fingerprint'], error_id))
                 similar = cursor.fetchone()
                 error['similar_count'] = similar[0] if similar else 0
@@ -281,10 +281,10 @@ def register_admin_logs_routes(bp, shared):
                 UPDATE system_errors
                 SET resolved = 1,
                     resolved_at = CURRENT_TIMESTAMP,
-                    resolved_by = ?,
+                    resolved_by = %s,
                     status = 'resolved',
-                    details = details || ' [Admin Notes: ' || ? || ']'
-                WHERE id = ?
+                    details = details || ' [Admin Notes: ' || %s || ']'
+                WHERE id = %s
             """, (resolved_by, notes, error_id))
             conn.commit()
             conn.close()
@@ -314,7 +314,7 @@ def register_admin_logs_routes(bp, shared):
             cursor.execute("""
                 SELECT auto_action, attempt_count, error_fingerprint
                 FROM system_errors
-                WHERE id = ?
+                WHERE id = %s
             """, (error_id,))
             row = cursor.fetchone()
             conn.close()
@@ -346,7 +346,7 @@ def register_admin_logs_routes(bp, shared):
                         resolved_by = 'auto_fix_retry',
                         attempt_count = attempt_count + 1,
                         last_attempt_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (error_id,))
                 message = f'تم إصلاح الخطأ تلقائيًا: {auto_action}'
             else:
@@ -358,7 +358,7 @@ def register_admin_logs_routes(bp, shared):
                             WHEN attempt_count + 1 >= 3 THEN 'escalated'
                             ELSE status
                         END
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (error_id,))
                 message = 'فشل الإصلاح التلقائي - قد يتطلب تدخل يدوي'
             

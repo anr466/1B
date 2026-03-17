@@ -43,11 +43,11 @@ def register_mobile_notifications_routes(bp, shared):
             offset = (page - 1) * limit
 
             # ✅ جلب الإشعارات من جدول notifications (الجدول الصحيح)
-            notif_query = "SELECT id, user_id, title, message, COALESCE(type, 'general') as type, is_read, created_at, data FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            notif_query = "SELECT id, user_id, title, message, COALESCE(type, 'general') as type, is_read, created_at, data FROM notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
             result = db.execute_query(notif_query, (user_id, limit, offset))
 
             # ✅ جلب العدد الإجمالي
-            count_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ?"
+            count_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = %s"
             count_result = db.execute_query(count_query, (user_id,))
             total = count_result[0]['total'] if count_result else 0
 
@@ -90,7 +90,7 @@ def register_mobile_notifications_routes(bp, shared):
             update_query = """
                 UPDATE notifications 
                 SET is_read = TRUE 
-                WHERE user_id = ? AND is_read = FALSE
+                WHERE user_id = %s AND is_read = FALSE
             """
             db.execute_query(update_query, (user_id,))
             
@@ -342,7 +342,7 @@ def register_mobile_notifications_routes(bp, shared):
                 """
                     SELECT COALESCE(type, 'general') as type, is_read, created_at, title
                     FROM notifications
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     ORDER BY created_at DESC
                 """,
                 (user_id,),
@@ -382,7 +382,7 @@ def register_mobile_notifications_routes(bp, shared):
                         COALESCE(type, 'general') as type,
                         COUNT(*) as count
                     FROM notifications 
-                    WHERE user_id = ?
+                    WHERE user_id = %s
                     GROUP BY type
                     ORDER BY count DESC
                 """,
@@ -393,7 +393,7 @@ def register_mobile_notifications_routes(bp, shared):
                 """
                     SELECT title, created_at 
                     FROM notifications 
-                    WHERE user_id = ? 
+                    WHERE user_id = %s 
                     ORDER BY created_at DESC 
                     LIMIT 1
                 """,
