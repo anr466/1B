@@ -28,6 +28,7 @@ def _normalize_phone(value):
     return ''.join(ch for ch in raw if ch.isdigit())
 
 logger = get_logger(__name__)
+db_manager = DatabaseManager()
 
 
 def register_admin_users_routes(bp, shared):
@@ -40,7 +41,7 @@ def register_admin_users_routes(bp, shared):
     def get_all_users_with_stats():
         """جلب جميع المستخدمين مع إحصائياتهم"""
         try:
-            db = DatabaseManager()
+            db = db_manager
             with db.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT
@@ -115,7 +116,7 @@ def register_admin_users_routes(bp, shared):
     def get_user_details(user_id):
         """جلب تفاصيل مستخدم معين"""
         try:
-            db = DatabaseManager()
+            db = db_manager
             with db.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT
@@ -182,7 +183,7 @@ def register_admin_users_routes(bp, shared):
                 data.get('phoneNumber', data.get('phone', data.get('phone_number', '')))
             )
 
-            db = DatabaseManager()
+            db = db_manager
             with db.get_write_connection() as conn:
                 duplicate_cursor = conn.execute(
                     """
@@ -310,7 +311,7 @@ def register_admin_users_routes(bp, shared):
             if 'phoneNumber' in data and 'phone' not in data and 'phone_number' not in data:
                 data['phone_number'] = data['phoneNumber']
 
-            db = DatabaseManager()
+            db = db_manager
             with db.get_write_connection() as conn:
                 cursor = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,))
                 if not cursor.fetchone():
@@ -409,7 +410,7 @@ def register_admin_users_routes(bp, shared):
             if enabled is None:
                 return jsonify({'success': False, 'error': 'tradingEnabled مطلوب'}), 400
 
-            db = DatabaseManager()
+            db = db_manager
             target_is_demo = get_effective_is_demo(db, user_id)
             target_mode = 'demo' if target_is_demo else 'real'
 
@@ -477,7 +478,7 @@ def register_admin_users_routes(bp, shared):
     def delete_user(user_id):
         """حذف مستخدم (تعطيل بدلاً من الحذف الكامل)"""
         try:
-            db = DatabaseManager()
+            db = db_manager
             with db.get_write_connection() as conn:
                 conn.execute("UPDATE users SET is_active = FALSE WHERE id = ?", (user_id,))
 

@@ -22,8 +22,11 @@ except (ImportError, ModuleNotFoundError):
             return jsonify({'success': False, 'error': 'Auth system unavailable'}), 503
         return decorated
 
+from database.database_manager import DatabaseManager
+
 # إنشاء Blueprint
 ml_status_bp = Blueprint('ml_status', __name__, url_prefix='/ml')
+db_manager = DatabaseManager()
 
 
 @ml_status_bp.route('/status', methods=['GET'])
@@ -281,10 +284,8 @@ def get_learning_status():
     
     يُرجع: آخر اختبار خفي + إحصائيات التعلم + اتجاه الأداء
     """
-    from database.database_manager import DatabaseManager
-    
     try:
-        db = DatabaseManager()
+        db = db_manager
         with db.get_connection() as conn:
             # 1. آخر اختبار خفي
             last_validation = conn.execute("""
@@ -389,15 +390,13 @@ def get_monitored_coins():
     
     يُرجع: قائمة العملات + ترتيب + WR + عدد الصفقات + متوسط الربح + حالة
     """
-    from database.database_manager import DatabaseManager
-    
     try:
         current_symbols = [
             'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'AVAXUSDT', 'NEARUSDT',
             'SUIUSDT', 'ARBUSDT', 'APTUSDT', 'INJUSDT', 'LINKUSDT',
         ]
         
-        db = DatabaseManager()
+        db = db_manager
         with db.get_connection() as conn:
             # إحصائيات كل عملة (آخر 30 يوم)
             from datetime import datetime, timedelta
