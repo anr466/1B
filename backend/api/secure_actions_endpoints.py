@@ -20,7 +20,7 @@ from flask import Blueprint, request, jsonify, g
 import logging
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 # Database
@@ -333,7 +333,7 @@ def request_verification():
         
         # توليد OTP
         otp_code = generate_otp()
-        expires_at = datetime.now() + timedelta(minutes=10)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
         
         # حفظ التحقق المعلق في DB
         _save_pending_verification(user_id, action, otp_code, expires_at, method, new_value, None)
@@ -409,7 +409,7 @@ def verify_and_execute():
             return jsonify({'success': False, 'error': 'لا يوجد طلب تحقق معلق لهذه العملية'}), 400
         
         # التحقق من انتهاء الصلاحية
-        if datetime.now() > pending['expires']:
+        if datetime.now(timezone.utc) > pending['expires']:
             _delete_pending_verification(user_id, action)
             return jsonify({'success': False, 'error': 'انتهت صلاحية رمز التحقق'}), 400
         
