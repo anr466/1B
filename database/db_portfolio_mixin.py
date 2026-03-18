@@ -21,43 +21,45 @@ class DbPortfolioMixin:
             with self.get_write_connection() as conn:
                 cursor = conn.execute("""
                     SELECT 
+                        p.id,
                         p.total_balance,
-                        COALESCE(SUM(CASE WHEN t.is_active = TRUE THEN t.quantity * t.entry_price ELSE 0 END), 0) as invested_amount
+                        p.is_demo,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN t.is_active = TRUE THEN COALESCE(t.position_size, t.quantity * t.entry_price, 0)
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        ) as invested_amount
                     FROM portfolio p
-                    LEFT JOIN active_positions t ON p.user_id = t.user_id AND t.is_active = TRUE
+                    LEFT JOIN active_positions t
+                        ON p.user_id = t.user_id
+                       AND p.is_demo = t.is_demo
+                       AND t.is_active = TRUE
                     WHERE p.user_id = %s
-                    GROUP BY p.user_id, p.total_balance
+                    GROUP BY p.id, p.total_balance, p.is_demo
                 """, (user_id,))
-                
-                result = cursor.fetchone()
-                if result:
-                    total_balance = float(result[0])
-                    invested_amount = float(result[1])
-                    available_balance = total_balance - invested_amount
-                    
-                    try:
-                        updated = conn.execute(
-                            """
-                            UPDATE portfolio
-                            SET invested_balance = %s, available_balance = %s, updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s
-                            """,
-                            (invested_amount, available_balance, user_id),
-                        )
 
-                        if updated.rowcount == 0:
+                rows = cursor.fetchall()
+                if rows:
+                    try:
+                        for row in rows:
+                            portfolio_id = row[0]
+                            total_balance = float(row[1] or 0)
+                            invested_amount = float(row[3] or 0)
+                            available_balance = total_balance - invested_amount
+
                             conn.execute(
                                 """
-                                INSERT INTO portfolio (
-                                    user_id, is_demo, total_balance, available_balance,
-                                    invested_balance, initial_balance, updated_at
-                                )
-                                VALUES (%s, FALSE, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                                UPDATE portfolio
+                                SET invested_balance = %s, available_balance = %s, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = %s
                                 """,
-                                (user_id, total_balance, available_balance, invested_amount, total_balance),
+                                (invested_amount, available_balance, portfolio_id),
                             )
-                        
-                        self.logger.info(f"تم إعادة ضبط رصيد المحفظة إلى $1000 للمستخدم {user_id}")
+
                         try:
                             from backend.utils.simple_cache import response_cache
                             response_cache.invalidate_user_cache(user_id)
