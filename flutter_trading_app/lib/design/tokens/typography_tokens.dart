@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Typography Tokens — أنماط النصوص الموحدة
 /// تصميم صافي — لا يعتمد على أي منطق أعمال
 class TypographyTokens {
   TypographyTokens._();
 
-  static const String _fontFamily = 'BarlowCondensed';
+  static const String _fontFamily = 'Noto Sans Arabic';
+
+  static TextStyle _baseTextStyle() => GoogleFonts.notoSansArabic();
 
   // ─── Hero — الأرقام المالية الكبيرة ─────────────
-  static TextStyle hero(Color color) => TextStyle(
+  static TextStyle hero(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 36,
     fontWeight: FontWeight.w700,
@@ -18,72 +21,72 @@ class TypographyTokens {
   );
 
   // ─── Headings ───────────────────────────────────
-  static TextStyle h1(Color color) => TextStyle(
+  static TextStyle h1(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 28,
     fontWeight: FontWeight.w700,
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
     color: color,
   );
 
-  static TextStyle h2(Color color) => TextStyle(
+  static TextStyle h2(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 22,
     fontWeight: FontWeight.w600,
     color: color,
   );
 
-  static TextStyle h3(Color color) => TextStyle(
+  static TextStyle h3(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 18,
     fontWeight: FontWeight.w600,
     color: color,
   );
 
-  static TextStyle h4(Color color) => TextStyle(
+  static TextStyle h4(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 15,
     fontWeight: FontWeight.w700,
-    letterSpacing: 0.1,
+    letterSpacing: 0,
     color: color,
   );
 
   // ─── Body ───────────────────────────────────────
-  static TextStyle body(Color color) => TextStyle(
+  static TextStyle body(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 15,
     fontWeight: FontWeight.w400,
-    height: 1.5,
+    height: 1.55,
     color: color,
   );
 
-  static TextStyle bodySmall(Color color) => TextStyle(
+  static TextStyle bodySmall(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 13,
     fontWeight: FontWeight.w400,
-    height: 1.4,
+    height: 1.45,
     color: color,
   );
 
   // ─── Caption & Label ────────────────────────────
-  static TextStyle caption(Color color) => TextStyle(
+  static TextStyle caption(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 11,
     fontWeight: FontWeight.w400,
-    height: 1.3,
+    height: 1.35,
     color: color,
   );
 
-  static TextStyle label(Color color) => TextStyle(
+  static TextStyle label(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 13,
     fontWeight: FontWeight.w500,
-    letterSpacing: 0.5,
+    letterSpacing: 0,
     color: color,
   );
 
   // ─── Button ─────────────────────────────────────
-  static TextStyle button(Color color) => TextStyle(
+  static TextStyle button(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 16,
     fontWeight: FontWeight.w600,
@@ -91,11 +94,11 @@ class TypographyTokens {
   );
 
   // ─── Monospace for numbers ──────────────────────
-  static TextStyle mono(Color color, {double fontSize = 15}) => TextStyle(
+  static TextStyle mono(Color color, {double fontSize = 15}) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: fontSize,
     fontWeight: FontWeight.w600,
-    letterSpacing: 0.1,
+    letterSpacing: 0,
     color: color,
     fontFeatures: const [FontFeature.tabularFigures()],
   );
@@ -111,11 +114,11 @@ class TypographyTokens {
   static const double opDisabled = 0.25;
 
   // ─── Overline — section labels (caps, muted) ───
-  static TextStyle overline(Color color) => TextStyle(
+  static TextStyle overline(Color color) => _baseTextStyle().copyWith(
     fontFamily: _fontFamily,
     fontSize: 11,
     fontWeight: FontWeight.w600,
-    letterSpacing: 1.2,
+    letterSpacing: 0,
     color: color,
   );
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:trading_app/design/tokens/color_tokens.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -115,8 +116,9 @@ ThemeData buildSkinTheme(ColorTokens c, Brightness brightness) {
     brightness: brightness,
     colorScheme: cs,
     scaffoldBackgroundColor: c.background,
-    textTheme: ThemeData(brightness: brightness).textTheme.apply(
-      fontFamily: 'BarlowCondensed',
+    textTheme: GoogleFonts.notoSansArabicTextTheme(
+      ThemeData(brightness: brightness).textTheme,
+    ).apply(
       bodyColor: c.text,
       displayColor: c.text,
     ),
