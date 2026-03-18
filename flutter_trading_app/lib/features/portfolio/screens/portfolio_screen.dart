@@ -151,21 +151,21 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                                 const SizedBox(height: SpacingTokens.lg),
                                 AppInfoRow(
                                   label: 'الرصيد المتاح',
-                                  value: hideBalance
-                                      ? '••••••'
-                                      : '\$${p.availableBalance.toStringAsFixed(2)}',
+                                  valueWidget: _PortfolioBalanceValue(
+                                    amount: p.availableBalance,
+                                  ),
                                 ),
                                 AppInfoRow(
                                   label: 'الرصيد المحجوز',
-                                  value: hideBalance
-                                      ? '••••••'
-                                      : '\$${p.reservedBalance.toStringAsFixed(2)}',
+                                  valueWidget: _PortfolioBalanceValue(
+                                    amount: p.reservedBalance,
+                                  ),
                                 ),
                                 AppInfoRow(
                                   label: 'الرصيد الابتدائي',
-                                  value: hideBalance
-                                      ? '••••••'
-                                      : '\$${p.initialBalance.toStringAsFixed(2)}',
+                                  valueWidget: _PortfolioBalanceValue(
+                                    amount: p.initialBalance,
+                                  ),
                                 ),
                                 const Divider(height: SpacingTokens.lg),
                                 Row(
@@ -344,27 +344,24 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _legendItem(
-                    'متاح',
-                    p.availableBalance,
-                    semantic.positive,
-                    hideBalance,
-                    cs,
+                  'متاح',
+                  p.availableBalance,
+                  semantic.positive,
+                  cs,
                   ),
                   const SizedBox(height: SpacingTokens.sm),
                   _legendItem(
-                    'ربح/خسارة',
-                    p.totalPnl,
-                    p.totalPnl >= 0 ? semantic.positive : semantic.negative,
-                    hideBalance,
-                    cs,
+                  'ربح/خسارة',
+                  p.totalPnl,
+                  p.totalPnl >= 0 ? semantic.positive : semantic.negative,
+                  cs,
                   ),
                   const SizedBox(height: SpacingTokens.sm),
                   _legendItem(
-                    'محجوز',
-                    p.reservedBalance,
-                    SemanticColors.of(context).info,
-                    hideBalance,
-                    cs,
+                  'محجوز',
+                  p.reservedBalance,
+                  SemanticColors.of(context).info,
+                  cs,
                   ),
                 ],
               ),
@@ -379,7 +376,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     String label,
     double value,
     Color color,
-    bool hideBalance,
     ColorScheme cs,
   ) {
     return Row(
@@ -394,9 +390,22 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
           ),
         ),
         const SizedBox(width: 6),
-        Text(
-          '$label: ${hideBalance ? '••••' : '\$${value.toStringAsFixed(2)}'}',
-          style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.45)),
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$label: ',
+                style: TypographyTokens.caption(
+                  cs.onSurface.withValues(alpha: 0.45),
+                ),
+              ),
+              _PortfolioBalanceValue(
+                amount: value,
+                fontSize: 11,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -480,6 +489,22 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
               ),
         ),
       ),
+    );
+  }
+}
+
+class _PortfolioBalanceValue extends StatelessWidget {
+  final double amount;
+  final double? fontSize;
+
+  const _PortfolioBalanceValue({required this.amount, this.fontSize});
+
+  @override
+  Widget build(BuildContext context) {
+    return MoneyText(
+      amount: amount,
+      isSensitive: true,
+      fontSize: fontSize ?? 14,
     );
   }
 }

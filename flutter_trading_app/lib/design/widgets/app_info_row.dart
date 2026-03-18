@@ -6,7 +6,8 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 /// تصميم صافي — لا يعتمد على أي منطق أعمال
 class AppInfoRow extends StatelessWidget {
   final String label;
-  final String value;
+  final String? value;
+  final Widget? valueWidget;
   final Color? valueColor;
   final bool isMonospace;
   final EdgeInsetsGeometry? padding;
@@ -14,11 +15,12 @@ class AppInfoRow extends StatelessWidget {
   const AppInfoRow({
     super.key,
     required this.label,
-    required this.value,
+    this.value,
+    this.valueWidget,
     this.valueColor,
     this.isMonospace = true,
     this.padding,
-  });
+  }) : assert(value != null || valueWidget != null);
 
   @override
   Widget build(BuildContext context) {
@@ -45,12 +47,13 @@ class AppInfoRow extends StatelessWidget {
             ),
           ),
           Flexible(
-            child: Text(
-              value,
-              style: valueStyle,
-              textAlign: TextAlign.end,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: valueWidget ??
+                Text(
+                  value!,
+                  style: valueStyle,
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                ),
           ),
         ],
       ),
