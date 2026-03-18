@@ -114,7 +114,7 @@ class TradingControlScreen extends ConsumerWidget {
         : 'متوقف';
 
     return AppCard(
-      padding: const EdgeInsets.all(SpacingTokens.lg),
+      padding: const EdgeInsets.all(SpacingTokens.base),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -207,7 +207,7 @@ class TradingControlScreen extends ConsumerWidget {
         mlData['status_text']?.toString() ?? (isReady ? 'جاهز' : 'قيد التجهيز');
 
     return AppCard(
-      padding: const EdgeInsets.all(SpacingTokens.md),
+      padding: const EdgeInsets.all(SpacingTokens.base),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -215,7 +215,7 @@ class TradingControlScreen extends ConsumerWidget {
             children: [
               BrandIcon(BrandIcons.chart, size: 20, color: cs.primary),
               const SizedBox(width: SpacingTokens.sm),
-              Text('ML Model', style: TypographyTokens.body(cs.onSurface)),
+              Text('نموذج ML', style: TypographyTokens.body(cs.onSurface)),
               const Spacer(),
               StatusBadge(
                 text: !isEnabled ? 'غير متاح' : (isReady ? 'جاهز' : 'يتعلم'),

@@ -7,6 +7,7 @@ import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
@@ -350,8 +351,9 @@ class _PortfolioModeSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    final demoColor = const Color(0xFF2563EB);
-    final realColor = const Color(0xFF059669);
+    final sem = SemanticColors.of(context);
+    final demoColor = sem.info;
+    final realColor = sem.positive;
 
     return AppCard(
       padding: const EdgeInsets.all(SpacingTokens.md),
@@ -664,10 +666,11 @@ class _DailyRiskCard extends StatelessWidget {
         final tradesCount = (d['trades_today'] as num?)?.toInt() ?? 0;
         final progress = maxPct > 0 ? (usedPct / maxPct).clamp(0.0, 1.0) : 0.0;
 
+        final sem = SemanticColors.of(context);
         final barColor = breached
             ? cs.error
             : usedPct > maxPct * 0.75
-            ? Colors.orange
+            ? sem.warning
             : cs.primary;
 
         return AppCard(
@@ -723,7 +726,7 @@ class _DailyRiskCard extends StatelessWidget {
                     'اليوم: ${dailyPnl >= 0 ? '+' : ''}${dailyPnl.toStringAsFixed(2)} ($tradesCount صفقة)',
                     style: TypographyTokens.caption(
                       dailyPnl >= 0
-                          ? Colors.green
+                          ? sem.positive
                           : cs.onSurface.withValues(alpha: 0.5),
                     ),
                   ),

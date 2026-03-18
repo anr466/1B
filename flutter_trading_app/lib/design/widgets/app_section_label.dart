@@ -29,10 +29,10 @@ class AppSectionLabel extends StatelessWidget {
     return Padding(
       padding: effectivePadding,
       child: Text(
-        text.toUpperCase(),
+        text,
         style: TypographyTokens.overline(
           color ?? cs.onSurface.withValues(alpha: 0.45),
-        ),
+        ).copyWith(letterSpacing: 0),
       ),
     );
   }

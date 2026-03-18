@@ -22,7 +22,7 @@ class LoadingShimmer extends StatelessWidget {
 
     return Shimmer.fromColors(
       baseColor: cs.surfaceContainerHighest,
-      highlightColor: cs.outline.withValues(alpha: 0.3),
+      highlightColor: cs.surfaceContainerLow,
       child: Column(
         children: List.generate(itemCount, (i) {
           return Padding(
@@ -62,7 +62,7 @@ class ShimmerBox extends StatelessWidget {
 
     return Shimmer.fromColors(
       baseColor: cs.surfaceContainerHighest,
-      highlightColor: cs.outline.withValues(alpha: 0.3),
+      highlightColor: cs.surfaceContainerLow,
       child: Container(
         width: width,
         height: height,

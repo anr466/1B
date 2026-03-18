@@ -29,7 +29,7 @@ class VioletBrandDarkColors implements ColorTokens {
   @override
   Color get errorLight => const Color(0xFFF87171);
   @override
-  Color get info => const Color(0xFF3B82F6);
+  Color get info => const Color(0xFF60A5FA);
 
   // ─── Surface ────────────────────────────────────
   @override

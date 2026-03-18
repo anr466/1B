@@ -167,8 +167,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 Text(
                   'TRADING',
                   style: TypographyTokens.caption(
-                    cs.onSurface.withValues(alpha: 0.35),
-                  ).copyWith(letterSpacing: 3.5, fontSize: 9),
+                    cs.onSurface.withValues(alpha: 0.50),
+                  ).copyWith(letterSpacing: 2.0, fontSize: 10),
                 ),
               ],
             ),
@@ -845,7 +845,8 @@ class _HybridTradeTile extends StatelessWidget {
       child: InkWell(
         onTap: () => context.push(RouteNames.tradeDetail, extra: trade),
         borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-        child: Container(
+        child: IntrinsicHeight(
+          child: Container(
           padding: const EdgeInsets.symmetric(vertical: SpacingTokens.sm),
           decoration: BoxDecoration(
             color: cs.surfaceContainerLow,
@@ -856,10 +857,10 @@ class _HybridTradeTile extends StatelessWidget {
             ),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
                 width: 4,
-                height: 58,
                 decoration: BoxDecoration(
                   color: sideColor,
                   borderRadius: const BorderRadius.only(
@@ -952,6 +953,7 @@ class _HybridTradeTile extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -1036,7 +1038,7 @@ class _BalanceSummaryMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.4)),
+          style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.55)),
         ),
         const SizedBox(height: SpacingTokens.xs),
         PnlIndicator(amount: amount, percentage: percentage, compact: true),
@@ -1071,11 +1073,17 @@ class _DashTitle extends StatelessWidget {
           if (actionText != null && onAction != null)
             GestureDetector(
               onTap: onAction,
-              child: Text(
-                actionText!,
-                style: TypographyTokens.bodySmall(
-                  cs.primary,
-                ).copyWith(fontWeight: FontWeight.w600),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: SpacingTokens.sm,
+                  vertical: SpacingTokens.sm,
+                ),
+                child: Text(
+                  actionText!,
+                  style: TypographyTokens.bodySmall(
+                    cs.primary,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
         ],
@@ -1105,7 +1113,7 @@ class _TradingToggleChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: SpacingTokens.sm,
-          vertical: SpacingTokens.xs,
+          vertical: SpacingTokens.sm,
         ),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.10),

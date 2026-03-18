@@ -70,6 +70,7 @@ class TypographyTokens {
     fontFamily: _fontFamily,
     fontSize: 11,
     fontWeight: FontWeight.w400,
+    height: 1.3,
     color: color,
   );
 

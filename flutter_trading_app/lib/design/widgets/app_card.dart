@@ -48,7 +48,7 @@ class AppCard extends StatelessWidget {
     final bgColor = switch (level) {
       0 =>
         backgroundColor ??
-            (isDark ? cs.surfaceContainerLow : cs.surfaceContainerLow),
+            (isDark ? cs.surfaceContainerLow : cs.surface),
       2 =>
         backgroundColor ??
             (isDark ? cs.surfaceContainerHighest : cs.surfaceContainerHighest),
@@ -123,7 +123,15 @@ class AppCard extends StatelessWidget {
     );
 
     if (onTap != null) {
-      return GestureDetector(onTap: onTap, child: content);
+      return Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(radius),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(radius),
+          child: content,
+        ),
+      );
     }
 
     return content;

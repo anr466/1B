@@ -208,7 +208,7 @@ ThemeData buildSkinTheme(ColorTokens c, Brightness brightness) {
 
     // ─── Bottom Navigation ────────────────────────
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      backgroundColor: isDark ? c.card : c.card,
+      backgroundColor: isDark ? c.card : c.elevated,
       selectedItemColor: c.primary,
       unselectedItemColor: c.textTertiary,
       type: BottomNavigationBarType.fixed,
@@ -217,7 +217,7 @@ ThemeData buildSkinTheme(ColorTokens c, Brightness brightness) {
 
     // ─── Navigation Bar (M3) ──────────────────────
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: isDark ? c.card : c.card,
+      backgroundColor: isDark ? c.card : c.elevated,
       indicatorColor: c.primary.withValues(alpha: 0.15),
       surfaceTintColor: Colors.transparent,
     ),

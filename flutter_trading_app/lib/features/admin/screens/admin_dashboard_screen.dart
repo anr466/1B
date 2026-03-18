@@ -27,8 +27,10 @@ class AdminDashboardScreen extends ConsumerWidget {
             children: [
               AppScreenHeader(title: 'لوحة الإدارة', showBack: true),
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(SpacingTokens.base),
+                child: RefreshIndicator(
+                  onRefresh: () async {},
+                  child: ListView(
+                    padding: const EdgeInsets.all(SpacingTokens.base),
                   children: [
                     // ─── Quick Actions ─────────────────────
                     const AppSectionLabel(text: 'إجراءات سريعة'),
@@ -61,6 +63,7 @@ class AdminDashboardScreen extends ConsumerWidget {
                     const SizedBox(height: SpacingTokens.xl),
                   ],
                 ),
+                ),
               ),
             ],
           ),
@@ -92,7 +95,7 @@ class AdminDashboardScreen extends ConsumerWidget {
               child: Text(label, style: TypographyTokens.body(cs.onSurface)),
             ),
             Icon(
-              Icons.chevron_left,
+              Icons.chevron_left_rounded,
               color: cs.onSurface.withValues(alpha: 0.3),
               size: 20,
             ),

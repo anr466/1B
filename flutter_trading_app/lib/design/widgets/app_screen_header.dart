@@ -42,14 +42,20 @@ class AppScreenHeader extends StatelessWidget {
             GestureDetector(
               onTap: () => Navigator.of(context).maybePop(),
               behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsetsDirectional.only(
-                  end: SpacingTokens.sm,
-                ),
-                child: Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  size: 18,
-                  color: cs.onSurface.withValues(alpha: 0.6),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.only(
+                      end: SpacingTokens.sm,
+                    ),
+                    child: Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 18,
+                      color: cs.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
                 ),
               ),
             ),
