@@ -72,7 +72,7 @@ class AdaptiveOptimizer:
                      exit_price: float, pnl: float, pnl_pct: float,
                      exit_reason: str, sl_pct_used: float,
                      hold_minutes: int = 0, open_positions_count: int = 1,
-                     indicators: Dict = None):
+                     indicators: Dict = None, is_demo: bool = False):
         """
         تسجيل صفقة مغلقة مع كل السياق + المؤشرات عند الدخول
         
@@ -90,8 +90,9 @@ class AdaptiveOptimizer:
                         hour_of_day, day_of_week,
                         rsi, macd, bb_position, volume_ratio,
                         ema_trend, atr_pct, trend_4h, score,
+                        is_demo,
                         created_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     symbol, side.lower(), entry_price, exit_price,
                     pnl, pnl_pct, exit_reason, sl_pct_used,
@@ -100,6 +101,7 @@ class AdaptiveOptimizer:
                     ind.get('rsi'), ind.get('macd'), ind.get('bb_position'),
                     ind.get('volume_ratio'), ind.get('ema_trend'),
                     ind.get('atr_pct'), ind.get('trend_4h'), ind.get('score'),
+                    bool(is_demo),
                     now.isoformat()
                 ))
             
@@ -183,7 +185,7 @@ class AdaptiveOptimizer:
                         AVG(pnl_pct) as avg_pnl_pct,
                         SUM(pnl) as total_pnl
                     FROM trade_learning_log
-                    WHERE created_at > %s
+                    WHERE created_at > %s AND is_demo = FALSE
                     GROUP BY symbol
                     HAVING COUNT(*) >= 3
                     ORDER BY avg_pnl_pct DESC
@@ -347,7 +349,7 @@ class AdaptiveOptimizer:
                         AVG(pnl_pct) as avg_pnl,
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as wr
                     FROM trade_learning_log
-                    WHERE created_at > %s AND open_positions_count > 0
+                    WHERE created_at > %s AND open_positions_count > 0 AND is_demo = FALSE
                     GROUP BY open_positions_count
                     HAVING trades >= 5
                     ORDER BY avg_pnl DESC
@@ -377,7 +379,7 @@ class AdaptiveOptimizer:
         try:
             with self.db_manager.get_connection() as conn:
                 total = conn.execute(
-                    "SELECT COUNT(*) FROM trade_learning_log"
+                    "SELECT COUNT(*) FROM trade_learning_log WHERE is_demo = FALSE"
                 ).fetchone()[0]
                 
                 last_7d = (datetime.now() - timedelta(days=7)).isoformat()
@@ -387,7 +389,7 @@ class AdaptiveOptimizer:
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
                         AVG(pnl_pct) as avg_pnl,
                         SUM(pnl) as total_pnl
-                    FROM trade_learning_log WHERE created_at > %s
+                    FROM trade_learning_log WHERE created_at > %s AND is_demo = FALSE
                 """, (last_7d,)).fetchone()
             
             trades_7d = recent[0] if recent else 0
@@ -449,12 +451,12 @@ class AdaptiveOptimizer:
                     SELECT pnl, pnl_pct, rsi, macd, bb_position,
                            volume_ratio, ema_trend, atr_pct, trend_4h, score, symbol
                     FROM trade_learning_log
-                    WHERE created_at > %s AND rsi IS NOT NULL
+                    WHERE created_at > %s AND rsi IS NOT NULL AND is_demo = FALSE
                     ORDER BY created_at ASC
                 """, (cutoff,)).fetchall()
                 
                 total_trades = conn.execute(
-                    "SELECT COUNT(*) FROM trade_learning_log WHERE created_at > %s",
+                    "SELECT COUNT(*) FROM trade_learning_log WHERE created_at > %s AND is_demo = FALSE",
                     (cutoff,)
                 ).fetchone()[0]
             
@@ -662,7 +664,7 @@ class AdaptiveOptimizer:
                         AVG(CASE WHEN pnl < 0 THEN pnl_pct ELSE NULL END) as avg_loss,
                         SUM(CASE WHEN exit_reason = 'STOP_LOSS' THEN 1 ELSE 0 END) as sl_hits
                     FROM trade_learning_log
-                    WHERE symbol = %s AND created_at > %s
+                    WHERE symbol = %s AND created_at > %s AND is_demo = FALSE
                 """, (symbol, cutoff)).fetchone()
             
             if not row or row[0] == 0:
@@ -692,7 +694,7 @@ class AdaptiveOptimizer:
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
                         AVG(pnl_pct) as avg_pnl
                     FROM trade_learning_log
-                    WHERE created_at > %s
+                    WHERE created_at > %s AND is_demo = FALSE
                     GROUP BY hour_of_day
                 """, (cutoff,)).fetchall()
             
@@ -727,7 +729,7 @@ class AdaptiveOptimizer:
                         COUNT(*) as total,
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins
                     FROM trade_learning_log
-                    WHERE created_at > %s
+                    WHERE created_at > %s AND is_demo = FALSE
                 """, (cutoff,)).fetchone()
             
             if not row or row[0] < 5:

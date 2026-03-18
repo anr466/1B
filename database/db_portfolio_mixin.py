@@ -252,7 +252,8 @@ class DbPortfolioMixin:
                 portfolio_row = conn.execute("""
                     SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1
                 """, (user_id,)).fetchone()
-                resolved_initial_balance = float(portfolio_row[0] or initial_balance or 0.0) if portfolio_row else float(initial_balance or 0.0)
+                _DEFAULT_DEMO_BALANCE = 10000.0
+                resolved_initial_balance = float(portfolio_row[0] or initial_balance or _DEFAULT_DEMO_BALANCE) if portfolio_row else float(initial_balance or _DEFAULT_DEMO_BALANCE)
                 conn.execute("""
                     INSERT OR REPLACE INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance,
@@ -416,46 +417,47 @@ class DbPortfolioMixin:
                 'message': f'خطأ في الاتصال بـ Binance: {str(e)}'
             }
 
-    def _calculate_user_pnl(self, user_id: int) -> Dict[str, Any]:
+    def _calculate_user_pnl(self, user_id: int, is_demo: int = 0) -> Dict[str, Any]:
         """حساب الأرباح والخسائر من صفقات المستخدم"""
         try:
             with self.get_connection() as conn:
                 total_result = conn.execute("""
                     SELECT
-                        COALESCE(SUM(CASE WHEN is_active = 0 THEN profit_loss ELSE 0 END), 0) as total_pnl,
-                        COUNT(*) as total_trades,
-                        SUM(CASE WHEN is_active = 0 AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
+                        COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
+                        SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as closed_trades,
+                        SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                         (
                             SELECT COALESCE(SUM(position_size), 0)
                             FROM active_positions ap
-                            WHERE ap.user_id = %s AND ap.is_active = 1 AND ap.is_demo = 0
+                            WHERE ap.user_id = %s AND ap.is_active = TRUE AND ap.is_demo = %s
                         ) as invested
                     FROM active_positions
-                    WHERE user_id = %s AND is_demo = 0
-                """, (user_id, user_id)).fetchone()
+                    WHERE user_id = %s AND is_demo = %s
+                """, (user_id, bool(is_demo), user_id, bool(is_demo))).fetchone()
                 
                 daily_result = conn.execute("""
                     SELECT COALESCE(SUM(profit_loss), 0) as daily_pnl
                     FROM active_positions
-                    WHERE user_id = %s AND is_demo = 0
-                    AND is_active = 0
-                    AND DATE(closed_at) = DATE('now')
-                """, (user_id,)).fetchone()
+                    WHERE user_id = %s AND is_demo = %s
+                    AND is_active = FALSE
+                    AND DATE(closed_at) = CURRENT_DATE
+                """, (user_id, bool(is_demo))).fetchone()
 
                 active_result = conn.execute("""
                     SELECT COUNT(*) as active_trades
                     FROM active_positions
-                    WHERE user_id = %s AND is_demo = 0 AND is_active = 1
-                """, (user_id,)).fetchone()
+                    WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
+                """, (user_id, bool(is_demo))).fetchone()
                 
                 total_pnl = total_result[0] if total_result else 0
-                total_trades = total_result[1] if total_result else 0
+                closed_trades = int(total_result[1] or 0) if total_result else 0
                 winning_trades = total_result[2] if total_result else 0
                 invested = total_result[3] if total_result else 0
                 daily_pnl = daily_result[0] if daily_result else 0
                 active_trades = active_result[0] if active_result else 0
+                total_trades = closed_trades + (active_trades or 0)
                 
-                win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+                win_rate = (winning_trades / closed_trades * 100) if closed_trades > 0 else 0
                 total_pnl_pct = (total_pnl / invested * 100) if invested > 0 else 0
                 daily_pnl_pct = (daily_pnl / invested * 100) if invested > 0 else 0
                 
@@ -525,7 +527,7 @@ class DbPortfolioMixin:
             self.logger.error(f"خطأ في جلب الرصيد الابتدائي: {e}")
             return 0
 
-    def _get_admin_portfolio(self, user_id: int, is_demo: int) -> Dict[str, Any]:
+    def _get_admin_portfolio(self, user_id: int, is_demo) -> Dict[str, Any]:
         """جلب بيانات محفظة الأدمن من جدول portfolio كمصدر الحقيقة الوحيد"""
         try:
             with self.get_connection() as conn:
@@ -545,7 +547,7 @@ class DbPortfolioMixin:
                     SELECT COALESCE(SUM(profit_loss), 0) as daily_pnl
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
-                    AND DATE(closed_at) = DATE('now')
+                    AND DATE(closed_at) = CURRENT_DATE
                 """, (user_id, is_demo)).fetchone()
 
                 trades_result = conn.execute("""
@@ -595,7 +597,7 @@ class DbPortfolioMixin:
             self.logger.error(f"خطأ في جلب محفظة الأدمن: {e}")
             return {'error': True, 'message': str(e)}
 
-    def get_user_trading_stats(self, user_id: int) -> Dict[str, Any]:
+    def get_user_trading_stats(self, user_id: int, is_demo: bool = False) -> Dict[str, Any]:
         """الحصول على إحصائيات التداول للمستخدم"""
         try:
             with self.get_connection() as conn:
@@ -608,14 +610,14 @@ class DbPortfolioMixin:
                         AVG(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN profit_loss END) as avg_loss,
                         MAX(CASE WHEN is_active = FALSE THEN closed_at ELSE NULL END) as last_trade_date
                     FROM active_positions
-                    WHERE user_id = %s
-                """, (user_id,)).fetchone()
+                    WHERE user_id = %s AND is_demo = %s
+                """, (user_id, bool(is_demo))).fetchone()
 
                 active_row = conn.execute("""
                     SELECT COUNT(*) as active_trades
                     FROM active_positions
-                    WHERE user_id = %s AND is_active = TRUE
-                """, (user_id,)).fetchone()
+                    WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
+                """, (user_id, bool(is_demo))).fetchone()
                 
                 if stats_row:
                     stats = dict(stats_row)
@@ -873,12 +875,13 @@ class DbPortfolioMixin:
                 portfolio_row = conn.execute("""
                     SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1
                 """, (user_id,)).fetchone()
-                resolved_initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
+                _DEFAULT_DEMO_BALANCE = 10000.0
+                resolved_initial_balance = float(portfolio_row[0] or _DEFAULT_DEMO_BALANCE) if portfolio_row else _DEFAULT_DEMO_BALANCE
                 conn.execute("""
                     INSERT OR REPLACE INTO portfolio 
                     (user_id, is_demo, total_balance, available_balance, invested_balance,
                      total_profit_loss, total_profit_loss_percentage, initial_balance, updated_at)
-                    VALUES (%s, TRUE, %s, %s, 0.0, 0.0, 0.0, %s, datetime('now'))
+                    VALUES (%s, TRUE, %s, %s, 0.0, 0.0, 0.0, %s, CURRENT_TIMESTAMP)
                 """, (user_id, resolved_initial_balance, resolved_initial_balance, resolved_initial_balance))
                 
                 try:
@@ -925,8 +928,8 @@ class DbPortfolioMixin:
                 daily_pnl = conn.execute(
                     """SELECT COALESCE(SUM(profit_loss), 0)
                        FROM active_positions
-                       WHERE user_id = %s AND is_demo = %s AND is_active = 0
-                       AND date(COALESCE(closed_at, updated_at)) = %s""",
+                       WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
+                       AND DATE(COALESCE(closed_at, updated_at)) = %s""",
                     (user_id, is_demo, today)
                 ).fetchone()[0] or 0
                 daily_pnl = float(daily_pnl)
@@ -935,7 +938,7 @@ class DbPortfolioMixin:
 
                 # عدد الصفقات المفتوحة
                 active_count = conn.execute(
-                    "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_demo = %s AND is_active = 1",
+                    "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_demo = %s AND is_active = TRUE",
                     (user_id, is_demo)
                 ).fetchone()[0] or 0
 

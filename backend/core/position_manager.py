@@ -648,6 +648,7 @@ class PositionManagerMixin:
                     hold_minutes=hold_min,
                     open_positions_count=len(self._get_open_positions()),
                     indicators=saved_indicators,
+                    is_demo=bool(self.is_demo_trading),
                 )
             except Exception as opt_err:
                 self.logger.warning(f"⚠️ Optimizer record error: {opt_err}")

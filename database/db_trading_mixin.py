@@ -755,11 +755,11 @@ class DbTradingMixin:
 
         total_balance = new_balance + invested_balance
 
-        # حساب إجمالي الربح/الخسارة من الصفقات المغلقة
+        # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط
         stats_row = conn.execute("""
             SELECT
                 COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
-                COUNT(*) as total_trades,
+                SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as total_trades,
                 SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                 SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
             FROM active_positions
@@ -767,7 +767,7 @@ class DbTradingMixin:
         """, (user_id, is_demo_flag)).fetchone()
         
         total_pnl = stats_row[0] if stats_row else 0
-        total_trades = stats_row[1] if stats_row else 0
+        total_trades = int(stats_row[1] or 0) if stats_row else 0
         winning_trades = stats_row[2] if stats_row else 0
         losing_trades = stats_row[3] if stats_row else 0
         
@@ -804,11 +804,11 @@ class DbTradingMixin:
                 
                 total_balance = new_balance + invested_balance
                 
-                # حساب إجمالي الربح/الخسارة من الصفقات المغلقة
+                # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط
                 stats_row = conn.execute("""
                     SELECT
                         COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
-                        COUNT(*) as total_trades,
+                        SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as total_trades,
                         SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                         SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
                     FROM active_positions
@@ -816,7 +816,7 @@ class DbTradingMixin:
                 """, (user_id, is_demo_flag)).fetchone()
                 
                 total_pnl = stats_row[0] if stats_row else 0
-                total_trades = stats_row[1] if stats_row else 0
+                total_trades = int(stats_row[1] or 0) if stats_row else 0
                 winning_trades = stats_row[2] if stats_row else 0
                 losing_trades = stats_row[3] if stats_row else 0
                 

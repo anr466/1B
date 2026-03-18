@@ -1467,14 +1467,19 @@ def close_position(position_id):
 
         position_type = str(position['position_type'] or 'long').lower()
         is_long = position_type in ('long', 'buy')
-        pnl = ((exit_price - entry_price) * quantity) if is_long else ((entry_price - exit_price) * quantity)
+        pnl_raw = ((exit_price - entry_price) * quantity) if is_long else ((entry_price - exit_price) * quantity)
+
+        is_demo = int(position['is_demo'] or 0)
+        DEMO_COMMISSION_RATE = 0.001  # 0.1% per side — matches _simulate_demo_fill
+        exit_commission = round(exit_price * quantity * DEMO_COMMISSION_RATE, 8) if bool(is_demo) else 0.0
+        pnl = pnl_raw - exit_commission
 
         close_ok = db.close_position(
             position_id=pid,
             exit_price=exit_price,
             exit_reason=reason,
             pnl=pnl,
-            exit_commission=0,
+            exit_commission=exit_commission,
             exit_order_id='ADMIN_MANUAL_CLOSE',
         )
         if not close_ok:
