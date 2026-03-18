@@ -243,7 +243,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   // ─── Email / Username ────────────────
                   AppInput(
                     controller: _emailCtrl,
-                    label: 'البريد الإلكتروني أو اسم المستخدم',
+                    label: 'البريد أو المستخدم',
                     hint: 'example@email.com',
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
@@ -285,23 +285,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                   const SizedBox(height: SpacingTokens.sm),
 
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _rememberMe,
-                        onChanged: (value) {
-                          setState(() => _rememberMe = value ?? false);
-                        },
-                      ),
-                      Expanded(
-                        child: Text(
-                          'تذكرني / حفظ بيانات الدخول',
-                          style: TypographyTokens.bodySmall(
-                            cs.onSurface.withValues(alpha: 0.75),
-                          ),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => setState(() => _rememberMe = !_rememberMe),
+                      borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: SpacingTokens.xs,
+                        ),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: (value) {
+                                setState(() => _rememberMe = value ?? false);
+                              },
+                            ),
+                            const SizedBox(width: SpacingTokens.xs),
+                            Expanded(
+                              child: Text(
+                                'تذكرني / حفظ بيانات الدخول',
+                                style: TypographyTokens.bodySmall(
+                                  cs.onSurface.withValues(alpha: 0.82),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
 
                   // ─── Forgot Password ─────────────────
@@ -382,16 +395,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       Text(
                         'ليس لديك حساب؟',
                         style: TypographyTokens.bodySmall(
-                          cs.onSurface.withValues(alpha: 0.5),
+                          cs.onSurface.withValues(alpha: 0.65),
                         ),
                       ),
                       TextButton(
                         onPressed: () => context.push(RouteNames.register),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: SpacingTokens.sm,
+                            vertical: SpacingTokens.xs,
+                          ),
+                          minimumSize: const Size(48, 40),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         child: Text(
                           'إنشاء حساب',
                           style: TypographyTokens.bodySmall(
                             cs.primary,
-                          ).copyWith(fontWeight: FontWeight.w600),
+                          ).copyWith(fontWeight: FontWeight.w700),
                         ),
                       ),
                     ],

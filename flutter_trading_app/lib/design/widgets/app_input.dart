@@ -21,6 +21,7 @@ class AppInput extends StatelessWidget {
   final FormFieldValidator<String>? validator;
   final FocusNode? focusNode;
   final bool autofocus;
+  final FloatingLabelBehavior floatingLabelBehavior;
 
   const AppInput({
     super.key,
@@ -41,6 +42,7 @@ class AppInput extends StatelessWidget {
     this.validator,
     this.focusNode,
     this.autofocus = false,
+    this.floatingLabelBehavior = FloatingLabelBehavior.auto,
   });
 
   @override
@@ -59,12 +61,15 @@ class AppInput extends StatelessWidget {
       focusNode: focusNode,
       autofocus: autofocus,
       textDirection: TextDirection.rtl,
+      textAlign: TextAlign.end,
+      textAlignVertical: TextAlignVertical.center,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         errorText: errorText,
         prefixIcon: prefixIcon,
         suffixIcon: suffixIcon,
+        floatingLabelBehavior: floatingLabelBehavior,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: SpacingTokens.base,
           vertical: SpacingTokens.md,

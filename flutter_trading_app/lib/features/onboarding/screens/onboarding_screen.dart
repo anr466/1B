@@ -82,11 +82,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   padding: const EdgeInsets.all(SpacingTokens.base),
                   child: TextButton(
                     onPressed: _completeOnboarding,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: SpacingTokens.sm,
+                        vertical: SpacingTokens.xs,
+                      ),
+                      minimumSize: const Size(48, 44),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     child: Text(
                       'تخطي',
                       style: TypographyTokens.bodySmall(
-                        cs.onSurface.withValues(alpha: 0.5),
-                      ),
+                        cs.onSurface.withValues(alpha: 0.72),
+                      ).copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -105,8 +113,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         horizontal: SpacingTokens.xl,
                       ),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          const Spacer(flex: 2),
                           // Logo on first page, icon on others
                           if (i == 0) ...[
                             const BrandLogo(size: 80),
@@ -127,7 +135,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                               ),
                             ),
                           ],
-                          const SizedBox(height: SpacingTokens.xl),
+                          const SizedBox(height: SpacingTokens.lg),
                           Text(
                             page.title,
                             style: TypographyTokens.h1(cs.onSurface),
@@ -137,10 +145,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                           Text(
                             page.subtitle,
                             style: TypographyTokens.body(
-                              cs.onSurface.withValues(alpha: 0.6),
+                              cs.onSurface.withValues(alpha: 0.68),
                             ),
                             textAlign: TextAlign.center,
                           ),
+                          const Spacer(flex: 3),
                         ],
                       ),
                     );
@@ -161,7 +170,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     decoration: BoxDecoration(
                       color: isActive
                           ? cs.primary
-                          : cs.outline.withValues(alpha: 0.3),
+                          : cs.outline.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   );
