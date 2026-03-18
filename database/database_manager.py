@@ -828,34 +828,48 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                conn.execute("""
-                    DELETE FROM user_settings us
-                    WHERE us.id IN (
-                        SELECT id FROM (
-                            SELECT id,
-                                   ROW_NUMBER() OVER (
-                                       PARTITION BY user_id, is_demo
-                                       ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
-                                   ) AS rn
-                            FROM user_settings
-                        ) ranked
-                        WHERE rn > 1
+                # Idempotency guard: only run destructive dedup DELETEs if unique
+                # indexes don't yet exist. Once created, no duplicates are possible
+                # and re-running on every startup is both wasteful and dangerous
+                # under multi-worker concurrent starts.
+                idx_check = conn.execute("""
+                    SELECT COUNT(*) FROM pg_indexes
+                    WHERE indexname IN (
+                        'ux_user_settings_user_mode',
+                        'ux_portfolio_user_mode'
                     )
-                """)
-                conn.execute("""
-                    DELETE FROM portfolio p
-                    WHERE p.id IN (
-                        SELECT id FROM (
-                            SELECT id,
-                                   ROW_NUMBER() OVER (
-                                       PARTITION BY user_id, is_demo
-                                       ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
-                                   ) AS rn
-                            FROM portfolio
-                        ) ranked
-                        WHERE rn > 1
-                    )
-                """)
+                """).fetchone()
+                dedup_indexes_exist = (idx_check[0] if idx_check else 0) >= 2
+
+                if not dedup_indexes_exist:
+                    conn.execute("""
+                        DELETE FROM user_settings us
+                        WHERE us.id IN (
+                            SELECT id FROM (
+                                SELECT id,
+                                       ROW_NUMBER() OVER (
+                                           PARTITION BY user_id, is_demo
+                                           ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+                                       ) AS rn
+                                FROM user_settings
+                            ) ranked
+                            WHERE rn > 1
+                        )
+                    """)
+                    conn.execute("""
+                        DELETE FROM portfolio p
+                        WHERE p.id IN (
+                            SELECT id FROM (
+                                SELECT id,
+                                       ROW_NUMBER() OVER (
+                                           PARTITION BY user_id, is_demo
+                                           ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+                                       ) AS rn
+                                FROM portfolio
+                            ) ranked
+                            WHERE rn > 1
+                        )
+                    """)
                 conn.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS ux_user_settings_user_mode
                     ON user_settings(user_id, is_demo)

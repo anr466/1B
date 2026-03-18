@@ -10,7 +10,7 @@ from flask import request, jsonify
 from config.logging_config import get_logger
 from database.database_manager import DatabaseManager
 from backend.utils.password_utils import hash_password as _hash_pw
-from backend.utils.trading_context import get_effective_is_demo, get_trading_context
+from backend.utils.trading_context import get_effective_is_demo
 
 
 def _normalize_identity_value(value):
@@ -43,12 +43,34 @@ def register_admin_users_routes(bp, shared):
         try:
             db = db_manager
             with db.get_connection() as conn:
+                # Single query replaces the previous 1+N×2 pattern.
+                # trading_enabled and is_demo come from the latest user_settings row
+                # per user. For regular users is_demo is always FALSE; for admins
+                # we pick the row that has trading_enabled=TRUE (their active mode).
                 cursor = conn.execute("""
                     SELECT
                         u.id, u.username, u.email, u.name, u.phone_number,
                         u.user_type, u.is_active, u.created_at, u.last_login_at,
                         (SELECT COUNT(*) FROM active_positions WHERE user_id = u.id) as total_trades,
-                        (SELECT COUNT(*) FROM active_positions WHERE user_id = u.id AND is_active = FALSE AND profit_loss > 0) as winning_trades
+                        (SELECT COUNT(*) FROM active_positions
+                            WHERE user_id = u.id AND is_active = FALSE AND profit_loss > 0
+                        ) as winning_trades,
+                        COALESCE((
+                            SELECT trading_enabled FROM user_settings s
+                            WHERE s.user_id = u.id
+                            ORDER BY
+                                CASE WHEN s.trading_enabled = TRUE THEN 0 ELSE 1 END,
+                                COALESCE(s.updated_at, s.created_at) DESC
+                            LIMIT 1
+                        ), FALSE) as trading_enabled,
+                        COALESCE((
+                            SELECT s.is_demo FROM user_settings s
+                            WHERE s.user_id = u.id
+                            ORDER BY
+                                CASE WHEN s.trading_enabled = TRUE THEN 0 ELSE 1 END,
+                                COALESCE(s.updated_at, s.created_at) DESC
+                            LIMIT 1
+                        ), FALSE) as effective_is_demo
                     FROM users u
                     ORDER BY u.created_at DESC
                     LIMIT 50
@@ -56,38 +78,38 @@ def register_admin_users_routes(bp, shared):
 
                 users = []
                 for row in cursor.fetchall():
-                    user_id, username, email, full_name, phone, user_type, is_active, created_at, last_login, total_trades, winning_trades = row
+                    row_dict = dict(row) if hasattr(row, 'keys') else {
+                        'id': row[0], 'username': row[1], 'email': row[2],
+                        'name': row[3], 'phone_number': row[4], 'user_type': row[5],
+                        'is_active': row[6], 'created_at': row[7], 'last_login_at': row[8],
+                        'total_trades': row[9], 'winning_trades': row[10],
+                        'trading_enabled': row[11], 'effective_is_demo': row[12],
+                    }
+                    user_id = row_dict['id']
+                    total_trades = row_dict['total_trades'] or 0
+                    winning_trades = row_dict['winning_trades'] or 0
                     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-
-                    trading_context = get_trading_context(db, user_id)
-                    effective_is_demo = trading_context['is_demo']
-                    settings_row = conn.execute(
-                        """
-                        SELECT trading_enabled
-                        FROM user_settings
-                        WHERE user_id = %s AND is_demo = %s
-                        ORDER BY COALESCE(updated_at, created_at) DESC
-                        LIMIT 1
-                        """,
-                        (user_id, effective_is_demo)
-                    ).fetchone()
-                    trading_enabled = bool(settings_row[0]) if settings_row else False
+                    effective_is_demo = bool(row_dict['effective_is_demo'])
+                    # Regular users are always in real mode regardless of DB flag
+                    if row_dict['user_type'] != 'admin':
+                        effective_is_demo = False
+                    trading_mode = 'demo' if effective_is_demo else 'real'
 
                     users.append({
                         'id': user_id,
-                        'username': username,
-                        'email': email,
-                        'fullName': full_name,
-                        'phoneNumber': phone,
-                        'userType': user_type,
-                        'isActive': bool(is_active),
-                        'createdAt': created_at,
-                        'lastLogin': last_login,
+                        'username': row_dict['username'],
+                        'email': row_dict['email'],
+                        'fullName': row_dict['name'],
+                        'phoneNumber': row_dict['phone_number'],
+                        'userType': row_dict['user_type'],
+                        'isActive': bool(row_dict['is_active']),
+                        'createdAt': row_dict['created_at'],
+                        'lastLogin': row_dict['last_login_at'],
                         'totalTrades': total_trades,
                         'winningTrades': winning_trades,
                         'winRate': round(win_rate, 1),
-                        'tradingEnabled': trading_enabled,
-                        'tradingMode': trading_context['active_portfolio'],
+                        'tradingEnabled': bool(row_dict['trading_enabled']),
+                        'tradingMode': trading_mode,
                     })
 
                 total_users = len(users)

@@ -22,9 +22,9 @@ class DbPortfolioMixin:
                 cursor = conn.execute("""
                     SELECT 
                         p.total_balance,
-                        COALESCE(SUM(CASE WHEN t.status = 'open' THEN t.quantity * t.entry_price ELSE 0 END), 0) as invested_amount
+                        COALESCE(SUM(CASE WHEN t.is_active = TRUE THEN t.quantity * t.entry_price ELSE 0 END), 0) as invested_amount
                     FROM portfolio p
-                    LEFT JOIN active_positions t ON p.user_id = t.user_id AND t.is_active = 1
+                    LEFT JOIN active_positions t ON p.user_id = t.user_id AND t.is_active = TRUE
                     WHERE p.user_id = %s
                     GROUP BY p.user_id, p.total_balance
                 """, (user_id,))

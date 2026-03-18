@@ -67,7 +67,7 @@ def register_registration_routes(bp, shared):
                         WHERE action = 'availability_check' 
                         AND details LIKE %s 
                         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '1 minute')
-                    """, (client_ip,))
+                    """, (f'%{client_ip}%',))
                     request_count = cursor.fetchone()[0]
                     
                     if request_count >= 30:
@@ -80,6 +80,15 @@ def register_registration_routes(bp, shared):
                     
             except Exception as rate_err:
                 logger.warning(f"⚠️ Rate limiting check failed: {rate_err}")
+
+            try:
+                with db_manager.get_write_connection() as wconn:
+                    wconn.execute("""
+                        INSERT INTO activity_logs (component, action, details, status)
+                        VALUES ('auth', 'availability_check', %s, 'success')
+                    """, (client_ip,))
+            except Exception:
+                pass
             
             try:
                 with db_manager.get_connection() as conn:

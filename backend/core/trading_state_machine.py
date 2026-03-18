@@ -249,7 +249,7 @@ class TradingStateMachine:
                 binance_connected = bc.is_connected
                 binance_latency_ms = getattr(bc, 'latency_ms', None)
             except Exception:
-                binance_connected = True  # assume OK if connector not available
+                binance_connected = False  # unknown / unavailable — do not assume OK
 
             return {
                 'success': True,

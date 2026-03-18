@@ -132,14 +132,13 @@ def normalize_username(username: str) -> str:
     return username.strip().lower()
 
 def sanitize_input(text: str) -> str:
-    """تنظيف المدخلات من XSS"""
+    """تنظيف المدخلات من علامات HTML الخطرة فقط.
+    SQL injection مُعالَج بواسطة psycopg2 parameterization، لذا لا نحذف أحرفاً
+    صالحة مثل ' أو / أو ; التي قد تكون جزءاً من بيانات المستخدم الحقيقية.
+    """
     if not text:
         return text
-    # إزالة علامات HTML
-    dangerous_chars = ['<', '>', '"', "'", '&', '\\', '/', ';']
-    result = text
-    for char in dangerous_chars:
-        result = result.replace(char, '')
+    result = text.replace('<', '').replace('>', '')
     return result.strip()
 
 # ❌ DELETED: get_user_by_email() and get_user_by_username()

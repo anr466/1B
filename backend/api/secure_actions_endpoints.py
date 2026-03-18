@@ -110,7 +110,7 @@ def _save_pending_verification(user_id, action, otp, expires_at, method, new_val
                 method = EXCLUDED.method,
                 new_value = EXCLUDED.new_value,
                 old_password = EXCLUDED.old_password,
-                attempts = EXCLUDED.attempts
+                attempts = GREATEST(pending_verifications.attempts, 0)
         """, (user_id, action, otp, expires_at.isoformat(), method, new_value, old_password))
 
 def _get_pending_verification(user_id, action):
