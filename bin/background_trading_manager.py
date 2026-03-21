@@ -24,6 +24,7 @@ import time
 import signal
 import logging
 import argparse
+import json
 from datetime import datetime, timedelta
 from threading import Thread, Event
 from pathlib import Path
@@ -32,9 +33,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.core.group_b_system import GroupBSystem
 from backend.utils.error_logger import error_logger, ErrorSource
+from backend.utils.trading_context import get_effective_is_demo
 
 # استيراد نظام مراقبة الصحة والتعافي التلقائي
 try:
@@ -63,7 +65,7 @@ GROUP_A_AVAILABLE = False
 
 # ✅ SK-1 FIX: Process Lock لمنع التشغيل المزدوج
 try:
-    from utils.process_lock import get_process_lock, acquire_system_lock, release_system_lock
+    from backend.utils.process_lock import get_process_lock, acquire_system_lock, release_system_lock
     PROCESS_LOCK_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     PROCESS_LOCK_AVAILABLE = False
@@ -76,7 +78,7 @@ except (ImportError, ModuleNotFoundError):
 
 # ✅ Audit Logger للتتبع الكامل
 try:
-    from utils.audit_logger import audit_logger
+    from backend.utils.audit_logger import audit_logger
     AUDIT_LOGGER_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     AUDIT_LOGGER_AVAILABLE = False
@@ -97,7 +99,7 @@ class BackgroundTradingManager:
     """
 
     def __init__(self):
-        self.db_manager = DatabaseManager()
+        self.db_manager = get_db_manager()
         self.is_running = False
         self.stop_event = Event()
         
@@ -115,13 +117,11 @@ class BackgroundTradingManager:
         # ✅ عدادات الدورات (تبدأ من صفر عند كل تشغيل)
         self._group_b_cycles = 0
         
-        # معرف المستخدم الأدمن
-        self.admin_user_id = 1
-        
         # ✅ FIX: Cache لأنظمة التداول لكل مستخدم
         # بدلاً من إنشاء GroupBSystem جديد كل 60 ثانية (يصفّر daily_state)
         # نحتفظ بنسخة واحدة لكل مستخدم طوال عمر العملية
         self._user_systems = {}  # {user_id: GroupBSystem}
+        self._user_context_fingerprints = {}  # {user_id: str}
         
         # StateManager للمراقبة الحية
         try:
@@ -290,8 +290,9 @@ class BackgroundTradingManager:
             # ✅ تسجيل في Audit Trail (غير حرج)
             if AUDIT_LOGGER_AVAILABLE and audit_logger:
                 try:
+                    admin_user_id = self._resolve_operator_admin_id()
                     audit_logger.log_admin_action(
-                        user_id=1,
+                        user_id=admin_user_id,
                         action='start_background_system',
                         details='تم بدء النظام الخلفي (Group B فقط)',
                         request=None
@@ -383,8 +384,9 @@ class BackgroundTradingManager:
             # ✅ تسجيل في Audit Trail
             if AUDIT_LOGGER_AVAILABLE and audit_logger:
                 try:
+                    admin_user_id = self._resolve_operator_admin_id()
                     audit_logger.log_admin_action(
-                        user_id=1,
+                        user_id=admin_user_id,
                         action='stop_background_system',
                         details=f'تم إيقاف النظام الخلفي (طوارئ: {emergency})',
                         request=None
@@ -447,23 +449,30 @@ class BackgroundTradingManager:
                 logger.info(f"   ⏳ Retry in {wait_seconds}s...")
                 self.stop_event.wait(wait_seconds)
     
-    def _get_or_create_system(self, user_id: int) -> GroupBSystem:
+    def _get_or_create_system(self, user_id: int, requested_mode: str = None) -> GroupBSystem:
         """
         الحصول على نظام تداول مُخزّن أو إنشاء جديد.
         ✅ FIX: يحافظ على daily_state عبر الدورات (حماية رأس المال)
         ✅ يُحدّث إعدادات المستخدم والمحفظة كل دورة من DB
         """
-        if user_id not in self._user_systems:
-            logger.info(f"🆕 إنشاء GroupBSystem جديد للمستخدم {user_id}")
-            self._user_systems[user_id] = GroupBSystem(user_id=user_id)
+        context_key = f"{user_id}:{requested_mode or 'real'}"
+        context_fingerprint = self._build_user_context_fingerprint(user_id, requested_mode=requested_mode)
+        cached_fingerprint = self._user_context_fingerprints.get(context_key)
+
+        if context_key not in self._user_systems or cached_fingerprint != context_fingerprint:
+            logger.info(f"🆕 إنشاء GroupBSystem جديد للمستخدم {user_id} mode={requested_mode or 'real'}")
+            self._user_systems[context_key] = GroupBSystem(user_id=user_id, requested_mode=requested_mode)
+            self._user_context_fingerprints[context_key] = context_fingerprint
         else:
-            # تحديث الإعدادات والمحفظة من DB (قد تتغير بين الدورات)
-            system = self._user_systems[user_id]
+            system = self._user_systems[context_key]
+            system.requested_mode = requested_mode
             system.user_settings = system._load_user_settings()
+            system.is_demo_trading = system._determine_trading_mode()
             system.user_portfolio = system._load_user_portfolio()
             system.can_trade = system.user_settings.get('trading_enabled', False)
+            system.daily_state['max_daily_loss_pct'] = system._resolve_max_daily_loss_pct()
         
-        return self._user_systems[user_id]
+        return self._user_systems[context_key]
     
     def _execute_group_b(self):
         """تنفيذ Group B (التداول الآلي لجميع المستخدمين النشطين)"""
@@ -482,10 +491,11 @@ class BackgroundTradingManager:
             logger.info(f"🔄 Group B: بدء التداول لـ {len(active_users)} مستخدم")
             
             # تنظيف cache المستخدمين الذين لم يعودوا نشطين
-            active_ids = {u['id'] for u in active_users}
+            active_ids = {u['context_key'] for u in active_users}
             stale_ids = [uid for uid in self._user_systems if uid not in active_ids]
             for uid in stale_ids:
                 del self._user_systems[uid]
+                self._user_context_fingerprints.pop(uid, None)
             
             # ========== تشغيل التداول لكل مستخدم ==========
             for user in active_users:
@@ -494,9 +504,10 @@ class BackgroundTradingManager:
                     username = user.get('username', f'User_{user_id}')
                     trading_enabled = user.get('trading_enabled', False)
                     has_open_positions = user.get('has_open_positions', False)
+                    requested_mode = user.get('requested_mode')
                     
-                    # ✅ FIX: استخدام نظام مُخزّن (يحافظ على daily_state)
-                    group_b = self._get_or_create_system(user_id)
+                    group_b = self._get_or_create_system(user_id, requested_mode=requested_mode)
+                    group_b.start_runtime_services()
                     
                     # تحميل العملات من قاعدة البيانات
                     if not group_b.load_successful_coins_from_database():
@@ -506,10 +517,10 @@ class BackgroundTradingManager:
                     # ========== منطق التداول ==========
                     if trading_enabled:
                         group_b.run_trading_cycle()
-                        logger.debug(f"✅ User {user_id} ({username}): دورة تداول كاملة")
+                        logger.debug(f"✅ User {user_id} ({username}) mode={requested_mode}: دورة تداول كاملة")
                     elif has_open_positions:
                         group_b.run_monitoring_only()
-                        logger.debug(f"👁️ User {user_id} ({username}): مراقبة صفقات مفتوحة فقط")
+                        logger.debug(f"👁️ User {user_id} ({username}) mode={requested_mode}: مراقبة صفقات مفتوحة فقط")
                     
                 except Exception as user_error:
                     logger.error(f"❌ خطأ في التداول للمستخدم {user.get('id', '?')}: {user_error}")
@@ -564,41 +575,51 @@ class BackgroundTradingManager:
                 users_with_keys = {row[0] for row in key_rows}
 
                 open_positions_rows = conn.execute("""
-                    SELECT user_id, COUNT(*) AS open_count
+                    SELECT user_id, is_demo, COUNT(*) AS open_count
                     FROM active_positions
                     WHERE is_active = %s
-                    GROUP BY user_id
+                    GROUP BY user_id, is_demo
                 """, (active_true,)).fetchall()
-                open_positions_map = {row[0]: int(row[1] or 0) for row in open_positions_rows}
+                open_positions_map = {
+                    (row[0], bool(row[1])): int(row[2] or 0)
+                    for row in open_positions_rows
+                }
 
                 users = []
                 for row in user_rows:
                     user_id = row[0]
+                    username = row[1]
                     user_type = row[2]
-                    settings = self.db_manager.get_trading_settings(user_id) or {}
-
-                    trading_enabled = bool(settings.get('trading_enabled', False))
-                    trading_mode = str(settings.get('trading_mode') or 'real').lower()
-                    has_open_positions = open_positions_map.get(user_id, 0) > 0
                     has_binance_keys = user_id in users_with_keys
 
-                    eligible_for_execution = (
-                        has_binance_keys
-                        or (user_type == 'admin' and trading_mode == 'demo')
-                    )
-                    include_user = (trading_enabled and eligible_for_execution) or has_open_positions
+                    mode_specs = [('real', False)]
+                    if user_type == 'admin':
+                        mode_specs = [('demo', True), ('real', False)]
 
-                    if not include_user:
-                        continue
+                    for requested_mode, is_demo_mode in mode_specs:
+                        settings = self.db_manager.get_trading_settings(user_id, is_demo=is_demo_mode) or {}
+                        trading_enabled = bool(settings.get('trading_enabled', False))
+                        has_open_positions = open_positions_map.get((user_id, is_demo_mode), 0) > 0
 
-                    users.append({
-                        'id': user_id,
-                        'username': row[1],
-                        'user_type': user_type,
-                        'trading_enabled': trading_enabled,
-                        'has_open_positions': has_open_positions,
-                        'has_binance_keys': has_binance_keys
-                    })
+                        eligible_for_execution = (
+                            has_binance_keys
+                            or (user_type == 'admin' and requested_mode == 'demo')
+                        )
+                        include_user = (trading_enabled and eligible_for_execution) or has_open_positions
+
+                        if not include_user:
+                            continue
+
+                        users.append({
+                            'id': user_id,
+                            'username': username,
+                            'user_type': user_type,
+                            'requested_mode': requested_mode,
+                            'context_key': f"{user_id}:{requested_mode}",
+                            'trading_enabled': trading_enabled,
+                            'has_open_positions': has_open_positions,
+                            'has_binance_keys': has_binance_keys
+                        })
 
                 logger.debug(f"📋 وجدنا {len(users)} مستخدم نشط للتداول/المراقبة")
                 return users
@@ -606,6 +627,46 @@ class BackgroundTradingManager:
         except Exception as e:
             logger.error(f"❌ خطأ في جلب المستخدمين النشطين: {e}")
             return []
+
+    def _resolve_operator_admin_id(self):
+        """تحديد الأدمن المشغّل ديناميكياً بدلاً من افتراض user_id=1."""
+        try:
+            with self.db_manager.get_connection() as conn:
+                row = conn.execute(
+                    """
+                    SELECT id
+                    FROM users
+                    WHERE user_type = 'admin' AND is_active = %s
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (True if self.db_manager.is_postgres() else 1,),
+                ).fetchone()
+                return int(row[0]) if row else None
+        except Exception as e:
+            logger.warning(f"⚠️ تعذر تحديد admin operator id: {e}")
+            return None
+
+    def _build_user_context_fingerprint(self, user_id: int, requested_mode: str = None) -> str:
+        """بصمة لسياق التنفيذ لضمان عدم استمرار استخدام نظام stale بعد تغيّر الإعدادات/الوضع."""
+        try:
+            effective_is_demo = bool(get_effective_is_demo(self.db_manager, user_id, requested_mode=requested_mode))
+            settings = self.db_manager.get_trading_settings(user_id, is_demo=effective_is_demo) or {}
+            keys = self.db_manager.get_binance_keys(user_id) or {}
+            fingerprint_payload = {
+                'is_demo': effective_is_demo,
+                'trading_enabled': bool(settings.get('trading_enabled', False)),
+                'trade_amount': settings.get('trade_amount'),
+                'position_size_percentage': settings.get('position_size_percentage'),
+                'max_positions': settings.get('max_positions'),
+                'risk_level': settings.get('risk_level'),
+                'has_keys': bool(keys.get('api_key')),
+                'requested_mode': requested_mode,
+            }
+            return json.dumps(fingerprint_payload, sort_keys=True, default=str)
+        except Exception as e:
+            logger.warning(f"⚠️ تعذر بناء fingerprint للمستخدم {user_id}: {e}")
+            return f"fallback:{user_id}"
 
     def _cleanup_old_logs(self):
         """✅ تنظيف السجلات القديمة عند البدء"""

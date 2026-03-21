@@ -288,7 +288,7 @@ class PositionManagerMixin:
     def _get_open_positions(self) -> List[Dict]:
         """جلب الصفقات المفتوحة من قاعدة البيانات"""
         try:
-            positions = self.db.get_user_active_positions(self.user_id)
+            positions = self.db.get_user_active_positions(self.user_id, is_demo=self.is_demo_trading)
             return positions or []
         except Exception as e:
             self.logger.error(f"Error getting positions: {e}")
@@ -374,6 +374,22 @@ class PositionManagerMixin:
                     self._update_stop_loss(position_id, updated['sl'])
                 
                 if exit_result['should_exit']:
+                    requested_close_pct = float(
+                        exit_result.get('close_quantity_pct', exit_result.get('exit_pct', 1.0)) or 1.0
+                    )
+                    if 0 < requested_close_pct < 1.0:
+                        self.logger.error(
+                            f"⛔ [{symbol}] Partial exit requested ({requested_close_pct:.2%}) but settlement path only supports full close"
+                        )
+                        self._report_trading_error(
+                            message="Partial exit requested but unsupported",
+                            details=f"user_id={self.user_id}, symbol={symbol}, requested_close_pct={requested_close_pct}",
+                            critical=True,
+                            requires_admin=True,
+                            auto_action="implement_partial_exit_settlement",
+                        )
+                        return None
+
                     exit_price = exit_result['exit_price']
                     strategy_name = self.strategy.name if self.strategy else 'unknown'
                     reason_code = str(exit_result.get('reason', ''))
@@ -414,7 +430,7 @@ class PositionManagerMixin:
                         f"Price: ${exit_price:.4f} | Hold: {hold_hours:.1f}h"
                     )
 
-                    return self._close_position(position, exit_price, reason, 1.0)
+                    return self._close_position(position, exit_price, reason, requested_close_pct)
                 else:
                     # V8: persist SL/trail updates even when holding
                     if updated.get('sl'):
@@ -475,6 +491,7 @@ class PositionManagerMixin:
         quantity = position.get('quantity', 0)
         position_size_entry = entry_price * quantity
         position_type = position.get('position_type', 'long').upper()
+        position_is_demo = bool(position.get('is_demo', self.is_demo_trading))
         
         # 💰 حساب الربح/الخسارة الأولي (قبل العمولة) - يعتمد على الاتجاه
         if position_type == 'SHORT':
@@ -487,8 +504,7 @@ class PositionManagerMixin:
         exit_order_id = None
         entry_commission = position.get('entry_commission', 0)
         
-        if self.is_demo_trading:
-            # Demo: محاكاة تنفيذ أقرب للواقع (سعر/انزلاق/زمن/عمولة)
+        if position_is_demo:
             demo_close_side = 'SELL' if position_type != 'SHORT' else 'BUY'
             demo_close_fill = self._simulate_demo_fill(symbol, demo_close_side, quantity, exit_price)
             if not demo_close_fill.get('success'):
@@ -501,71 +517,75 @@ class PositionManagerMixin:
             exit_commission = float(demo_close_fill.get('commission', 0))
             exit_order_id = str(demo_close_fill.get('order_id', ''))
 
-            # إعادة حساب PnL بعد سعر التنفيذ المحاكى
             if position_type == 'SHORT':
                 pnl_raw = (entry_price - exit_price) * quantity
             else:
                 pnl_raw = (exit_price - entry_price) * quantity
 
-            # ✅ FIX: عمولة الدخول خُصمت بالفعل من الرصيد عند الفتح (total_deduction = position_size + entry_commission)
-            # لذلك نخصم فقط عمولة الخروج من PnL الخام — لا نخصم عمولة الدخول مرة أخرى
             pnl = pnl_raw - exit_commission
-            # ✅ النسبة المئوية الفعلية بعد عمولة الخروج فقط
             pnl_pct = pnl / position_size_entry if position_size_entry > 0 else 0
             self.logger.info(
                 f"   💰 Demo Exit Fill: ${exit_price:.4f} | Commission ${exit_commission:.4f} "
                 f"(Entry commission ${entry_commission:.4f} already deducted at open)"
             )
         else:
-            # 💱 تنفيذ إغلاق حقيقي على Binance
-            if self.binance_manager:
-                self.logger.info(f"   💱 Executing REAL close on Binance: {position_type} {symbol} qty={quantity:.6f}")
-                
-                if position_type == 'LONG':
-                    close_result = self._execute_real_order_with_retry('sell', symbol, quantity, 'close')
-                else:
-                    close_result = self._execute_real_order_with_retry('buy', symbol, quantity, 'close')
-                
-                if close_result.get('success'):
-                    if not close_result.get('order_id'):
-                        self.logger.error(
-                            "⛔ Binance close returned without order_id — keep position open in DB"
-                        )
-                        return None
-                    real_exit_price = float(close_result.get('price', exit_price))
-                    exit_commission = float(close_result.get('commission', 0))
-                    exit_order_id = str(close_result.get('order_id', ''))
-                    if real_exit_price > 0:
-                        exit_price = real_exit_price
-                    # إعادة حساب PnL بالسعر الحقيقي
-                    if position_type == 'SHORT':
-                        pnl_raw = (entry_price - exit_price) * quantity
-                    else:
-                        pnl_raw = (exit_price - entry_price) * quantity
-                    self.logger.info(
-                        f"   ✅ Binance close FILLED: price=${exit_price:.4f} "
-                        f"commission=${exit_commission:.4f} order_id={exit_order_id}"
-                    )
-                else:
-                    self.logger.error(
-                        f"⚠️ Binance close FAILED: {close_result.get('message')} — "
-                        "position remains OPEN in DB"
-                    )
+            if not self.binance_manager:
+                try:
+                    from backend.utils.binance_manager import BinanceManager
+                    self.binance_manager = BinanceManager()
+                except Exception as e:
+                    self.logger.error(f"⛔ BinanceManager unavailable for REAL close of {symbol}: {e}")
                     self._report_trading_error(
-                        message="Binance close failed",
-                        details=f"user_id={self.user_id}, symbol={symbol}, message={close_result.get('message')}",
-                        critical=False,
-                        requires_admin=False,
-                        auto_action="retry_close_order",
+                        message="BinanceManager unavailable for close",
+                        details=f"user_id={self.user_id}, symbol={symbol}, error={e}",
+                        critical=True,
+                        requires_admin=True,
+                        auto_action="restore_real_execution_context",
                     )
                     return None
+
+            self.logger.info(f"   💱 Executing REAL close on Binance: {position_type} {symbol} qty={quantity:.6f}")
             
-            # Real: PnL بعد خصم عمولة الخروج (عمولة الدخول خُصمت عند الفتح)
-            pnl = pnl_raw - exit_commission
-            if position_type == 'SHORT':
-                pnl_pct = pnl / position_size_entry if position_size_entry > 0 else 0
+            if position_type == 'LONG':
+                close_result = self._execute_real_order_with_retry('sell', symbol, quantity, 'close')
             else:
-                pnl_pct = pnl / position_size_entry if position_size_entry > 0 else 0
+                close_result = self._execute_real_order_with_retry('buy', symbol, quantity, 'close')
+            
+            if close_result.get('success'):
+                if not close_result.get('order_id'):
+                    self.logger.error(
+                        "⛔ Binance close returned without order_id — keep position open in DB"
+                    )
+                    return None
+                real_exit_price = float(close_result.get('price', exit_price))
+                exit_commission = float(close_result.get('commission', 0))
+                exit_order_id = str(close_result.get('order_id', ''))
+                if real_exit_price > 0:
+                    exit_price = real_exit_price
+                if position_type == 'SHORT':
+                    pnl_raw = (entry_price - exit_price) * quantity
+                else:
+                    pnl_raw = (exit_price - entry_price) * quantity
+                self.logger.info(
+                    f"   ✅ Binance close FILLED: price=${exit_price:.4f} "
+                    f"commission=${exit_commission:.4f} order_id={exit_order_id}"
+                )
+            else:
+                self.logger.error(
+                    f"⚠️ Binance close FAILED: {close_result.get('message')} — "
+                    "position remains OPEN in DB"
+                )
+                self._report_trading_error(
+                    message="Binance close failed",
+                    details=f"user_id={self.user_id}, symbol={symbol}, message={close_result.get('message')}",
+                    critical=False,
+                    requires_admin=False,
+                    auto_action="retry_close_order",
+                )
+                return None
+            
+            pnl = pnl_raw - exit_commission
+            pnl_pct = pnl / position_size_entry if position_size_entry > 0 else 0
         
         self.logger.info(f"   💰 CLOSING {position_type} {symbol}: ${exit_price:.4f} | "
                         f"PnL ${pnl:.2f} ({pnl_pct*100:+.2f}%) | Reason: {reason}")
@@ -579,16 +599,25 @@ class PositionManagerMixin:
                                                exit_order_id=exit_order_id)
                 
                 # 2. تحديث رصيد المحفظة (على نفس الاتصال)
-                current_balance = self.user_portfolio.get('balance', 0)
+                if position_is_demo:
+                    balance_row = conn.execute(
+                        "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+                        (self.user_id,),
+                    ).fetchone()
+                else:
+                    balance_row = conn.execute(
+                        "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = FALSE LIMIT 1",
+                        (self.user_id,),
+                    ).fetchone()
+
+                current_balance = float(balance_row[0] or 0.0) if balance_row else 0.0
                 returned_amount = position_size_entry + pnl
                 new_balance = current_balance + returned_amount
-                self.db.update_user_balance_on_conn(conn, self.user_id, new_balance, self.is_demo_trading)
+                self.db.update_user_balance_on_conn(conn, self.user_id, new_balance, position_is_demo)
                 
-                # 3. get_write_connection يعمل commit تلقائياً عند الخروج بنجاح
-                #    وrollback تلقائياً عند حدوث exception — ذرية حقيقية
-                
-                # 4. تحديث الحالة المحلية بعد النجاح
-                self.user_portfolio['balance'] = new_balance
+                if position_is_demo == self.is_demo_trading:
+                    self.user_portfolio['balance'] = new_balance
+                    self.user_portfolio['available_balance'] = new_balance
                 self.logger.info(f"   💰 Balance updated atomically: ${current_balance:.2f} → ${new_balance:.2f} (returned ${position_size_entry:.2f} + PnL {pnl:+.2f})")
                 
         except Exception as e:
@@ -879,6 +908,7 @@ class PositionManagerMixin:
                 
                 # 4. تحديث الحالة المحلية بعد النجاح
                 self.user_portfolio['balance'] = new_balance
+                self.user_portfolio['available_balance'] = new_balance
                 self.logger.info(f"   💰 Balance deducted atomically: ${balance:.2f} → ${new_balance:.2f} (-${total_deduction:.2f})")
                 
         except Exception as e:

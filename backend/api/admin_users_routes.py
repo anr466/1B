@@ -8,7 +8,7 @@ Routes: users/all, users/<id> (GET detail), users/create, users/<id>/update, use
 from flask import request, jsonify
 
 from config.logging_config import get_logger
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.utils.password_utils import hash_password as _hash_pw
 from backend.utils.trading_context import get_effective_is_demo
 
@@ -28,7 +28,7 @@ def _normalize_phone(value):
     return ''.join(ch for ch in raw if ch.isdigit())
 
 logger = get_logger(__name__)
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 
 def register_admin_users_routes(bp, shared):
@@ -245,6 +245,7 @@ def register_admin_users_routes(bp, shared):
                         username, email, password_hash, name, phone_number,
                         user_type, is_active, email_verified, created_at
                     ) VALUES (%s, %s, %s, %s, %s, %s, TRUE, TRUE, CURRENT_TIMESTAMP)
+                    RETURNING id
                 """, (
                     normalized_username,
                     normalized_email,

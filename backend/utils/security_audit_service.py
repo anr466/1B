@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -71,8 +71,8 @@ class SecurityAuditService:
         'SETTINGS_UPDATED': 'تحديث الإعدادات',
     }
     
-    def __init__(self, db_manager: DatabaseManager = None):
-        self.db_manager = db_manager or DatabaseManager()
+    def __init__(self, db_manager=None):
+        self.db_manager = db_manager or get_db_manager()
     
     def log_action(
         self,

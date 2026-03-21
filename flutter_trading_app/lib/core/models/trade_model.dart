@@ -12,6 +12,7 @@ class TradeModel {
   final double? currentPrice;
   final double? exitPrice;
   final double quantity;
+  final double? positionSize;
   final double? pnl;
   final double? pnlPct;
   final String? entryTime;
@@ -34,6 +35,7 @@ class TradeModel {
     this.currentPrice,
     this.exitPrice,
     required this.quantity,
+    this.positionSize,
     this.pnl,
     this.pnlPct,
     this.entryTime,
@@ -51,6 +53,13 @@ class TradeModel {
   bool get isOpen => status == 'open' || status == 'active';
   bool get isClosed => status == 'closed' || status == 'completed';
   bool get isBuy => side.toUpperCase() == 'BUY' || side.toUpperCase() == 'LONG';
+  double get entryAmount => positionSize ?? (entryPrice * quantity);
+  double? get stopLossPct => stopLoss != null && entryPrice > 0
+      ? ((entryPrice - stopLoss!) / entryPrice) * (isBuy ? 100 : -100)
+      : null;
+  double? get takeProfitPct => takeProfit != null && entryPrice > 0
+      ? ((takeProfit! - entryPrice) / entryPrice) * (isBuy ? 100 : -100)
+      : null;
 
   factory TradeModel.fromJson(Map<String, dynamic> json) {
     final positionTypeRaw = json['positionType'] ?? json['position_type'];
@@ -101,6 +110,9 @@ class TradeModel {
       currentPrice: ParsingService.asNullableDouble(currentPriceRaw),
       exitPrice: ParsingService.asNullableDouble(exitPriceRaw),
       quantity: ParsingService.asDouble(json['quantity'] ?? 0),
+      positionSize: ParsingService.asNullableDouble(
+        json['positionSize'] ?? json['position_size'] ?? json['entryAmount'],
+      ),
       pnl: ParsingService.asNullableDouble(pnlRaw),
       pnlPct: ParsingService.asNullableDouble(pnlPctRaw),
       entryTime: entryTimeRaw?.toString(),
@@ -127,6 +139,7 @@ class TradeModel {
     'current_price': currentPrice,
     'exit_price': exitPrice,
     'quantity': quantity,
+    'position_size': positionSize,
     'pnl': pnl,
     'pnl_pct': pnlPct,
     'entry_time': entryTime,

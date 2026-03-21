@@ -42,9 +42,15 @@ class UserModel {
       name ??
       (username.isNotEmpty ? username : email.split('@').first);
 
+  static int _asInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? fallback;
+  }
+
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['id'] ?? json['userId'] ?? 0,
+      id: _asInt(json['id'] ?? json['userId'] ?? json['user_id']),
       username: (json['username'] ?? json['userName'] ?? '') as String,
       email: (json['email'] ?? '') as String,
       name: json['name'] as String?,
@@ -78,20 +84,34 @@ class UserModel {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'userId': id,
+    'user_id': id,
     'username': username,
+    'userName': username,
     'email': email,
     'name': name,
     'fullName': fullName,
+    'full_name': fullName,
     'phoneNumber': phoneNumber,
+    'phone_number': phoneNumber,
     'userType': userType,
+    'user_type': userType,
     'tradingMode': tradingMode,
+    'trading_mode': tradingMode,
     'hasBinanceKeys': hasBinanceKeys,
+    'has_binance_keys': hasBinanceKeys,
     'tradingEnabled': tradingEnabled,
+    'trading_enabled': tradingEnabled,
     'isActive': isActive,
+    'is_active': isActive,
     'emailVerified': emailVerified,
+    'email_verified': emailVerified,
     'biometricEnabled': biometricEnabled,
+    'biometric_enabled': biometricEnabled,
     'createdAt': createdAt,
+    'created_at': createdAt,
     'lastLogin': lastLogin,
+    'last_login': lastLogin,
   };
 
   UserModel copyWith({

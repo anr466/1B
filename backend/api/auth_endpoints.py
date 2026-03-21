@@ -21,7 +21,7 @@ from typing import Dict, Optional
 # إضافة مسار المشروع
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from config.logging_config import get_logger
 from backend.api.auth_middleware import require_auth
 
@@ -80,7 +80,7 @@ logger = get_logger(__name__)
 # إنشاء Blueprint
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 # تهيئة الخدمات
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 # ✅ دالة مساعدة لجلب معلومات الطلب
 def get_request_info():

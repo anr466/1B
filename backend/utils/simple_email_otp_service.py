@@ -13,13 +13,13 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 class SimpleEmailOTPService:
     """خدمة OTP بسيطة - تحفظ في قاعدة البيانات فقط"""
     
     def __init__(self):
-        self.db = DatabaseManager()
+        self.db = get_db_manager()
         # ✅ تنظيف تلقائي عند التهيئة
         self._cleanup_expired_otps()
     

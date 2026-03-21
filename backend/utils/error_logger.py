@@ -22,7 +22,7 @@ from datetime import datetime
 from enum import Enum
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 
 class ErrorLevel(Enum):
@@ -50,7 +50,7 @@ class ErrorLogger:
     """
     
     def __init__(self):
-        self.db_manager = DatabaseManager()
+        self.db_manager = get_db_manager()
         self.logger = logging.getLogger(__name__)
         self._default_max_auto_attempts = 3
         self._ensure_errors_table()
@@ -256,6 +256,7 @@ class ErrorLogger:
                      error_fingerprint, status, attempt_count, last_attempt_at,
                      requires_admin, auto_action)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
+                    RETURNING id
                 """, (
                     source.value,  # error_type
                     message,       # error_message

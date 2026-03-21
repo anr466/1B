@@ -35,6 +35,7 @@ class AccountTradingState {
 
 class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   final Ref _ref;
+  bool _disposed = false;
 
   AccountTradingNotifier(this._ref)
     : super(
@@ -45,18 +46,31 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     load();
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _setStateSafely(AccountTradingState nextState) {
+    if (_disposed) return;
+    state = nextState;
+  }
+
   Future<void> load() async {
     final auth = _ref.read(authProvider);
     final user = auth.user;
     if (user == null) {
-      state = const AccountTradingState(enabled: false, isLoading: false);
+      _setStateSafely(
+        const AccountTradingState(enabled: false, isLoading: false),
+      );
       return;
     }
 
-    state = state.copyWith(
+    _setStateSafely(state.copyWith(
       enabled: state.enabled ?? user.tradingEnabled,
       isLoading: true,
-    );
+    ));
 
     try {
       final repo = _ref.read(settingsRepositoryProvider);
@@ -65,18 +79,20 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       final status = await _ref
           .read(adminRepositoryProvider)
           .getPublicTradingState();
-      state = state.copyWith(
+      if (_disposed) return;
+      _setStateSafely(state.copyWith(
         enabled: settings.tradingEnabled,
         systemRunning: status.isEffectivelyRunning || status.isRunning,
         systemState: status.state.toString().toUpperCase(),
         isLoading: false,
-      );
+      ));
       _syncAuthTrading(settings.tradingEnabled);
     } catch (_) {
-      state = state.copyWith(
+      if (_disposed) return;
+      _setStateSafely(state.copyWith(
         enabled: state.enabled ?? user.tradingEnabled,
         isLoading: false,
-      );
+      ));
     }
   }
 
@@ -86,7 +102,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     if (user == null) return false;
 
     final previous = state.enabled ?? user.tradingEnabled;
-    state = state.copyWith(enabled: previous, isLoading: true);
+    _setStateSafely(state.copyWith(enabled: previous, isLoading: true));
 
     try {
       // Fetch system state for display only — does NOT block user activation
@@ -99,16 +115,18 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       final repo = _ref.read(settingsRepositoryProvider);
       final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
       await repo.updateSettings(user.id, {'tradingEnabled': enabled}, mode: mode);
-      state = state.copyWith(
+      if (_disposed) return false;
+      _setStateSafely(state.copyWith(
         enabled: enabled,
         systemRunning: systemRunning,
         systemState: systemState,
         isLoading: false,
-      );
+      ));
       _syncAuthTrading(enabled);
       return true;
     } catch (_) {
-      state = state.copyWith(enabled: previous, isLoading: false);
+      if (_disposed) return false;
+      _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
       return false;
     }
   }
@@ -132,6 +150,10 @@ final accountTradingProvider =
       AccountTradingNotifier,
       AccountTradingState
     >((ref) {
+      final auth = ref.watch(authProvider);
+      if (auth.isAdmin) {
+        ref.watch(adminPortfolioModeProvider);
+      }
       return AccountTradingNotifier(ref);
     });
 
@@ -176,8 +198,9 @@ final successfulCoinsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
       final auth = ref.watch(authProvider);
       if (!auth.isAuthenticated || auth.user == null) return [];
+      final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
       final repo = ref.watch(portfolioRepositoryProvider);
-      return repo.getSuccessfulCoins(auth.user!.id);
+      return repo.getSuccessfulCoins(auth.user!.id, mode: mode);
     });
 
 /// Stats data provider — passes mode for admin users

@@ -53,30 +53,58 @@ Exit codes: 0=PASS  1=FAIL  2=CRITICAL infrastructure failure
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
 import time
 import uuid
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
-API_BASE = "http://127.0.0.1:3002"
+API_BASE = os.getenv("VALIDATION_API_BASE", "http://127.0.0.1:3002")
 ADMIN_EMAIL = "admin@tradingbot.com"
 ADMIN_PASSWORD = "admin123"
 ADMIN_USER_ID = 1
 
+load_dotenv(ROOT / ".env")
+
+
+def _resolve_local_db_environment() -> None:
+    host = (os.getenv("POSTGRES_HOST") or "").strip().lower()
+    database_url = (os.getenv("DATABASE_URL") or "").strip()
+
+    if host and host != "postgres":
+        return
+
+    try:
+        socket.gethostbyname("postgres")
+        return
+    except OSError:
+        pass
+
+    if host == "postgres":
+        os.environ["POSTGRES_HOST"] = "127.0.0.1"
+
+    if database_url and "@postgres:" in database_url:
+        os.environ["DATABASE_URL"] = database_url.replace("@postgres:", "@127.0.0.1:")
+
+
+_resolve_local_db_environment()
+
 sys.path.insert(0, str(ROOT))
 
-from database.database_manager import DatabaseManager  # noqa: E402
+from backend.infrastructure.db_access import get_db_manager  # noqa: E402
 
 
-db = DatabaseManager()
+db = get_db_manager()
 
 # ─── Status & Severity constants ───────────────────────────────────────────────
 STATUS_PASS, STATUS_FAIL, STATUS_WARN, STATUS_SKIP = "PASS", "FAIL", "WARN", "SKIP"
@@ -170,7 +198,7 @@ def db_fetchall(sql, params=()):
 
 def db_table_exists(t):
     return bool(db_scalar(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
         (t,),
     ))
 
@@ -188,6 +216,38 @@ def db_count(t, where="", params=()):
 
 # ─── API helpers ──────────────────────────────────────────────────────────────
 _auth_token: Optional[str] = None
+_auth_user_id: Optional[int] = None
+
+
+def _decode_jwt_payload_without_verification(token: str) -> Dict[str, Any]:
+    try:
+        parts = token.split('.')
+        if len(parts) < 2:
+            return {}
+        payload_part = parts[1]
+        padding = '=' * (-len(payload_part) % 4)
+        decoded = base64.urlsafe_b64decode(payload_part + padding)
+        return json.loads(decoded.decode('utf-8'))
+    except Exception:
+        return {}
+
+
+def get_authenticated_user_id() -> Optional[int]:
+    global _auth_user_id
+    if _auth_user_id is not None:
+        return _auth_user_id
+
+    token = get_admin_token()
+    if not token:
+        return None
+
+    payload = _decode_jwt_payload_without_verification(token)
+    user_id = payload.get('user_id')
+    try:
+        _auth_user_id = int(user_id) if user_id is not None else None
+    except (TypeError, ValueError):
+        _auth_user_id = None
+    return _auth_user_id
 
 def api_request(path, method="GET", body=None, token=None, timeout=8):
     url = f"{API_BASE}/api{path}"
@@ -207,13 +267,23 @@ def api_request(path, method="GET", body=None, token=None, timeout=8):
         return 0, {"error": str(e)}
 
 def get_admin_token():
-    global _auth_token
+    global _auth_token, _auth_user_id
     if _auth_token: return _auth_token
     for path in ["/auth/login", "/mobile/auth/login"]:
         code, resp = api_request(path, "POST", {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
         tok = resp.get("token") or resp.get("access_token")
         if code == 200 and tok:
-            _auth_token = tok; return _auth_token
+            _auth_token = tok
+            login_user = resp.get('user') or resp.get('data', {}).get('user') or {}
+            try:
+                if login_user.get('id') is not None:
+                    _auth_user_id = int(login_user.get('id'))
+                else:
+                    payload = _decode_jwt_payload_without_verification(tok)
+                    _auth_user_id = int(payload.get('user_id')) if payload.get('user_id') is not None else None
+            except (TypeError, ValueError):
+                _auth_user_id = None
+            return _auth_token
     return None
 
 def api_get(path, auth=True):
@@ -807,34 +877,44 @@ def stage5_e2e_flow() -> DomainReport:
     rpt = DomainReport("E2E","Stage-5: Full E2E Flow Simulation", stage=5)
 
     def check_e2e_login():
-        global _auth_token; _auth_token=None
+        global _auth_token, _auth_user_id
+        _auth_token=None
+        _auth_user_id=None
         tok=get_admin_token()
-        return bool(tok),f"Token {'obtained' if tok else 'FAILED'}",{"token_len":len(tok) if tok else 0}
+        auth_user_id = get_authenticated_user_id()
+        return bool(tok) and auth_user_id is not None,f"Token {'obtained' if tok else 'FAILED'}",{"token_len":len(tok) if tok else 0, "auth_user_id": auth_user_id}
     rpt.checks.append(_check("E2E.01","E2E: Admin Login","E2E",5,check_e2e_login,SEV_CRITICAL,
                              "Must obtain valid JWT"))
 
+    def _user_path_ok(path_template: str, label: str):
+        user_id = get_authenticated_user_id()
+        if user_id is None:
+            return False, "No authenticated user_id", {"code": 0}
+        code, _ = api_get(path_template.format(user_id=user_id))
+        return code == 200, label, {"code": code, "user_id": user_id}
+
     rpt.checks.append(_check("E2E.02","E2E: Fetch Portfolio","E2E",5,
-        lambda: (api_get(f"/user/portfolio/{ADMIN_USER_ID}")[0]==200,"Portfolio fetch",
-                 {"code":api_get(f"/user/portfolio/{ADMIN_USER_ID}")[0]}),
+        lambda: _user_path_ok("/user/portfolio/{user_id}", "Portfolio fetch"),
         SEV_HIGH,"GET /api/user/portfolio/{id} must return 200"))
 
     rpt.checks.append(_check("E2E.03","E2E: Fetch Trade History","E2E",5,
-        lambda: (api_get(f"/user/trades/{ADMIN_USER_ID}")[0]==200,"Trades history",
-                 {"code":api_get(f"/user/trades/{ADMIN_USER_ID}")[0]}),
+        lambda: _user_path_ok("/user/trades/{user_id}", "Trades history"),
         SEV_HIGH,"GET /api/user/trades/{id} must return 200"))
 
     rpt.checks.append(_check("E2E.04","E2E: Fetch User Settings","E2E",5,
-        lambda: (api_get(f"/user/settings/{ADMIN_USER_ID}")[0]==200,"Settings fetch",
-                 {"code":api_get(f"/user/settings/{ADMIN_USER_ID}")[0]}),
+        lambda: _user_path_ok("/user/settings/{user_id}", "Settings fetch"),
         SEV_MEDIUM,"GET /api/user/settings/{id} must return 200"))
 
     def check_settings_write():
-        cc,cur=api_get(f"/user/settings/{ADMIN_USER_ID}")
+        user_id = get_authenticated_user_id()
+        if user_id is None:
+            return False, "No authenticated user_id", {}
+        cc,cur=api_get(f"/user/settings/{user_id}")
         if cc!=200: return False,f"Cannot get current settings (HTTP {cc})",{}
         cur_amount=cur.get("trade_amount") or cur.get("data",{}).get("trade_amount") or 50
-        code,_=api_request(f"/user/settings/{ADMIN_USER_ID}","PUT",{"trade_amount":cur_amount},
+        code,_=api_request(f"/user/settings/{user_id}","PUT",{"trade_amount":cur_amount},
                            token=get_admin_token())
-        return code in (200,201,204),f"Settings update HTTP {code}",{"code":code}
+        return code in (200,201,204),f"Settings update HTTP {code}",{"code":code, "user_id": user_id}
     rpt.checks.append(_check("E2E.05","E2E: Update Settings Write Path","E2E",5,check_settings_write,
                              SEV_MEDIUM,"PUT /api/user/settings/{id} must return 200/201/204"))
 
@@ -843,8 +923,7 @@ def stage5_e2e_flow() -> DomainReport:
         SEV_MEDIUM,"GET /api/admin/users must return 200"))
 
     rpt.checks.append(_check("E2E.07","E2E: Fetch Notifications","E2E",5,
-        lambda: (api_get(f"/user/notifications/{ADMIN_USER_ID}")[0]==200,"Notifications",
-                 {"code":api_get(f"/user/notifications/{ADMIN_USER_ID}")[0]}),
+        lambda: _user_path_ok("/user/notifications/{user_id}", "Notifications"),
         SEV_MEDIUM,"GET /api/user/notifications/{id} must return 200"))
 
     def check_db_roundtrip():
@@ -856,7 +935,7 @@ def stage5_e2e_flow() -> DomainReport:
                 conn.commit()
             found=int(db_scalar("SELECT COUNT(*) FROM operation_log WHERE details=%s AND operation_type='E2E_TEST'",(marker,)) or 0)
             with db_connect() as conn:
-                conn.execute("DELETE FROM operation_log WHERE operation_type='E2E_TEST' AND details=?",(marker,))
+                conn.execute("DELETE FROM operation_log WHERE operation_type='E2E_TEST' AND details=%s",(marker,))
                 conn.commit()
             return found>=1,f"DB roundtrip {'OK' if found>=1 else 'FAILED'}",{"marker":marker}
         except Exception as e:
@@ -872,11 +951,14 @@ def stage5_e2e_flow() -> DomainReport:
                              SEV_CRITICAL,"Admin endpoints must reject unauthenticated requests"))
 
     def check_portfolio_balance_api():
-        code,resp=api_get(f"/user/portfolio/{ADMIN_USER_ID}")
+        user_id = get_authenticated_user_id()
+        if user_id is None:
+            return False, "No authenticated user_id", {"code": 0}
+        code,resp=api_get(f"/user/portfolio/{user_id}")
         if code!=200: return False,f"HTTP {code}",{"code":code}
         data=resp.get("data",resp)
         has_bal=any(k in data for k in ("totalBalance","total_balance","balance","availableBalance"))
-        return has_bal,f"Portfolio has balance field: {has_bal}",{"code":code,"keys":list(data.keys())[:6]}
+        return has_bal,f"Portfolio has balance field: {has_bal}",{"code":code,"keys":list(data.keys())[:6], "user_id": user_id}
     rpt.checks.append(_check("E2E.10","E2E: Portfolio Balance in API Response","E2E",5,check_portfolio_balance_api,
                              SEV_HIGH,"GET /api/user/portfolio/{id} must return totalBalance field"))
 
@@ -940,7 +1022,7 @@ def stage6_drift_detection() -> DomainReport:
         syms={r[0] for r in db_fetchall("SELECT DISTINCT symbol FROM active_positions WHERE is_active=1")}
         for sym in list(syms)[:10]:
             sizes=[float(r[0]*r[1]) for r in db_fetchall(
-                "SELECT quantity,entry_price FROM active_positions WHERE symbol=?",(sym,))
+                "SELECT quantity,entry_price FROM active_positions WHERE symbol=%s",(sym,))
                    if r[0] and r[1]]
             if len(sizes)<3: continue
             avg=sum(sizes)/len(sizes)
@@ -1018,7 +1100,7 @@ def stage7_observability() -> DomainReport:
 
     def check_audit_coverage():
         # Verify that auth actions are covered
-        login_audits=int(db_scalar("SELECT COUNT(*) FROM security_audit_log WHERE action ILIKE ?", ("%login%",)) or 0)
+        login_audits=int(db_scalar("SELECT COUNT(*) FROM security_audit_log WHERE action ILIKE %s", ("%login%",)) or 0)
         return True,f"{login_audits} login events in security_audit_log",{"login_audits":login_audits}
     rpt.checks.append(_check("OBS.05","Security Audit Covers Login Events","OBS",7,check_audit_coverage,
                              SEV_MEDIUM,"Login events must appear in security_audit_log"))

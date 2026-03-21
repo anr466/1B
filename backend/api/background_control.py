@@ -27,7 +27,7 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'backend'))
 sys.path.insert(0, os.path.join(project_root, 'utils'))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 try:
     from utils.error_logger import error_logger
 except (ImportError, ModuleNotFoundError):
@@ -85,7 +85,7 @@ except (ImportError, ModuleNotFoundError):
 background_bp = Blueprint('background_control', __name__, url_prefix='/admin/background')
 # ملاحظة: جميع الـ routes تبدأ من /api/admin/background/* (Flask mounted on /api)
 logger = get_logger(__name__)
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 # استخدام require_admin الموحد
 require_admin = admin_require

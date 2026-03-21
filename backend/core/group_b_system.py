@@ -25,7 +25,7 @@ import logging
 import math
 
 from config.logging_config import get_logger
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.utils.trading_context import get_effective_is_demo
 from backend.utils.data_provider import DataProvider
 from backend.risk.kelly_position_sizer import KellyPositionSizer
@@ -129,7 +129,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
     5. تسجيل كل شيء في قاعدة البيانات
     """
     
-    def __init__(self, user_id: int = 1):
+    def __init__(self, user_id: int = 1, requested_mode: Optional[str] = None):
         """
         تهيئة نظام التداول
         
@@ -137,10 +137,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             user_id: معرف المستخدم
         """
         self.user_id = user_id
+        self.requested_mode = requested_mode if requested_mode in {'demo', 'real'} else None
         self.logger = logger
         
         # قاعدة البيانات
-        self.db = DatabaseManager()
+        self.db = get_db_manager()
         
         # جلب إعدادات المستخدم
         self.user_settings = self._load_user_settings()
@@ -158,7 +159,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.heat_manager = PortfolioHeatManager(max_heat_pct=6.0)
         self.notification_service = get_trading_notification_service()
         self.ml_training_manager = MLTrainingManager()
-        self.ml_training_manager.start_cycle()
+        self._runtime_services_started = False
         # فلتر السيولة/المعرفة فوق الاستراتيجية الأساسية (V7)
         self.liquidity_filter = None
         try:
@@ -261,7 +262,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             'last_reset': datetime.now().date(),
             'cooldown_until': None,          # system-wide cooldown
             'max_daily_trades': 10,           # حد يومي للصفقات
-            'max_daily_loss_pct': 0.03,       # حد خسارة يومي 3%
+            'max_daily_loss_pct': self._resolve_max_daily_loss_pct(),
             'max_consecutive_losses': 3,      # cooldown بعد 3 خسائر متتالية
             'cooldown_hours': 2,              # مدة cooldown بالساعات
             'max_same_direction': 3,          # أقصى 3 صفقات بنفس الاتجاه
@@ -273,11 +274,21 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.logger.info(f"   Trading Mode: {'Demo' if self.is_demo_trading else 'Real'}")
         self.logger.info(f"   Can Trade: {self.can_trade}")
         self.logger.info(f"   🛡️ Risk Protection: Heat={self.heat_manager.max_heat_pct}% | DailyLimit={self.daily_state['max_daily_trades']} | MaxLoss={self.daily_state['max_daily_loss_pct']*100}%")
+
+    def start_runtime_services(self) -> None:
+        """تشغيل الخدمات ذات الآثار الجانبية بشكل صريح مرة واحدة فقط."""
+        if self._runtime_services_started:
+            return
+        try:
+            self.ml_training_manager.start_cycle()
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to start ML runtime services for user {self.user_id}: {e}")
+        self._runtime_services_started = True
     
     def _load_user_settings(self) -> Dict:
         """جلب إعدادات المستخدم من قاعدة البيانات حسب المحفظة الفعلية."""
         try:
-            effective_is_demo = get_effective_is_demo(self.db, self.user_id)
+            effective_is_demo = get_effective_is_demo(self.db, self.user_id, requested_mode=self.requested_mode)
             settings = self.db.get_trading_settings(self.user_id, is_demo=effective_is_demo)
             return settings or {
                 'trading_enabled': False,
@@ -291,14 +302,36 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
     def _load_user_portfolio(self) -> Dict:
         """جلب محفظة المستخدم من الجدول الموحد portfolio"""
         try:
-            portfolio = self.db.get_user_portfolio(self.user_id, is_demo=1 if self.is_demo_trading else 0)
-            if portfolio and not portfolio.get('error'):
-                balance = float(portfolio.get('balance', 0.0) or 0.0)
+            with self.db.get_connection() as conn:
+                if self.is_demo_trading:
+                    row = conn.execute(
+                        """
+                        SELECT total_balance, available_balance
+                        FROM demo_accounts
+                        WHERE user_id = %s
+                        LIMIT 1
+                        """,
+                        (self.user_id,),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        """
+                        SELECT total_balance, available_balance
+                        FROM portfolio
+                        WHERE user_id = %s AND is_demo = FALSE
+                        LIMIT 1
+                        """,
+                        (self.user_id,),
+                    ).fetchone()
+
+            if row:
+                total_balance = float(row[0] or 0.0)
+                available_balance = float(row[1] or total_balance or 0.0)
                 return {
-                    'balance': balance,
-                    'total_value': balance,
-                    'available_balance': balance,
-                    'source': 'portfolio_unified'
+                    'balance': available_balance,
+                    'total_value': total_balance,
+                    'available_balance': available_balance,
+                    'source': 'portfolio_table' if not self.is_demo_trading else 'demo_accounts'
                 }
             return {'balance': 0.0, 'total_value': 0.0, 'available_balance': 0.0, 'source': 'default'}
         except Exception as e:
@@ -311,7 +344,17 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         ✅ الأدمن يختار محفظة واحدة فقط (Demo أو Real)
         ✅ المستخدمون العاديون: حقيقي فقط
         """
-        return bool(get_effective_is_demo(self.db, self.user_id))
+        return bool(get_effective_is_demo(self.db, self.user_id, requested_mode=self.requested_mode))
+
+    def _resolve_max_daily_loss_pct(self) -> float:
+        raw_value = self.user_settings.get('max_daily_loss_pct', 3.0)
+        try:
+            pct = float(raw_value or 3.0)
+        except (TypeError, ValueError):
+            pct = 3.0
+        if pct <= 0:
+            pct = 3.0
+        return pct / 100.0 if pct > 1 else pct
     
     # ===== Risk methods: see risk_manager_mixin.py =====
     # _calculate_position_size, _restore_daily_state_from_db, _reset_daily_state_if_needed

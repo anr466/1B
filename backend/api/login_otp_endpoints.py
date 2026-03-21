@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 # إضافة مسار المشروع
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from config.logging_config import get_logger
 
 # استيراد خدمات OTP
@@ -32,7 +32,7 @@ except ImportError:
     TOKEN_SYSTEM_AVAILABLE = False
 
 logger = get_logger(__name__)
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 # إنشاء Blueprint
 # Flask mounted على /api، لذا نستخدم /auth/login فقط

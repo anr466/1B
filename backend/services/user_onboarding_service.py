@@ -11,14 +11,14 @@ User Onboarding Service
 
 import logging
 from datetime import datetime
-from typing import Dict, Optional, List
 from enum import Enum
+from typing import Dict, List, Optional
+
+from backend.infrastructure.db_access import get_db_manager
 
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from database.database_manager import DatabaseManager
 
 
 class UserStage(Enum):
@@ -86,7 +86,7 @@ class UserOnboardingService:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.db_manager = DatabaseManager()
+        self.db_manager = get_db_manager()
     
     def get_user_stage(self, user_id: int) -> UserStage:
         """تحديد مرحلة المستخدم الحالية"""
@@ -106,7 +106,7 @@ class UserOnboardingService:
                 # فحص: هل لديه مفاتيح Binance مُفعّلة؟
                 cursor.execute("""
                     SELECT is_active FROM user_binance_keys 
-                    WHERE user_id = %s AND is_active = 1
+                    WHERE user_id = %s AND is_active = TRUE
                 """, (user_id,))
                 keys = cursor.fetchone()
                 

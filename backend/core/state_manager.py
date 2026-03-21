@@ -20,6 +20,8 @@ import threading
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from backend.infrastructure.db_access import get_db_manager
+
 class StateManager:
     """
     مدير الحالة الموحد - DATABASE ONLY (تطبيق الفلسفة)
@@ -40,8 +42,7 @@ class StateManager:
         self.lock = threading.RLock()
         
         if db_manager is None:
-            from database.database_manager import DatabaseManager
-            self.db = DatabaseManager()
+            self.db = get_db_manager()
         else:
             self.db = db_manager
     

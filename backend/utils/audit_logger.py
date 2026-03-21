@@ -24,5 +24,13 @@ class AuditLogger:
         logger.info(f"🔒 AUDIT: {action} | User: {user_id} | {details}")
         return log_entry
 
+    def log_admin_action(self, user_id: int = None, action: str = '', details=None, request=None):
+        """توافق خلفي مع الاستدعاءات التي تتوقع واجهة admin audit أوسع."""
+        payload = {
+            'details': details,
+            'request': request,
+        }
+        return self.log(action=action, user_id=user_id, details=payload)
+
 
 audit_logger = AuditLogger()

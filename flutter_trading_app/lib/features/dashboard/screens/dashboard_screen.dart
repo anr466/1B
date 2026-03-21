@@ -9,7 +9,6 @@ import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/privacy_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
-import 'package:trading_app/core/constants/ux_messages.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
@@ -45,6 +44,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       if (!mounted) return;
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
+      ref.invalidate(recentTradesProvider);
       ref.invalidate(activePositionsProvider);
       ref.invalidate(accountTradingProvider);
     });
@@ -75,9 +75,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        key: const Key('dashboard_screen'),
         backgroundColor: cs.surface,
         body: SafeArea(
           child: RefreshIndicator(
+            key: const Key('dashboard_refresh'),
             color: cs.primary,
             onRefresh: () async => _refresh(),
             child: Center(
@@ -202,7 +204,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
     final portfolio = ref.watch(portfolioProvider);
-    final dailyStatus = ref.watch(dailyStatusProvider);
     final auth = ref.watch(authProvider);
     final portfolioMode = auth.isAdmin
         ? ref.watch(adminPortfolioModeProvider)
@@ -223,12 +224,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       data: (p) {
         final modeLabel = portfolioMode == 'real' ? 'حقيقي' : 'تجريبي';
-        final d = dailyStatus.valueOrNull ?? {};
-        final dailyPnl = (d['daily_pnl'] as num?)?.toDouble() ?? p.dailyPnl;
-        final dailyBase = (d['base_balance'] as num?)?.toDouble();
-        final dailyPct = dailyBase != null && dailyBase > 0
-            ? (dailyPnl / dailyBase) * 100
-            : p.dailyPnlPct;
 
         return AppCard(
           level: 2,
@@ -285,7 +280,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     children: [
                       Expanded(
                         child: _BalanceSummaryMetric(
-                          label: 'إجمالي الربح',
+                          label: 'إجمالي الربح الحالي',
                           amount: p.totalPnl,
                           percentage: p.totalPnlPct,
                         ),
@@ -293,9 +288,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       const SizedBox(width: SpacingTokens.sm),
                       Expanded(
                         child: _BalanceSummaryMetric(
-                          label: 'ربح اليوم',
-                          amount: dailyPnl,
-                          percentage: dailyPct,
+                          label: 'غير المحقق',
+                          amount: p.unrealizedPnl,
+                          percentage: p.unrealizedPnlPct,
                         ),
                       ),
                     ],
@@ -459,7 +454,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         final modeLabel = s.tradingMode == 'real' ? 'حقيقي' : 'تجريبي';
 
         return GestureDetector(
-          onTap: () => context.push(RouteNames.adminDashboard),
+          onTap: () => context.push(RouteNames.tradingControl),
           child: IntrinsicHeight(
             child: Container(
               decoration: BoxDecoration(
@@ -554,14 +549,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ),
                     ),
                   ),
-                  // Toggle chip
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: SpacingTokens.sm,
                     ),
-                    child: _TradingToggleChip(
-                      isRunning: s.isRunning,
-                      onToggle: () => _toggleTrading(context, ref, s.isRunning),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'إدارة',
+                          style: TypographyTokens.caption(
+                            cs.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 14,
+                          color: cs.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -611,62 +618,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Future<void> _toggleTrading(
-    BuildContext context,
-    WidgetRef ref,
-    bool isRunning,
-  ) async {
-    final bio = ref.read(biometricServiceProvider);
-    if (await bio.isAvailable) {
-      final label = isRunning ? 'تأكيد إيقاف التداول' : 'تأكيد تشغيل التداول';
-      final ok = await bio.authenticate(reason: label);
-      if (!ok) {
-        if (!context.mounted) return;
-        AppSnackbar.show(
-          context,
-          message: 'فشل التحقق من البصمة',
-          type: SnackType.error,
-        );
-        return;
-      }
-    }
-    try {
-      final repo = ref.read(adminRepositoryProvider);
-      final result = isRunning
-          ? await repo.stopTrading()
-          : await repo.startTrading();
-      if (!context.mounted) return;
-      final state = (result['trading_state'] ?? result['state'] ?? '')
-          .toString()
-          .toUpperCase();
-      final ok = isRunning
-          ? (result['success'] == true &&
-                (state == 'STOPPED' || state == 'STOPPING'))
-          : (result['success'] == true &&
-                (state == 'RUNNING' || state == 'STARTING'));
-      ref.invalidate(systemStatusProvider);
-      ref.invalidate(tradingCycleLiveProvider);
-      ref.invalidate(accountTradingProvider);
-      ref.invalidate(portfolioProvider);
-      ref.invalidate(statsProvider);
-      ref.invalidate(activePositionsProvider);
-      ref.invalidate(recentTradesProvider);
-      ref.invalidate(dailyStatusProvider);
-      AppSnackbar.show(
-        context,
-        message: ok ? UxMessages.success : UxMessages.error,
-        type: ok ? SnackType.success : SnackType.error,
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      AppSnackbar.show(
-        context,
-        message: UxMessages.error,
-        type: SnackType.error,
-      );
-    }
-  }
-
   // ──────────────────────────────────────────────────────────────
   //  RECENT TRADES SECTION
   // ──────────────────────────────────────────────────────────────
@@ -689,11 +640,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final activeTrades = ref.watch(activePositionsProvider);
     final recentTrades = ref.watch(recentTradesProvider);
 
-    if (activeTrades.isLoading || recentTrades.isLoading) {
+    if (recentTrades.isLoading && activeTrades.isLoading) {
       return const LoadingShimmer(itemCount: 3, itemHeight: 60);
     }
 
-    if (activeTrades.hasError && recentTrades.hasError) {
+    if (recentTrades.hasError && activeTrades.hasError) {
       return AppCard(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: SpacingTokens.xl),
@@ -705,9 +656,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
     }
 
-    final openList = activeTrades.valueOrNull ?? const <TradeModel>[];
-    final recentList = recentTrades.valueOrNull ?? const <TradeModel>[];
-    final closedList = recentList.where((trade) => !trade.isOpen).toList();
+    // recentTradesProvider is the unified source — returns ALL trades (open+closed)
+    // respecting admin demo/real mode via adminPortfolioModeProvider
+    final allTrades = recentTrades.valueOrNull ?? const <TradeModel>[];
+    // Prefer live PnL from activePositionsProvider for open trades when available
+    final livePositions = activeTrades.valueOrNull ?? const <TradeModel>[];
+    final liveMap = {for (final t in livePositions) t.id: t};
+    final openList = allTrades
+        .where((t) => t.isOpen)
+        .map((t) => liveMap[t.id] ?? t)
+        .toList();
+    final closedList = allTrades.where((t) => !t.isOpen).toList();
     final hybridItems = _buildHybridTradeItems(openList, closedList);
 
     if (hybridItems.isEmpty) {
@@ -893,26 +852,32 @@ class _HybridTradeTile extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: SpacingTokens.xs,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    const SizedBox(height: 5),
+                    Row(
                       children: [
-                        Text(
-                          trade.isBuy ? 'شراء' : 'بيع',
-                          style: TypographyTokens.caption(
-                            sideColor,
-                          ).copyWith(fontWeight: FontWeight.w600),
+                        StatusBadge(
+                          text: trade.isBuy ? 'شراء' : 'بيع',
+                          type: trade.isBuy
+                              ? BadgeType.success
+                              : BadgeType.error,
+                          showDot: false,
                         ),
-                        Text(
-                          trade.isOpen && trade.currentPrice != null
-                              ? 'الآن ${trade.currentPrice!.toStringAsFixed(4)}'
-                              : trade.exitTime != null
-                              ? _shortDateLabel(trade.exitTime!)
-                              : 'سعر الدخول ${trade.entryPrice.toStringAsFixed(4)}',
-                          style: TypographyTokens.caption(
-                            cs.onSurface.withValues(alpha: 0.45),
+                        const SizedBox(width: SpacingTokens.xs),
+                        Expanded(
+                          child: Text(
+                            trade.isOpen
+                                ? (trade.currentPrice != null
+                                    ? 'الآن ${trade.currentPrice!.toStringAsFixed(4)}'
+                                    : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}')
+                                : (trade.exitTime != null
+                                    ? 'خروج: ${_shortDateLabel(trade.exitTime!)}'
+                                    : trade.exitPrice != null
+                                        ? 'خرج بـ ${trade.exitPrice!.toStringAsFixed(4)}'
+                                        : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}'),
+                            style: TypographyTokens.caption(
+                              cs.onSurface.withValues(alpha: 0.45),
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -920,24 +885,27 @@ class _HybridTradeTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: SpacingTokens.sm,
-                ),
-                child: trade.isOpen
-                    ? _OpenTradeLiveIndicator(trade: trade)
-                    : (trade.pnl != null
-                          ? PnlIndicator(
-                              amount: trade.pnl!,
-                              percentage: trade.pnlPct,
-                              compact: true,
-                              fontSize: 13,
+              SizedBox(
+                width: 90,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: SpacingTokens.xs,
+                  ),
+                  child: trade.isOpen
+                      ? _OpenTradeLiveIndicator(trade: trade)
+                      : trade.pnl != null
+                          ? FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: PnlIndicator(
+                                amount: trade.pnl!,
+                                percentage: trade.pnlPct,
+                                compact: true,
+                                fontSize: 12,
+                              ),
                             )
-                          : StatusBadge(
-                              text: 'مغلقة',
-                              type: BadgeType.success,
-                              showDot: false,
-                            )),
+                          : const SizedBox.shrink(),
+                ),
               ),
               Padding(
                 padding: const EdgeInsetsDirectional.only(
@@ -1087,52 +1055,6 @@ class _DashTitle extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-/// Compact inline trading toggle chip
-class _TradingToggleChip extends StatelessWidget {
-  final bool isRunning;
-  final VoidCallback onToggle;
-
-  const _TradingToggleChip({required this.isRunning, required this.onToggle});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final color = isRunning ? cs.error : cs.primary;
-    final label = isRunning ? 'إيقاف' : 'تشغيل';
-    final icon = isRunning
-        ? Icons.stop_circle_outlined
-        : Icons.play_circle_outline_rounded;
-
-    return GestureDetector(
-      onTap: onToggle,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: SpacingTokens.sm,
-          vertical: SpacingTokens.sm,
-        ),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(SpacingTokens.radiusBadge),
-          border: Border.all(color: color.withValues(alpha: 0.35), width: 0.8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TypographyTokens.caption(
-                color,
-              ).copyWith(fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
       ),
     );
   }

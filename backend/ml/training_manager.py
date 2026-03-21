@@ -71,6 +71,10 @@ class MLTrainingManager:
             if source == 'backtesting' or 'backtest' in str(source).lower():
                 logger.warning(f"❌ رفض صفقة من Backtesting: {symbol}")
                 return False
+
+            if source not in ('real_trading', 'live_trading'):
+                logger.info(f"⏭️ تخطي صفقة غير حقيقية من التعلم: {symbol} ({source})")
+                return False
             
             # ✅ التحقق من جودة البيانات
             if not all([symbol, strategy, timeframe]):

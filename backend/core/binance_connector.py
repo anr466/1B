@@ -273,8 +273,11 @@ class BinanceConnector:
                 last_error = e
                 self._stats['failed_requests'] += 1
                 self._stats['last_failure'] = datetime.now()
-                
-                logger.warning(f"⚠️ خطأ Binance (محاولة {attempt + 1}): {e}")
+
+                if attempt < CONNECTION_CONFIG['max_retries'] - 1:
+                    logger.info(f"⚠️ خطأ Binance عابر (محاولة {attempt + 1}/{CONNECTION_CONFIG['max_retries']}): {e}")
+                else:
+                    logger.warning(f"⚠️ فشل Binance بعد {attempt + 1} محاولات: {e}")
                 
                 # أخطاء لا تستحق Failover
                 if hasattr(e, 'code') and e.code in [-1000, -1001, -1002, -2015]:
@@ -291,8 +294,11 @@ class BinanceConnector:
                 self._stats['failed_requests'] += 1
                 self._stats['last_failure'] = datetime.now()
                 self._is_connected = False
-                
-                logger.warning(f"⚠️ خطأ (محاولة {attempt + 1}): {e}")
+
+                if attempt < CONNECTION_CONFIG['max_retries'] - 1:
+                    logger.info(f"⚠️ خطأ اتصال عابر (محاولة {attempt + 1}/{CONNECTION_CONFIG['max_retries']}): {e}")
+                else:
+                    logger.warning(f"⚠️ فشل الاتصال بعد {attempt + 1} محاولات: {e}")
                 
                 # محاولة التبديل للـ endpoint التالي
                 if attempt < CONNECTION_CONFIG['max_retries'] - 1:

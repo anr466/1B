@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class AdaptiveOptimizer:
     """
     
     def __init__(self, db_manager=None):
-        self.db_manager = db_manager or DatabaseManager()
+        self.db_manager = db_manager or get_db_manager()
         
         # كاش محلي (يُحدَّث كل 5 دقائق)
         self._cache: Dict[str, Any] = {}

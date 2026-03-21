@@ -110,18 +110,23 @@ def run_one_cycle() -> CheckResult:
         rec: dict[str, Any] = {
             "user_id": user.get("id"),
             "username": user.get("username"),
+            "requested_mode": user.get("requested_mode"),
+            "context_key": user.get("context_key"),
             "trading_enabled": user.get("trading_enabled"),
             "has_open_positions": user.get("has_open_positions"),
         }
 
         try:
-            system = manager._get_or_create_system(user["id"])
+            system = manager._get_or_create_system(user["id"], requested_mode=user.get("requested_mode"))
             rec["mode"] = "demo" if getattr(system, "is_demo_trading", False) else "real"
             rec["can_trade"] = bool(getattr(system, "can_trade", False))
 
             signal.alarm(90)
             t0 = time.time()
-            result = system.run_trading_cycle()
+            if user.get("trading_enabled"):
+                result = system.run_trading_cycle()
+            else:
+                result = system.run_monitoring_only()
             rec["duration_sec"] = round(time.time() - t0, 2)
             rec["result"] = {
                 "positions_checked": result.get("positions_checked"),
@@ -156,7 +161,7 @@ def postcheck(started_at: str) -> CheckResult:
         "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND COALESCE(resolved, FALSE)=FALSE"
     )
     new_critical_since_start = db_scalar(
-        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND created_at >= ?",
+        "SELECT COUNT(*) FROM system_errors WHERE COALESCE(severity,'')='critical' AND created_at >= %s",
         (started_at,),
     )
 

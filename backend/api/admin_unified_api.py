@@ -20,7 +20,7 @@ repo_root = os.path.dirname(project_root)
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'utils'))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager, open_db_connection
 from config.security.encryption_utils import encrypt_data, decrypt_data
 from backend.utils.error_logger import error_logger
 
@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 
 def get_safe_connection():
     """إنشاء اتصال آمن موحد بقاعدة البيانات."""
-    return db._build_connection(timeout=60.0)
+    return open_db_connection()
 
 # ✅ FIX: استيراد نظام إبطال الـ cache
 try:
@@ -100,7 +100,7 @@ except (ImportError, ModuleNotFoundError):
     uptime_calc = None
 
 admin_unified_bp = Blueprint('admin_unified', __name__, url_prefix='/admin')
-db = DatabaseManager()
+db = get_db_manager()
 
 # Response Cache - يقلل الطلبات المكررة (30 ثانية)
 _cache = {}
@@ -155,19 +155,19 @@ def get_admin_dashboard():
         admin_users = cursor.fetchone()[0]
         
         # إحصائيات التداول
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE")
         total_trades = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
         active_trades = cursor.fetchone()[0]
         
         cursor.execute("SELECT COUNT(*) FROM active_positions")
         active_positions = cursor.fetchone()[0]
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = 0 AND profit_loss > 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND profit_loss > 0")
         total_profit = cursor.fetchone()[0] or 0
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = 0 AND profit_loss < 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND profit_loss < 0")
         total_loss = cursor.fetchone()[0] or 0
         
         # حالة النظام
@@ -231,10 +231,10 @@ def get_system_overview():
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE")
         total_trades = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
         active_trades = cursor.fetchone()[0]
         
         cursor.execute("SELECT COUNT(*) FROM active_positions")
@@ -284,16 +284,16 @@ def get_system_stats():
         cursor.execute("SELECT COUNT(*) FROM users WHERE user_type='user'")
         regular_users = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0 AND profit_loss > 0")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE AND profit_loss > 0")
         profitable_trades = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE")
         total_trades = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
         active_trades = cursor.fetchone()[0]
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE")
         total_profit = cursor.fetchone()[0] or 0
         
         conn.close()
@@ -639,10 +639,10 @@ def get_performance_metrics():
         cursor.execute("SELECT COUNT(*) FROM active_positions")
         total_trades = cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
         active_positions = cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COALESCE(SUM(profit_loss), 0) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT COALESCE(SUM(profit_loss), 0) FROM active_positions WHERE is_active = FALSE")
         total_profit = float(cursor.fetchone()[0] or 0)
 
         conn.close()
@@ -1016,55 +1016,36 @@ def get_trading_status():
 def get_background_trading_status():
     """حالة التداول الخلفي"""
     try:
-        # جلب حالة النظام من قاعدة البيانات
-        try:
-            with db.get_connection() as conn:
-                status_row = conn.execute(
-                    "SELECT trading_state, status, message FROM system_status WHERE id = 1"
-                ).fetchone()
-        except Exception as db_error:
-            # إذا فشل الاتصال بقاعدة البيانات، أرجع حالة افتراضية
-            return jsonify({
-                'success': True,
-                'data': {
-                    'status': 'stopped',
-                    'is_running': False,
-                    'message': 'النظام متوقف',
-                    'timestamp': datetime.now().isoformat()
-                }
-            })
-        
-        if status_row:
-            trading_state = str(status_row[0] or '').upper()
-            effective_running = trading_state == 'RUNNING'
-            if not trading_state:
-                fallback_status = str(status_row[1] or '').lower()
-                effective_running = fallback_status == 'running'
-                trading_state = 'RUNNING' if effective_running else 'STOPPED'
-            return jsonify({
-                'success': True,
-                'data': {
-                    'status': 'running' if effective_running else 'stopped',
-                    'trading_state': trading_state,
-                    'is_running': effective_running,
-                    'message': status_row[2] if status_row[2] else 'لا توجد رسالة',
-                    'timestamp': datetime.now().isoformat()
-                }
-            })
-        else:
-            return jsonify({
-                'success': True,
-                'data': {
-                    'status': 'unknown',
-                    'is_running': False,
-                    'message': 'لم يتم العثور على حالة النظام',
-                    'timestamp': datetime.now().isoformat()
-                }
-            })
+        from backend.core.trading_state_machine import get_trading_state_machine
+
+        tsm = get_trading_state_machine()
+        state = tsm.get_state() or {}
+        trading_state = str(
+            state.get('state') or state.get('trading_state') or 'STOPPED'
+        ).upper()
+        is_running = bool(
+            state.get('is_running', state.get('trading_active', False))
+        )
+
+        return jsonify({
+            'success': bool(state.get('success', True)),
+            'data': {
+                'status': 'running' if is_running else 'stopped',
+                'state': trading_state,
+                'trading_state': trading_state,
+                'is_running': is_running,
+                'message': state.get('message') or ('النظام يعمل' if is_running else 'النظام متوقف'),
+                'session_id': state.get('session_id'),
+                'mode': state.get('mode', 'PAPER'),
+                'open_positions': state.get('open_positions', 0),
+                'pid': state.get('pid'),
+                'last_update': state.get('last_update'),
+                'last_updated': state.get('last_updated'),
+                'timestamp': datetime.now().isoformat()
+            }
+        })
     except Exception as e:
-        import traceback
         logger.error(f"Error in get_background_trading_status: {e}")
-        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e),
@@ -1073,7 +1054,7 @@ def get_background_trading_status():
                 'is_running': False,
                 'message': 'حدث خطأ في جلب حالة النظام'
             }
-        }), 200  # أرجع 200 بدلاً من 500 لتجنب فشل الاختبار
+        }), 500
 
 # ❌ REMOVED: Group A System is legacy - no longer exists
 # Group A functionality has been replaced by CryptoWave unified trading system
@@ -1138,94 +1119,19 @@ def reset_demo_account():
         data = request.get_json() or {}
         reset_ml = data.get('reset_ml', False)  # خيار مسح بيانات ML
         
-        with db.get_write_connection() as conn:
-            cursor = conn.cursor()
-            
-            deleted_counts = {}
-            
-            # جلب الرصيد الأولي الفعلي من المحفظة الوهمية
-            cursor.execute("""
-                SELECT initial_balance FROM portfolio 
-                WHERE user_id = %s AND is_demo = TRUE
-            """, (admin_id,))
-            portfolio_row = cursor.fetchone()
-            initial_balance = float(portfolio_row[0] or 0) if portfolio_row else 0.0
-            
-            # حذف سجل الصفقات الوهمية للأدمن فقط
-            cursor.execute("""
-                DELETE FROM user_trades
-                WHERE user_id = %s AND is_demo = TRUE
-            """, (admin_id,))
-            deleted_counts['trades'] = cursor.rowcount
-            
-            # ✅ FIX: حذف الصفقات النشطة الوهمية فقط (ليس الحقيقية!)
-            cursor.execute("""
-                DELETE FROM active_positions 
-                WHERE user_id = %s AND is_demo = TRUE
-            """, (admin_id,))
-            deleted_counts['positions'] = cursor.rowcount
-            
-            # حذف كامل تاريخ نمو المحفظة الوهمية للأدمن (إذا كان الجدول موجوداً)
-            history_table_exists = False
-            try:
-                cursor.execute("SELECT to_regclass('public.admin_demo_portfolio_history')")
-                history_table_exists = bool(cursor.fetchone()[0])
-            except Exception:
-                try:
-                    cursor.execute("""
-                        SELECT 1
-                        FROM information_schema.tables
-                        WHERE table_schema = 'public' AND table_name = 'admin_demo_portfolio_history'
-                    """)
-                    history_table_exists = cursor.fetchone() is not None
-                except Exception:
-                    history_table_exists = False
+        deleted_counts = {
+            'trades': 0,
+            'positions': 0,
+            'history': 0,
+        }
+        initial_balance = getattr(db, 'DEMO_ACCOUNT_INITIAL_BALANCE', 1000.0)
 
-            if history_table_exists:
-                cursor.execute("""
-                    DELETE FROM admin_demo_portfolio_history 
-                    WHERE admin_id = %s
-                """, (str(admin_id),))
-                deleted_counts['history'] = cursor.rowcount
-            else:
-                deleted_counts['history'] = 0
-            
-            # إعادة ضبط المحفظة الوهمية إلى الرصيد الأولي الفعلي
-            cursor.execute("""
-                UPDATE portfolio 
-                SET total_balance = %s,
-                    available_balance = %s,
-                    invested_balance = 0.00,
-                    total_profit_loss = 0.00,
-                    total_profit_loss_percentage = 0.00,
-                    initial_balance = %s,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s AND is_demo = TRUE
-            """, (initial_balance, initial_balance, initial_balance, admin_id))
-            
-            # إذا لم يوجد سجل، أنشئ واحداً جديداً
-            if cursor.rowcount == 0:
-                cursor.execute("""
-                    INSERT INTO portfolio 
-                    (user_id, is_demo, total_balance, available_balance, invested_balance, 
-                     total_profit_loss, total_profit_loss_percentage, initial_balance)
-                    VALUES (%s, TRUE, %s, %s, 0.00, 0.00, 0.00, %s)
-                """, (admin_id, initial_balance, initial_balance, initial_balance))
-            
-            # إعادة ضبط إعدادات التداول للقيم الافتراضية
-            # ✅ FIX: إضافة AND is_demo = 1 لمنع إعادة ضبط إعدادات الحساب الحقيقي
-            cursor.execute("""
-                UPDATE user_settings 
-                SET stop_loss_pct = 2.0,
-                    take_profit_pct = 5.0,
-                    trailing_distance = 3.0,
-                    max_positions = 5,
-                    trading_enabled = FALSE,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s AND is_demo = TRUE
-            """, (admin_id,))
-            
-            # portfolio table already updated above — single source of truth
+        reset_ok = db.reset_user_portfolio(admin_id, initial_balance=initial_balance)
+        if not reset_ok:
+            return jsonify({
+                'success': False,
+                'message': 'فشل إعادة ضبط الحساب التجريبي'
+            }), 500
         
         # مسح بيانات ML (اختياري)
         if reset_ml:
@@ -1328,8 +1234,12 @@ def get_active_positions():
     """الصفقات النشطة"""
     try:
         from flask import request, g
+        from backend.utils.trading_context import get_trading_context
         # ✅ استخدام request context بدلاً من g مباشرة
         admin_id = getattr(g, 'user_id', None) or 1
+        requested_mode = request.args.get('mode')
+        trading_context = get_trading_context(db, admin_id, requested_mode=requested_mode)
+        is_demo = trading_context['is_demo']
         
         conn = get_safe_connection()
         cursor = conn.cursor()
@@ -1338,10 +1248,10 @@ def get_active_positions():
             SELECT id, symbol, entry_price, quantity, strategy, timeframe, 
                    stop_loss, take_profit, created_at, position_type
             FROM active_positions 
-            WHERE user_id = %s AND is_active = 1
+            WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
             ORDER BY created_at DESC
             LIMIT 20
-        """, (admin_id,))
+        """, (admin_id, is_demo))
         
         rows = cursor.fetchall()
         
@@ -1489,10 +1399,9 @@ def close_position(position_id):
             user_id = int(position['user_id'])
             is_demo = int(position['is_demo'] or 0)
             with get_safe_connection() as balance_conn:
-                bal_row = balance_conn.execute(
-                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
-                    (user_id, is_demo),
-                ).fetchone()
+                balance_query = "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1" if bool(is_demo) else "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1"
+                balance_params = (user_id,) if bool(is_demo) else (user_id, is_demo)
+                bal_row = balance_conn.execute(balance_query, balance_params).fetchone()
             if bal_row is not None:
                 available_before = float(bal_row[0] or 0)
                 returned_amount = (entry_price * quantity) + pnl
@@ -1633,14 +1542,14 @@ def get_trade_stats():
                 AVG(profit_loss) as avg_profit,
                 SUM(profit_loss) as total_profit
             FROM active_positions
-            WHERE is_active = 0
+            WHERE is_active = FALSE
         """)
         closed_result = cursor.fetchone()
 
         cursor.execute("""
             SELECT COUNT(*) as active_total
             FROM active_positions
-            WHERE is_active = 1
+            WHERE is_active = TRUE
         """)
         active_result = cursor.fetchone()
 
@@ -1759,13 +1668,13 @@ def get_analytics_overview():
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE")
         total_trades = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
         active_trades = cursor.fetchone()[0]
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE")
         total_profit = cursor.fetchone()[0] or 0
         
         conn.close()
@@ -1791,10 +1700,10 @@ def get_analytics_revenue():
         conn = get_safe_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = 0 AND profit_loss > 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND profit_loss > 0")
         revenue = cursor.fetchone()[0] or 0
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = 0 AND profit_loss < 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND profit_loss < 0")
         losses = abs(cursor.fetchone()[0] or 0)
         
         conn.close()

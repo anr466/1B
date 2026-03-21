@@ -141,8 +141,27 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                                         Expanded(
                                           child: _metric(
                                             cs,
-                                            'إجمالي الربح',
+                                            'إجمالي الربح الحالي',
                                             pnl: s.totalPnl,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: _metric(
+                                            cs,
+                                            'الربح المحقق',
+                                            pnl: s.realizedPnl,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: SpacingTokens.md),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _metric(
+                                            cs,
+                                            'غير المحقق',
+                                            pnl: s.unrealizedPnl,
                                           ),
                                         ),
                                         Expanded(
@@ -227,8 +246,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                                 const SizedBox(height: SpacingTokens.md),
                                 _breakdownRow(
                                   cs,
-                                  'إجمالي الصفقات',
-                                  '${s.totalTrades}',
+                                  'الصفقات المغلقة',
+                                  '${s.closedTrades}',
                                 ),
                                 _breakdownRow(
                                   cs,
@@ -242,6 +261,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                                   '${s.losingTrades}',
                                   color: SemanticColors.of(context).negative,
                                 ),
+                                if (s.activeTrades > 0)
+                                  _breakdownRow(
+                                    cs,
+                                    'صفقات مفتوحة',
+                                    '${s.activeTrades}',
+                                    color: cs.secondary,
+                                  ),
                               ],
                             ),
                           ),

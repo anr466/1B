@@ -18,6 +18,7 @@ token_refresh_bp = Blueprint('token_refresh', __name__)
 import os
 from dotenv import load_dotenv
 load_dotenv()
+from backend.infrastructure.db_access import get_db_manager
 
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
 JWT_ALGORITHM = "HS256"
@@ -29,8 +30,7 @@ TOKEN_SYSTEM_AVAILABLE = bool(JWT_SECRET_KEY)
 
 # ─── DB-backed token blocklist ────────────────────────────────────────────────
 try:
-    from database.database_manager import DatabaseManager as _DBManager
-    _db = _DBManager()
+    _db = get_db_manager()
     with _db.get_write_connection() as _conn:
         _conn.execute("""
             CREATE TABLE IF NOT EXISTS revoked_tokens (
@@ -218,13 +218,6 @@ def refresh_token():
         payload = request.token_payload
         user_id = payload['user_id']
         username = payload['username']
-        
-        # يمكن إضافة فحص إضافي من DB للتأكد أن المستخدم ما زال نشط
-        # from database.database_manager import DatabaseManager
-        # db = DatabaseManager()
-        # user = db.get_user_by_id(user_id)
-        # if not user:
-        #     return jsonify({'success': False, 'message': 'User not found'}), 404
         
         # إنشاء Access Token جديد
         now = time.time()

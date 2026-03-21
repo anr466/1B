@@ -189,13 +189,13 @@ def register_admin_ml_routes(bp, shared):
             conn = get_safe_connection()
             cursor = conn.cursor()
             
-            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0")
+            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE")
             total_trades = cursor.fetchone()[0]
             
-            cursor.execute("SELECT COUNT(DISTINCT symbol) FROM active_positions WHERE is_active = 0")
+            cursor.execute("SELECT COUNT(DISTINCT symbol) FROM active_positions WHERE is_active = FALSE")
             total_symbols = cursor.fetchone()[0]
             
-            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = 0 AND profit_loss > 0")
+            cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE AND profit_loss > 0")
             winning_trades = cursor.fetchone()[0]
             
             conn.close()
@@ -240,7 +240,7 @@ def register_admin_ml_routes(bp, shared):
                     SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
                     AVG(profit_loss) as avg_profit
                 FROM active_positions
-                WHERE is_active = 0
+                WHERE is_active = FALSE
                 GROUP BY symbol
                 HAVING COUNT(*) >= 3
                 ORDER BY total_trades DESC
@@ -522,7 +522,7 @@ def register_admin_ml_routes(bp, shared):
                     MIN(profit_loss) as max_loss,
                     SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as wins
                 FROM active_positions
-                WHERE is_active = 0
+                WHERE is_active = FALSE
             """)
             
             row = cursor.fetchone()

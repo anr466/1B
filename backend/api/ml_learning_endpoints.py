@@ -256,10 +256,10 @@ def trigger_health_check():
         user_id = data.get('user_id', 1)
         
         from backend.ml.smart_incremental_learning import get_learning_system
-        from database.database_manager import DatabaseManager
+        from backend.infrastructure.db_access import get_db_manager
         
         learning_system = get_learning_system(user_id)
-        db = DatabaseManager()
+        db = get_db_manager()
         
         # جلب آخر الصفقات
         recent_trades = []
@@ -267,7 +267,7 @@ def trigger_health_check():
             with db.get_connection() as conn:
                 trades = conn.execute("""
                     SELECT * FROM active_positions
-                    WHERE user_id = %s AND is_active = 0
+                    WHERE user_id = %s AND is_active = FALSE
                     ORDER BY COALESCE(closed_at, updated_at) DESC
                     LIMIT 50
                 """, (user_id,)).fetchall()

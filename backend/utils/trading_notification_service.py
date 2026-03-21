@@ -15,11 +15,11 @@ from datetime import datetime
 # إضافة مسار المشروع
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 # استيراد خدمة Firebase
 try:
-    from utils.firebase_notification_service import FirebaseNotificationService
+    from backend.utils.firebase_notification_service import FirebaseNotificationService
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False
@@ -89,7 +89,7 @@ class TradingNotificationService:
             db_manager: مدير قاعدة البيانات (اختياري - سيتم إنشاؤه إذا لم يُمرر)
         """
         self.logger = logging.getLogger(__name__)
-        self.db_manager = db_manager if db_manager else DatabaseManager()
+        self.db_manager = db_manager if db_manager else get_db_manager()
         self._notification_history_has_data_column: Optional[bool] = None
         
         # تهيئة Firebase

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' show Color;
+import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:trading_app/core/constants/api_endpoints.dart';
@@ -120,8 +121,17 @@ class PushNotificationService {
 
       _fcmInitialized = true;
     } catch (e) {
-      // ignore: avoid_print
-      print('[FCM] init failed: $e');
+      if (kDebugMode) {
+        final message = '$e';
+        final recoverable = message.contains('SERVICE_NOT_AVAILABLE') ||
+            message.contains('firebase_messaging/unknown') ||
+            message.contains('MissingPluginException');
+        print(
+          recoverable
+              ? '[FCM] disabled for current runtime, polling fallback remains active: $e'
+              : '[FCM] init failed: $e',
+        );
+      }
     }
   }
 

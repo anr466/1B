@@ -9,9 +9,10 @@ from datetime import datetime
 import logging
 import sys
 
-# ✅ FIX: إضافة استيراد DatabaseManager
+# ✅ FIX: إضافة استيراد مدير DB المركزي
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
+from backend.core.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,8 @@ class SystemStateRecovery:
     """
     
     def __init__(self):
-        self.db_manager = DatabaseManager()
+        self.db_manager = get_db_manager()
+        self.state_manager = StateManager(self.db_manager)
         self.pid_file = Path(__file__).parent.parent.parent / 'tmp' / 'system.pid'
     
     def check_and_sync_state(self):
@@ -68,6 +70,14 @@ class SystemStateRecovery:
                 pid_text = self.pid_file.read_text(encoding='utf-8').strip()
                 if pid_text.isdigit():
                     return True
+
+            heartbeat_age = self.state_manager.get_seconds_since_heartbeat()
+            if heartbeat_age is not None and heartbeat_age <= 60:
+                return True
+
+            group_b_age = self.state_manager.get_seconds_since_activity('group_b')
+            if group_b_age is not None and group_b_age <= 180:
+                return True
 
             import shutil as _shutil
             if not _shutil.which('pgrep'):

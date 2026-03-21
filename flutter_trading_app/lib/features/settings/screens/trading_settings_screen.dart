@@ -85,10 +85,13 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
         ref.read(adminPortfolioModeProvider.notifier).state = mode;
         ref.invalidate(settingsDataProvider);
         ref.invalidate(dailyRiskStatusProvider);
+        ref.invalidate(dailyStatusProvider);
         ref.invalidate(portfolioProvider);
         ref.invalidate(statsProvider);
         ref.invalidate(activePositionsProvider);
+        ref.invalidate(successfulCoinsProvider);
         ref.invalidate(recentTradesProvider);
+        ref.invalidate(tradesListProvider);
         ref.invalidate(accountTradingProvider);
         ref.invalidate(mlStatusProvider);
         AppSnackbar.show(
@@ -162,7 +165,9 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
         ref.invalidate(portfolioProvider);
         ref.invalidate(statsProvider);
         ref.invalidate(activePositionsProvider);
+        ref.invalidate(successfulCoinsProvider);
         ref.invalidate(recentTradesProvider);
+        ref.invalidate(tradesListProvider);
       } else {
         AppSnackbar.show(
           context,
@@ -213,6 +218,8 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                   _PortfolioModeSwitcher(
                     currentMode: _tradingMode,
                     hasBinanceKeys: s.hasBinanceKeys,
+                    hasConfiguredDbKeys: s.hasConfiguredDbKeys,
+                    keysRequiredForCurrentMode: s.keysRequiredForCurrentMode,
                     isLoading: _isSwitchingMode,
                     onModeSelected: (mode) => _changeTradingMode(mode),
                   ),
@@ -266,37 +273,8 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
 
                 AppCard(
                   padding: const EdgeInsets.all(SpacingTokens.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'تنبيه مهم',
-                        style: TypographyTokens.body(cs.onSurface),
-                      ),
-                      const SizedBox(height: SpacingTokens.xxs),
-                      Text(
-                        'هذه الشاشة تتحكم فقط في تفعيل التداول واختيار المحفظة النشطة.',
-                        style: TypographyTokens.caption(
-                          cs.onSurface.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      const SizedBox(height: SpacingTokens.xs),
-                      Text(
-                        'منطق الدخول والخروج وحجم الصفقة الوقائي يدار من محرك التداول الخلفي والاستراتيجية النشطة، لذلك لا نسمح بتعديل هذه القيم من الواجهة حتى لا يحدث تعارض يسبب خسارة أو سلوكاً مضللاً.',
-                        style: TypographyTokens.caption(
-                          cs.onSurface.withValues(alpha: 0.4),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: SpacingTokens.md),
-
-                // ملاحظة: حجم الصفقة وعدد الصفقات يحددهم النظام تلقائياً
-                // بناءً على تحليل المخاطر والعائد
-                AppCard(
-                  padding: const EdgeInsets.all(SpacingTokens.md),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(Icons.auto_awesome, color: cs.primary, size: 24),
                       const SizedBox(width: SpacingTokens.md),
@@ -305,14 +283,21 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'إدارة المخاطر تلقائية',
+                              'ملخص التحكم',
                               style: TypographyTokens.body(cs.onSurface),
                             ),
                             const SizedBox(height: SpacingTokens.xxs),
                             Text(
-                              'النظام يستخدم هذه الحدود ضمن إدارة المخاطر الذكية ولا يعتمد عليها وحدها',
+                              'هذه الشاشة مخصصة فقط لتفعيل التداول واختيار المحفظة النشطة ومراجعة حالة المخاطرة اليومية.',
                               style: TypographyTokens.caption(
                                 cs.onSurface.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            const SizedBox(height: SpacingTokens.xs),
+                            Text(
+                              'الدخول والخروج وحجم الصفقة وإدارة المخاطر التفصيلية تُدار من محرك التداول الخلفي والاستراتيجية النشطة لتجنب التعارض أو السلوك المضلل.',
+                              style: TypographyTokens.caption(
+                                cs.onSurface.withValues(alpha: 0.45),
                               ),
                             ),
                           ],
@@ -335,17 +320,22 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
 class _PortfolioModeSwitcher extends StatelessWidget {
   final String currentMode;
   final bool hasBinanceKeys;
+  final bool hasConfiguredDbKeys;
+  final bool keysRequiredForCurrentMode;
   final bool isLoading;
   final ValueChanged<String> onModeSelected;
 
   const _PortfolioModeSwitcher({
     required this.currentMode,
     required this.hasBinanceKeys,
+    required this.hasConfiguredDbKeys,
+    required this.keysRequiredForCurrentMode,
     required this.isLoading,
     required this.onModeSelected,
   });
 
   bool get _isDemo => currentMode != 'real';
+  bool get _requiresBinanceKeys => keysRequiredForCurrentMode && !_isDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -432,15 +422,17 @@ class _PortfolioModeSwitcher extends StatelessWidget {
                     Expanded(
                       child: _ModeButton(
                         label: 'حقيقي',
-                        subtitle: hasBinanceKeys
-                            ? 'Binance متصل'
+                        subtitle: hasConfiguredDbKeys
+                            ? 'مفاتيح Binance محفوظة'
+                            : hasBinanceKeys && !_requiresBinanceKeys
+                            ? 'غير مطلوب في الوضع الحالي'
                             : 'يتطلب مفاتيح',
-                        icon: hasBinanceKeys
+                        icon: hasConfiguredDbKeys
                             ? Icons.account_balance_wallet_outlined
                             : Icons.lock_outline,
                         isActive: !_isDemo,
                         activeColor: realColor,
-                        onTap: !_isDemo || !hasBinanceKeys
+                        onTap: !_isDemo || (_requiresBinanceKeys && !hasConfiguredDbKeys)
                             ? null
                             : () => onModeSelected('real'),
                       ),
@@ -449,7 +441,7 @@ class _PortfolioModeSwitcher extends StatelessWidget {
                 ),
 
           // ─── تحذير: بدون مفاتيح Binance ─────────────────────────────
-          if (!hasBinanceKeys) ...[
+          if (_requiresBinanceKeys && !hasConfiguredDbKeys) ...[
             const SizedBox(height: SpacingTokens.sm),
             Container(
               padding: const EdgeInsets.all(SpacingTokens.sm),

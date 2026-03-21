@@ -9,13 +9,13 @@ import sys
 from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.core.trading_state_machine import get_trading_state_machine
 
 health_bp = Blueprint('health', __name__)
 # ✅ Alias للتوافق مع الاستيرادات المختلفة
 system_health_bp = health_bp
-db = DatabaseManager()
+db = get_db_manager()
 
 def check_trading_system():
     """التحقق من حالة نظام التداول عبر TradingStateMachine"""

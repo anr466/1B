@@ -10,6 +10,8 @@ from typing import Optional, Dict, Any
 import psutil
 import os
 
+from backend.infrastructure.db_access import get_db_manager
+
 logger = logging.getLogger(__name__)
 
 class SystemAlertService:
@@ -20,6 +22,7 @@ class SystemAlertService:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.db = get_db_manager()
         
         # عتبات التحذير
         self.CPU_WARNING_THRESHOLD = 80  # %
@@ -39,11 +42,7 @@ class SystemAlertService:
             data: بيانات إضافية JSON
         """
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 
                 import json
@@ -277,11 +276,7 @@ class SystemAlertService:
     def get_unread_alerts(self, limit: int = 50):
         """جلب الإشعارات غير المقروءة"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id, alert_type, title, message, severity, data, created_at
@@ -314,11 +309,7 @@ class SystemAlertService:
     def mark_as_read(self, alert_id: int):
         """تحديد إشعار كمقروء"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE system_alerts
@@ -335,11 +326,7 @@ class SystemAlertService:
     def mark_all_as_read(self):
         """تحديد جميع الإشعارات كمقروءة"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE system_alerts SET read = 1 WHERE read = 0")
                 affected = cursor.rowcount

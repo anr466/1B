@@ -28,11 +28,11 @@ sys.path.insert(0, project_root)
 from config.logging_config import get_logger
 from backend.core.trading_state_machine import get_trading_state_machine
 from backend.utils.admin_auth import require_admin
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 trading_control_bp = Blueprint('trading_control', __name__, url_prefix='/admin/trading')
 logger = get_logger(__name__)
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 # Singleton state machine
 tsm = get_trading_state_machine()

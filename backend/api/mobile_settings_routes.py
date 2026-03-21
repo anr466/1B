@@ -33,6 +33,35 @@ def register_mobile_settings_routes(bp, shared):
     ENCRYPTION_AVAILABLE = shared.get('ENCRYPTION_AVAILABLE', False)
     audit_logger = shared.get('audit_logger', None)
 
+    def load_api_permissions(client):
+        if hasattr(client, 'get_api_key_permission'):
+            return client.get_api_key_permission()
+        if hasattr(client, 'get_account_api_permissions'):
+            return client.get_account_api_permissions()
+        raise AttributeError('Binance client permissions API is unavailable')
+
+    def resolve_key_state(db, user_id: int, is_admin: bool, is_demo: bool):
+        db_rows = db.execute_query(
+            "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE",
+            (user_id,),
+        )
+        has_configured_db_keys = bool(db_rows and db_rows[0].get('count', 0) > 0)
+        env_keys_enabled = (os.getenv('ALLOW_ENV_BINANCE_KEYS_FOR_TESTING') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+        env_api_key = (os.getenv('BINANCE_BACKEND_API_KEY') or '').strip()
+        env_api_secret = (os.getenv('BINANCE_BACKEND_API_SECRET') or '').strip()
+        using_env_test_keys = bool(env_keys_enabled and env_api_key and env_api_secret and not has_configured_db_keys)
+        resolved_keys = db.get_binance_keys(user_id)
+        actual_has_keys = bool(resolved_keys and resolved_keys.get('api_key'))
+        keys_required_for_current_mode = not (is_admin and is_demo)
+        logical_has_keys = True if not keys_required_for_current_mode else actual_has_keys
+        return {
+            'has_binance_keys': logical_has_keys,
+            'has_configured_db_keys': has_configured_db_keys,
+            'using_env_test_keys': using_env_test_keys,
+            'keys_required_for_current_mode': keys_required_for_current_mode,
+            'actual_has_keys': actual_has_keys,
+        }
+
     # ==================== إعدادات التداول (Settings) ====================
 
     @bp.route('/settings/<int:user_id>', methods=['GET'])
@@ -121,9 +150,7 @@ def register_mobile_settings_routes(bp, shared):
                     return fallback
 
             # ✅ فحص وجود مفاتيح Binance
-            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
-            keys_result = db.execute_query(keys_query, (user_id,))
-            has_keys = keys_result[0]['count'] > 0 if keys_result else False
+            key_state = resolve_key_state(db, user_id, is_admin, effective_is_demo)
 
             data = {
                 'tradingEnabled': bool(s.get('trading_enabled')),
@@ -138,7 +165,10 @@ def register_mobile_settings_routes(bp, shared):
                 'tradingMode': effective_mode,
                 'activePortfolio': 'demo' if effective_is_demo else 'real',
                 'canToggle': is_admin,
-                'hasBinanceKeys': has_keys
+                'hasBinanceKeys': key_state['has_binance_keys'],
+                'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                'usingEnvTestKeys': key_state['using_env_test_keys'],
+                'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
             }
             response_data, status_code = success_response(data, 'تم جلب الإعدادات بنجاح')
             return jsonify(response_data), status_code
@@ -175,20 +205,26 @@ def register_mobile_settings_routes(bp, shared):
         try:
             from backend.core.group_b_system import GroupBSystem
 
-            group_b = GroupBSystem(user_id)
+            requested_mode = request.args.get('mode')
+
+            group_b = GroupBSystem(user_id, requested_mode=requested_mode)
 
             # 1. فحص المتطلبات الأساسية
             settings = group_b.user_settings
             portfolio = group_b.user_portfolio
             balance = portfolio.get('balance', 0)
-            has_keys = group_b._check_binance_keys()
+            risk_balance = portfolio.get('total_value', balance)
+            key_state = resolve_key_state(db_manager, user_id, getattr(g, 'current_user_type', None) == 'admin', group_b.is_demo_trading)
+            actual_has_keys = key_state['actual_has_keys']
+            keys_required = not group_b.is_demo_trading
+            has_keys = key_state['has_binance_keys']
             open_positions = group_b._get_open_positions()
 
             position_size_pct = settings.get('position_size_percentage', 0)
             max_positions = settings.get('max_positions', 0)
 
             # 2. فحص بوابات الحماية
-            can_trade_gate, gate_reason = group_b._check_risk_gates(open_positions, balance)
+            can_trade_gate, gate_reason = group_b._check_risk_gates(open_positions, risk_balance)
 
             # 3. حساب حجم الصفقة
             position_size = group_b._calculate_position_size(balance) if balance > 0 else 0
@@ -197,7 +233,7 @@ def register_mobile_settings_routes(bp, shared):
             errors = []
             warnings = []
 
-            if not group_b.is_demo_trading and not has_keys:
+            if keys_required and not actual_has_keys:
                 errors.append('مفاتيح Binance غير مضافة')
             if balance < 10:
                 errors.append(f'الرصيد غير كافٍ: ${balance:.2f} (الحد الأدنى $10)')
@@ -215,6 +251,9 @@ def register_mobile_settings_routes(bp, shared):
                 'can_trade': can_trade,
                 'reason': reason,
                 'has_keys': has_keys,
+                'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                'usingEnvTestKeys': key_state['using_env_test_keys'],
+                'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
                 'sufficient_balance': balance >= 10,
                 'current_positions': len(open_positions),
                 'max_allowed_positions': max_positions,
@@ -613,16 +652,18 @@ def register_mobile_settings_routes(bp, shared):
             is_admin = target_user_type == 'admin'
 
             current_mode = get_trading_context(db, user_id)['trading_mode']
+            current_is_demo = current_mode == 'demo'
 
-            keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
-            keys_result = db.execute_query(keys_query, (user_id,))
-            has_keys = keys_result[0]['count'] > 0 if keys_result else False
+            key_state = resolve_key_state(db, user_id, is_admin, current_is_demo)
 
             return jsonify({
                 'success': True,
                 'data': {
                     'tradingMode': current_mode,
-                    'hasBinanceKeys': has_keys,
+                    'hasBinanceKeys': key_state['has_binance_keys'],
+                    'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                    'usingEnvTestKeys': key_state['using_env_test_keys'],
+                    'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
                     'canToggle': is_admin,
                     'availableModes': ['demo', 'real']
                 }
@@ -838,12 +879,9 @@ def register_mobile_settings_routes(bp, shared):
         try:
             db = db_manager
 
-            # جلب المفاتيح المشفرة
-            keys_query = "SELECT id, api_key, is_active, created_at FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
-            result = db.execute_query(keys_query, (user_id,))
+            key = db.get_binance_keys(user_id)
 
-            if result and len(result) > 0:
-                key = result[0]
+            if key and key.get('api_key'):
                 api_key_encrypted = key['api_key']
 
                 # فك تشفير API Key للعرض (masked)
@@ -860,8 +898,8 @@ def register_mobile_settings_routes(bp, shared):
                     masked_key = api_key_encrypted[:8] + '...' + api_key_encrypted[-8:] if api_key_encrypted and len(api_key_encrypted) > 16 else '***'
 
                 return jsonify({'success': True, 'data': {
-                    'hasKeys': True, 'keyId': key['id'], 'apiKey': masked_key,
-                    'createdAt': key['created_at'], 'isActive': bool(key['is_active']),
+                    'hasKeys': True, 'keyId': key.get('id'), 'apiKey': masked_key,
+                    'createdAt': key.get('created_at'), 'isActive': bool(key.get('is_active', True)),
                     'isConfigured': True
                 }})
             else:
@@ -907,7 +945,7 @@ def register_mobile_settings_routes(bp, shared):
                         'error_code': 'ACCOUNT_VALIDATION_FAILED'
                     }), 400
 
-                api_perms = client.get_api_key_permission()
+                api_perms = load_api_permissions(client)
 
                 # يجب أن تكون صلاحية التداول مفعلة
                 if not api_perms.get('enableSpotAndMarginTrading', False):
@@ -958,9 +996,9 @@ def register_mobile_settings_routes(bp, shared):
                 }), 500
 
             # حذف القديم وإضافة الجديد
-            db.execute_query("UPDATE user_binance_keys SET is_active = 0 WHERE user_id = %s", (user_id,))
+            db.execute_query("UPDATE user_binance_keys SET is_active = FALSE WHERE user_id = %s", (user_id,))
             db.execute_query(
-                "INSERT INTO user_binance_keys (user_id, api_key, api_secret, is_active, created_at) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP)",
+                "INSERT INTO user_binance_keys (user_id, api_key, api_secret, is_active, created_at) VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP)",
                 (user_id, encrypted_key, encrypted_secret)
             )
 
@@ -988,7 +1026,7 @@ def register_mobile_settings_routes(bp, shared):
             if not result or result[0]['user_id'] != user_id:
                 return error_response('لا توجد صلاحيات', 'UNAUTHORIZED', 403)
 
-            db.execute_query("UPDATE user_binance_keys SET is_active = 0 WHERE id = %s", (key_id,))
+            db.execute_query("UPDATE user_binance_keys SET is_active = FALSE WHERE id = %s", (key_id,))
             return success_response(None, 'تم حذف المفتاح')
         except Exception as e:
             logger.error(f"❌ خطأ Delete Key: {e}")
@@ -1069,7 +1107,7 @@ def register_mobile_settings_routes(bp, shared):
                 security_score = 100  # يبدأ من 100 وينقص مع كل مشكلة
 
                 try:
-                    api_restrictions = client.get_api_key_permission()
+                    api_restrictions = load_api_permissions(client)
                     ip_restricted = api_restrictions.get('ipRestrict', False)
                     enable_withdrawals = api_restrictions.get('enableWithdrawals', False)
                     enable_spot = api_restrictions.get('enableSpotAndMarginTrading', False)
@@ -1264,16 +1302,34 @@ def register_mobile_settings_routes(bp, shared):
             reset_mode = 'demo' if is_admin_user else 'real'
             reset_is_demo = is_admin_user
 
+            if reset_is_demo:
+                initial_balance = getattr(db_manager, 'DEMO_ACCOUNT_INITIAL_BALANCE', 1000.0)
+                if not db_manager.reset_user_portfolio(user_id, initial_balance=initial_balance):
+                    response_data, status_code = error_response('فشل في إعادة ضبط الحساب التجريبي', 'RESET_ERROR', 500)
+                    return jsonify(response_data), status_code
+
+                with db_manager.get_write_connection() as conn:
+                    conn.execute("""
+                        UPDATE user_settings 
+                        SET trading_mode = 'demo', stop_loss_pct = 2.0, take_profit_pct = 5.0,
+                            max_positions = 5, trading_enabled = TRUE
+                        WHERE user_id = %s AND is_demo = TRUE
+                    """, (user_id,))
+
+                logger.info(f"✅ تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} من المصدر الموحد")
+                response_data, status_code = success_response({'reset': True, 'mode': 'demo'}, 'تم إعادة ضبط البيانات بنجاح')
+                return jsonify(response_data), status_code
+
             with db_manager.get_write_connection() as conn:
                 # حذف المراكز النشطة
-                conn.execute("DELETE FROM active_positions WHERE user_id = %s", (user_id,))
+                conn.execute("DELETE FROM active_positions WHERE user_id = %s AND is_demo = FALSE", (user_id,))
 
                 # إعادة ضبط المحفظة (استخدام الأعمدة الصحيحة)
                 # ✅ FIX: الرصيد الافتراضي = 1000 USDT (يتطابق مع UI والتوثيق)
                 portfolio_row = conn.execute("""
                     SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1
                 """, (user_id, reset_is_demo)).fetchone()
-                initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
+                initial_balance = float(portfolio_row[0] or 1000.0) if portfolio_row else 1000.0
                 conn.execute("""
                     UPDATE portfolio 
                     SET total_balance = %s, available_balance = %s, 
@@ -1349,7 +1405,7 @@ def register_mobile_settings_routes(bp, shared):
                            COUNT(*) as trades_today
                     FROM active_positions
                     WHERE user_id = %s
-                      AND is_active = 0
+                      AND is_active = FALSE
                       AND is_demo = %s
                       AND DATE(COALESCE(closed_at, updated_at)) = %s
                 """, (portfolio_owner_id, is_demo, today)).fetchone()

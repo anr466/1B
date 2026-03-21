@@ -314,7 +314,7 @@ class DbNotificationsMixin:
                 stored_biometric = conn.execute("""
                     SELECT biometric_hash, biometric_type 
                     FROM user_biometric_auth 
-                    WHERE user_id = %s AND biometric_type = %s AND is_active = 1
+                    WHERE user_id = %s AND biometric_type = %s AND is_active = TRUE
                 """, (user_id, biometric_data.get('biometric_type'))).fetchone()
                 
                 if stored_biometric:
@@ -334,7 +334,7 @@ class DbNotificationsMixin:
                 biometrics = conn.execute("""
                     SELECT biometric_type, device_id, created_at, is_active
                     FROM user_biometric_auth 
-                    WHERE user_id = %s AND is_active = 1
+                    WHERE user_id = %s AND is_active = TRUE
                 """, (user_id,)).fetchall()
                 
                 return [dict(biometric) for biometric in biometrics]

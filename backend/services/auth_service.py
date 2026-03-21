@@ -11,7 +11,7 @@ from typing import Dict, Optional, Tuple
 from datetime import datetime
 
 # استيراد قاعدة البيانات
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 # استيراد bcrypt للأمان الأفضل
 try:
@@ -33,7 +33,7 @@ class AuthService:
     """خدمة المصادقة الموحدة"""
     
     def __init__(self):
-        self.db = DatabaseManager()
+        self.db = get_db_manager()
     
     # ==================== دوال مساعدة للتجزئة ====================
     
@@ -322,6 +322,7 @@ class AuthService:
                 cursor.execute("""
                     INSERT INTO users (username, email, password_hash, phone_number, user_type, created_at)
                     VALUES (%s, %s, %s, %s, 'user', CURRENT_TIMESTAMP)
+                    RETURNING id
                 """, (username, email.lower(), password_hash, phone_number))
                 return cursor.lastrowid
         except Exception:

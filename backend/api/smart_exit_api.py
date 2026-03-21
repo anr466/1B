@@ -19,7 +19,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "database"))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.strategies.intelligent_exit_system import get_intelligent_exit_system
 from config.logging_config import get_logger
 
@@ -33,7 +33,7 @@ smart_exit_bp = Blueprint('smart_exit', __name__, url_prefix='/smart-exit')
 logger = get_logger(__name__)
 
 # إعداد قاعدة البيانات
-db = DatabaseManager()
+db = get_db_manager()
 
 
 # ============================================================================
@@ -221,8 +221,9 @@ def check_exit_conditions(user_id, symbol):
             smaller_tf_data=None
         )
 
+        execution_supported = signal.exit_pct >= 1.0 and signal.decision.value != 'hold'
         result = {
-            'should_exit': signal.exit_pct > 0 and signal.decision.value != 'hold',
+            'should_exit': execution_supported,
             'exit_type': signal.decision.value,
             'reason': signal.reason,
             'confidence': signal.confidence,
@@ -231,7 +232,9 @@ def check_exit_conditions(user_id, symbol):
             'trailing_stop': signal.trailing_stop,
             'next_tp': signal.next_tp,
             'trend_status': signal.trend_status.value,
-            'exit_pct': signal.exit_pct,
+            'exit_pct': 1.0 if execution_supported else 0.0,
+            'requested_exit_pct': signal.exit_pct,
+            'execution_supported': execution_supported,
         }
         
         return jsonify({

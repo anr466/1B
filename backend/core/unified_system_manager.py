@@ -37,6 +37,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.core.state_manager import StateManager
+from backend.infrastructure.db_access import get_db_manager
 
 
 class SystemAlreadyRunningError(Exception):
@@ -274,8 +275,7 @@ class UnifiedSystemManager:
     def _sync_db_status(self, status: str, is_running: bool, message: str = ''):
         """مزامنة حالة النظام مع جدول system_status في DB"""
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = get_db_manager()
             with db.get_write_connection() as conn:
                 conn.execute("""
                     UPDATE system_status 

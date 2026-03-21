@@ -204,6 +204,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
+    // Apply best-guess mode immediately from login response so providers
+    // don't start with the wrong default before the settings API responds.
+    final earlyMode = user.tradingMode == 'demo' ? 'demo' : 'real';
+    _ref.read(adminPortfolioModeProvider.notifier).state = earlyMode;
+
     try {
       final settings = await _ref
           .read(settingsRepositoryProvider)
@@ -212,7 +217,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _ref.read(adminPortfolioModeProvider.notifier).state = resolvedMode;
       updateCurrentUser(user.copyWith(tradingMode: resolvedMode));
     } catch (_) {
-      return;
+      // Keep the early mode from the login response on settings API failure
     }
   }
 

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import json
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 
 class CoinStateTracker:
@@ -22,7 +22,7 @@ class CoinStateTracker:
     """
     
     def __init__(self, db_manager=None):
-        self.db_manager = db_manager or DatabaseManager()
+        self.db_manager = db_manager or get_db_manager()
     
     def update_after_trade(self, symbol: str, pnl: float, profit_pct: float, 
                           exit_reason: str, strategy: str = None, 

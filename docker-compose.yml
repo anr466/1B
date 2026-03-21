@@ -22,7 +22,9 @@ services:
       - ./backups:/app/backups
       - ./tmp:/app/tmp
       - ./backend:/app/backend
+      - ./bin:/app/bin
       - ./database:/app/database
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,7 +61,9 @@ services:
       - ./backups:/app/backups
       - ./tmp:/app/tmp
       - ./backend:/app/backend
+      - ./bin:/app/bin
       - ./database:/app/database
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy

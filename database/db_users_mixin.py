@@ -70,7 +70,8 @@ class DbUsersMixin:
                 
                 cursor = conn.execute("""
                     INSERT INTO users (username, email, password_hash, user_type, created_at, is_active)
-                    VALUES (%s, %s, %s, 'user', datetime('now'), 1)
+                    VALUES (%s, %s, %s, 'user', CURRENT_TIMESTAMP, TRUE)
+                    RETURNING id
                 """, (username, email, password_hash))
                 
                 user_id = cursor.lastrowid
@@ -413,13 +414,13 @@ class DbUsersMixin:
             with self.get_connection() as conn:
                 trades_query = """
                     SELECT
-                        COUNT(CASE WHEN is_active = 0 THEN 1 END) as total_trades,
-                        COUNT(CASE WHEN is_active = 0 AND profit_loss > 0 THEN 1 END) as winning_trades,
-                        COUNT(CASE WHEN is_active = 0 AND profit_loss < 0 THEN 1 END) as losing_trades,
-                        AVG(CASE WHEN is_active = 0 THEN profit_loss END) as avg_profit_loss,
-                        SUM(CASE WHEN is_active = 0 THEN profit_loss ELSE 0 END) as total_profit_loss,
-                        MAX(CASE WHEN is_active = 0 THEN profit_loss END) as max_profit,
-                        MIN(CASE WHEN is_active = 0 THEN profit_loss END) as min_profit
+                        COUNT(CASE WHEN is_active = FALSE THEN 1 END) as total_trades,
+                        COUNT(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 END) as winning_trades,
+                        COUNT(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 END) as losing_trades,
+                        AVG(CASE WHEN is_active = FALSE THEN profit_loss END) as avg_profit_loss,
+                        SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END) as total_profit_loss,
+                        MAX(CASE WHEN is_active = FALSE THEN profit_loss END) as max_profit,
+                        MIN(CASE WHEN is_active = FALSE THEN profit_loss END) as min_profit
                     FROM active_positions
                     WHERE user_id = %s
                 """
@@ -427,7 +428,7 @@ class DbUsersMixin:
                 params = [user_id]
                 if is_demo is not None:
                     trades_query += " AND is_demo = %s"
-                    params.append(1 if is_demo else 0)
+                    params.append(bool(is_demo))
                 
                 cursor = conn.execute(trades_query, params)
                 stats_row = cursor.fetchone()
@@ -457,12 +458,12 @@ class DbUsersMixin:
                 
                 active_query = """
                     SELECT COUNT(*) FROM active_positions 
-                    WHERE user_id = %s AND is_active = 1
+                    WHERE user_id = %s AND is_active = TRUE
                 """
                 active_params = [user_id]
                 if is_demo is not None:
                     active_query += " AND is_demo = %s"
-                    active_params.append(1 if is_demo else 0)
+                    active_params.append(bool(is_demo))
                 
                 cursor = conn.execute(active_query, active_params)
                 active_trades = cursor.fetchone()[0] or 0

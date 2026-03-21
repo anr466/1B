@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class FirebaseSMSHandler:
     _initialized = False
 
     def __init__(self) -> None:
-        self._db = DatabaseManager()
+        self._db = get_db_manager()
         self._is_available = False
         self._init_firebase()
 

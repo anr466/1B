@@ -31,8 +31,8 @@ from slowapi.errors import RateLimitExceeded
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # Database
-from database.database_manager import DatabaseManager
-db_manager = DatabaseManager()
+from backend.infrastructure.db_access import get_db_manager
+db_manager = get_db_manager()
 
 # User lookup service
 from backend.utils.user_lookup_service import get_user_by_email
@@ -40,6 +40,29 @@ from backend.utils.user_lookup_service import get_user_by_email
 # ✅ Phase 1: Safe Logger (يخفي البيانات الحساسة)
 from backend.utils.safe_logger import SafeLogger
 logger = SafeLogger(__name__)
+
+
+def _resolve_key_state(db, user_id: int, is_admin: bool, is_demo: bool):
+    db_rows = db.execute_query(
+        "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE",
+        (user_id,),
+    )
+    has_configured_db_keys = bool(db_rows and db_rows[0].get('count', 0) > 0)
+    env_keys_enabled = (os.getenv('ALLOW_ENV_BINANCE_KEYS_FOR_TESTING') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+    env_api_key = (os.getenv('BINANCE_BACKEND_API_KEY') or '').strip()
+    env_api_secret = (os.getenv('BINANCE_BACKEND_API_SECRET') or '').strip()
+    using_env_test_keys = bool(env_keys_enabled and env_api_key and env_api_secret and not has_configured_db_keys)
+    resolved_keys = db.get_binance_keys(user_id)
+    actual_has_keys = bool(resolved_keys and resolved_keys.get('api_key'))
+    keys_required_for_current_mode = not (is_admin and is_demo)
+    logical_has_keys = True if not keys_required_for_current_mode else actual_has_keys
+    return {
+        'has_binance_keys': logical_has_keys,
+        'has_configured_db_keys': has_configured_db_keys,
+        'using_env_test_keys': using_env_test_keys,
+        'keys_required_for_current_mode': keys_required_for_current_mode,
+        'actual_has_keys': actual_has_keys,
+    }
 
 # ✅ Phase 2: Request Validation & Error Handling
 from pydantic import ValidationError
@@ -195,17 +218,87 @@ def get_user_portfolio(user_id):
         is_admin = trading_context['is_admin']
         is_demo = trading_context['is_demo']
         portfolio_owner_id = trading_context['portfolio_owner_id']
+        key_state = _resolve_key_state(db, user_id, is_admin, bool(is_demo))
+
+        def load_portfolio_base_balances(owner_id, demo_flag):
+            try:
+                base_query = (
+                    "SELECT initial_balance, total_balance, invested_balance FROM demo_accounts WHERE user_id = %s"
+                    if demo_flag == 1 else
+                    "SELECT initial_balance, total_balance, invested_balance FROM portfolio WHERE user_id = %s AND is_demo = %s"
+                )
+                base_params = (owner_id,) if demo_flag == 1 else (owner_id, demo_flag)
+                rows = db.execute_query(base_query, base_params)
+                if rows and len(rows) > 0:
+                    return rows[0]
+            except Exception:
+                pass
+            return {}
+
+        if is_admin and is_demo == 0:
+            keys = db.get_binance_keys(user_id)
+            if not keys:
+                base_row = load_portfolio_base_balances(portfolio_owner_id, is_demo)
+                initial_balance = float(base_row.get('initial_balance') or 0.0)
+                current_balance = float(base_row.get('total_balance') or initial_balance or 0.0)
+                invested_balance = float(base_row.get('invested_balance') or 0.0)
+                payload = {
+                    'requiresSetup': True,
+                    'message': 'أضف مفاتيح Binance للبدء',
+                    'hasBinanceKeys': False,
+                    'hasKeys': False,
+                    'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                    'usingEnvTestKeys': key_state['using_env_test_keys'],
+                    'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
+                    'currentBalance': round(current_balance, 2),
+                    'totalBalance': round(current_balance, 2),
+                    'availableBalance': round(current_balance, 2),
+                    'lockedBalance': round(0.0, 2),
+                    'investedBalance': round(invested_balance, 2),
+                    'initialBalance': round(initial_balance, 2),
+                    'dailyPnL': 0.0,
+                    'dailyPnLPercentage': 0.0,
+                    'totalPnL': 0.0,
+                    'totalPnLPercentage': 0.0,
+                    'realizedPnL': 0.0,
+                    'realizedPnLPercentage': 0.0,
+                    'unrealizedPnL': 0.0,
+                    'unrealizedPnLPercentage': 0.0,
+                    'totalProfitLoss': 0.0,
+                }
+                response_data, status_code = success_response(payload, 'يتطلب إعداد مفاتيح Binance')
+                return jsonify(response_data), status_code
 
         if not is_admin:
             # ✅ المستخدم العادي: Real فقط - التحقق من المفاتيح أولاً
             keys = db.get_binance_keys(user_id)
             if not keys:
                 # ❌ بدون مفاتيح = لا بيانات
-                response_data, status_code = success_response({
+                payload = {
                     'requiresSetup': True,
                     'message': 'أضف مفاتيح Binance للبدء',
-                    'hasBinanceKeys': False
-                }, 'يتطلب إعداد مفاتيح Binance')
+                    'hasBinanceKeys': False,
+                    'hasKeys': False,
+                    'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                    'usingEnvTestKeys': key_state['using_env_test_keys'],
+                    'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
+                    'currentBalance': 0.0,
+                    'totalBalance': 0.0,
+                    'availableBalance': 0.0,
+                    'lockedBalance': 0.0,
+                    'investedBalance': 0.0,
+                    'initialBalance': 0.0,
+                    'dailyPnL': 0.0,
+                    'dailyPnLPercentage': 0.0,
+                    'totalPnL': 0.0,
+                    'totalPnLPercentage': 0.0,
+                    'realizedPnL': 0.0,
+                    'realizedPnLPercentage': 0.0,
+                    'unrealizedPnL': 0.0,
+                    'unrealizedPnLPercentage': 0.0,
+                    'totalProfitLoss': 0.0,
+                }
+                response_data, status_code = success_response(payload, 'يتطلب إعداد مفاتيح Binance')
                 return jsonify(response_data), status_code
             
             # مع مفاتيح → جلب البيانات الحقيقية
@@ -239,20 +332,17 @@ def get_user_portfolio(user_id):
         locked_balance = safe_float(portfolio_data.get('lockedBalance', portfolio_data.get('investedBalance', '0.00')))
         daily_pnl = safe_float(portfolio_data.get('dailyPnL', '+0.00'))
         daily_pnl_pct = safe_float(portfolio_data.get('dailyPnLPercentage', '+0.0'))
-        # ✅ إصلاح: التعامل مع totalPnL كـ None بشكل صحيح
         total_pnl_raw = portfolio_data.get('totalPnL', '0.00')
         total_pnl = safe_float(total_pnl_raw, 0.0)
+        realized_pnl = safe_float(portfolio_data.get('realizedPnL', 0.0), 0.0)
+        unrealized_pnl = safe_float(portfolio_data.get('unrealizedPnL', 0.0), 0.0)
         
-        # ✅ جلب الرصيد الأولي + المستثمر من جدول portfolio
         initial_balance = safe_float(portfolio_data.get('initialBalance', '0.00'))
         invested_balance = safe_float(portfolio_data.get('investedBalance', '0.00'))
         should_backfill_from_db = (is_demo == 1) or has_keys
         if should_backfill_from_db and (initial_balance == 0 or invested_balance == 0):
             try:
-                extra = db.execute_query(
-                    "SELECT initial_balance, invested_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",
-                    (portfolio_owner_id, is_demo)
-                )
+                extra = [load_portfolio_base_balances(portfolio_owner_id, is_demo)]
                 if extra and len(extra) > 0:
                     if initial_balance == 0:
                         initial_balance = safe_float(extra[0].get('initial_balance', 0))
@@ -261,13 +351,11 @@ def get_user_portfolio(user_id):
             except Exception:
                 pass
         
-        # ✅ مهم: لا نعيد اشتقاق PnL من (totalBalance - initialBalance)
-        # للحساب الحقيقي قد يتغير الرصيد بسبب إيداع/سحب خارجي، بينما المطلوب إظهار PnL صفقات النظام فقط
         total_pnl = safe_float(portfolio_data.get('totalPnL', portfolio_data.get('totalProfitLoss', 0.0)), 0.0)
         total_pnl_pct = safe_float(portfolio_data.get('totalPnLPercentage', portfolio_data.get('totalProfitLossPercentage', 0.0)), 0.0)
+        realized_pnl_pct = safe_float(portfolio_data.get('realizedPnLPercentage', 0.0), 0.0)
+        unrealized_pnl_pct = safe_float(portfolio_data.get('unrealizedPnLPercentage', 0.0), 0.0)
         
-        # ✅ البيانات الكاملة للـ Frontend (Dashboard + PortfolioScreen)
-        # ✅ FIX: إرجاع أرقام حقيقية (float) بدلاً من نصوص — حتى يتمكن الـ Frontend من الحساب مباشرة
         data = {
             'currentBalance': round(total_balance, 2),
             'totalBalance': round(total_balance, 2),
@@ -279,8 +367,18 @@ def get_user_portfolio(user_id):
             'dailyPnLPercentage': round(daily_pnl_pct, 2),
             'totalPnL': round(total_pnl, 2),
             'totalPnLPercentage': round(total_pnl_pct, 2),
+            'realizedPnL': round(realized_pnl, 2),
+            'realizedPnLPercentage': round(realized_pnl_pct, 2),
+            'unrealizedPnL': round(unrealized_pnl, 2),
+            'unrealizedPnLPercentage': round(unrealized_pnl_pct, 2),
             'totalProfitLoss': round(total_pnl, 2),
             'hasKeys': has_keys,
+            'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+            'usingEnvTestKeys': key_state['using_env_test_keys'],
+            'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
+            'firstTradeDate': portfolio_data.get('firstTradeDate'),
+            'firstTradeBalance': safe_float(portfolio_data.get('firstTradeBalance', 0.0), 0.0),
+            'initialBalanceSource': portfolio_data.get('initialBalanceSource'),
             'lastUpdate': portfolio_data.get('lastUpdate')
         }
         
@@ -345,27 +443,58 @@ def get_user_stats(user_id):
         is_admin = trading_context['is_admin']
         is_demo = trading_context['is_demo']
         portfolio_owner_id = trading_context['portfolio_owner_id']
+        key_state = _resolve_key_state(db, user_id, is_admin, bool(is_demo))
+
+        def load_stats_base_balances(owner_id, demo_flag):
+            try:
+                base_query = (
+                    "SELECT initial_balance, total_balance FROM demo_accounts WHERE user_id = %s"
+                    if demo_flag == 1 else
+                    "SELECT initial_balance, total_balance FROM portfolio WHERE user_id = %s AND is_demo = %s"
+                )
+                base_params = (owner_id,) if demo_flag == 1 else (owner_id, demo_flag)
+                rows = db.execute_query(base_query, base_params)
+                if rows and len(rows) > 0:
+                    return rows[0]
+            except Exception:
+                pass
+            return {}
 
         if is_admin:
             # ✅ الأدمن الحقيقي يتبع نفس قاعدة المستخدم الحقيقي: مفاتيح Binance مطلوبة
             if is_demo == 0:
                 keys = db.get_binance_keys(user_id)
                 if not keys:
-                    response_data, status_code = success_response({
+                    base_row = load_stats_base_balances(portfolio_owner_id, is_demo)
+                    initial_balance = float(base_row.get('initial_balance') or 0.0)
+                    current_balance = float(base_row.get('total_balance') or initial_balance or 0.0)
+                    payload = {
                         'requiresSetup': True,
                         'message': 'أضف مفاتيح Binance للبدء',
-                        'totalTrades': 0,
+                        'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                        'usingEnvTestKeys': key_state['using_env_test_keys'],
+                        'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
                         'activeTrades': 0,
+                        'totalTrades': 0,
+                        'closedTrades': 0,
                         'winningTrades': 0,
                         'losingTrades': 0,
-                        'closedTrades': 0,
-                        'totalProfit': 0.0,
                         'winRate': 0.0,
+                        'successRate': '0.0%',
+                        'averageProfit': 0.0,
+                        'totalProfit': 0.0,
+                        'totalProfitLoss': 0.0,
+                        'realizedPnL': 0.0,
+                        'unrealizedPnL': 0.0,
+                        'bestTrade': 0.0,
+                        'worstTrade': 0.0,
+                        'profitFactor': 0.0,
                         'portfolioGrowth': 0.0,
                         'portfolioGrowthPct': 0.0,
-                        'initialBalance': 0.0,
-                        'currentBalance': 0.0
-                    }, 'يتطلب إعداد مفاتيح Binance')
+                        'initialBalance': round(initial_balance, 2),
+                        'currentBalance': round(current_balance, 2),
+                    }
+                    response_data, status_code = success_response(payload, 'يتطلب إعداد مفاتيح Binance')
                     return jsonify(response_data), status_code
         else:
             # ✅ المستخدم العادي: Real فقط - التحقق من المفاتيح
@@ -375,12 +504,27 @@ def get_user_stats(user_id):
                 response_data, status_code = success_response({
                     'requiresSetup': True,
                     'message': 'أضف مفاتيح Binance للبدء',
+                    'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                    'usingEnvTestKeys': key_state['using_env_test_keys'],
+                    'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
                     'totalTrades': 0,
                     'activeTrades': 0,
                     'winningTrades': 0,
                     'losingTrades': 0,
                     'closedTrades': 0,
+                    'successRate': '0.0%',
+                    'averageProfit': 0.0,
                     'totalProfit': 0.0,
+                    'totalProfitLoss': 0.0,
+                    'realizedPnL': 0.0,
+                    'unrealizedPnL': 0.0,
+                    'bestTrade': 0.0,
+                    'worstTrade': 0.0,
+                    'profitFactor': 0.0,
+                    'portfolioGrowth': 0.0,
+                    'portfolioGrowthPct': 0.0,
+                    'initialBalance': 0.0,
+                    'currentBalance': 0.0,
                     'winRate': 0.0
                 }, 'يتطلب إعداد مفاتيح Binance')
                 return jsonify(response_data), status_code
@@ -410,26 +554,39 @@ def get_user_stats(user_id):
             WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
         """
 
-        stats_result = db.execute_query(stats_query, (portfolio_owner_id, is_demo))
-        active_result = db.execute_query(active_trades_query, (portfolio_owner_id, is_demo))
+        stats_result = db.execute_query(stats_query, (portfolio_owner_id, bool(is_demo)))
+        active_result = db.execute_query(active_trades_query, (portfolio_owner_id, bool(is_demo)))
+        pnl_snapshot = db._calculate_user_pnl(portfolio_owner_id, is_demo)
         
-        # ✅ جلب الرصيد الأولي عند أول تداول (لحساب نمو المحفظة)
         initial_balance_query = """
-            SELECT initial_balance, total_balance 
+            SELECT initial_balance, total_balance,
+                   NULL::DOUBLE PRECISION as first_trade_balance,
+                   NULL::TIMESTAMPTZ as first_trade_at,
+                   'demo_account_seed' as initial_balance_source
+            FROM demo_accounts 
+            WHERE user_id = %s
+        """ if is_demo == 1 else """
+            SELECT initial_balance, total_balance, first_trade_balance, first_trade_at, initial_balance_source
             FROM portfolio 
             WHERE user_id = %s AND is_demo = %s
         """
-        portfolio_result = db.execute_query(initial_balance_query, (portfolio_owner_id, is_demo))
+        portfolio_result = db.execute_query(initial_balance_query, (portfolio_owner_id,) if is_demo == 1 else (portfolio_owner_id, bool(is_demo)))
         initial_balance = 0.0
         current_balance = 0.0
+        first_trade_balance = 0.0
+        first_trade_at = None
+        initial_balance_source = 'demo_account_seed' if is_demo == 1 else 'system_seed'
         if portfolio_result and len(portfolio_result) > 0:
-            # ✅ إصلاح: التعامل مع القيم None بشكل صحيح
             initial_balance_raw = portfolio_result[0].get('initial_balance')
             current_balance_raw = portfolio_result[0].get('total_balance')
+            first_trade_balance_raw = portfolio_result[0].get('first_trade_balance')
+            first_trade_at = portfolio_result[0].get('first_trade_at')
+            initial_balance_source = portfolio_result[0].get('initial_balance_source') or initial_balance_source
             
             initial_balance = float(initial_balance_raw) if initial_balance_raw is not None else 0.0
             current_balance = float(current_balance_raw) if current_balance_raw is not None else 0.0
-        
+            first_trade_balance = float(first_trade_balance_raw) if first_trade_balance_raw is not None else 0.0
+
         if stats_result and len(stats_result) > 0:
             stats = stats_result[0]
             active_trades = int((active_result[0].get('active_trades', 0) if active_result else 0) or 0)
@@ -443,11 +600,11 @@ def get_user_stats(user_id):
                 win_rate = ((stats.get('winning_trades', 0) or 0) / closed_trades) * 100
                 success_rate = win_rate
             
-            # ✅ نمو المحفظة = أرباح/خسائر صفقات النظام فقط
-            # ولا يشمل تغيرات خارج النظام (إيداع/سحب/تداول يدوي خارج التطبيق)
             portfolio_growth = 0.0
             portfolio_growth_pct = 0.0
-            total_profit = float(stats['total_profit'] or 0)
+            realized_pnl = float(pnl_snapshot.get('realized_pnl', 0) or 0)
+            unrealized_pnl = float(pnl_snapshot.get('unrealized_pnl', 0) or 0)
+            total_profit = float(pnl_snapshot.get('total_pnl', 0) or 0)
 
             has_system_activity = total_trades > 0
             if has_system_activity:
@@ -470,15 +627,21 @@ def get_user_stats(user_id):
                 'averageProfit': round(stats['avg_profit'], 2) if stats['avg_profit'] else 0.00,
                 'totalProfit': round(total_profit, 2),
                 'totalProfitLoss': round(total_profit, 2),
+                'realizedPnL': round(realized_pnl, 2),
+                'unrealizedPnL': round(unrealized_pnl, 2),
                 'bestTrade': round(stats['best_trade'], 2) if stats['best_trade'] else 0.00,
                 'worstTrade': round(stats['worst_trade'], 2) if stats['worst_trade'] else 0.00,
                 'profitFactor': profit_factor,
-                # ✅ بيانات نمو المحفظة الجديدة
                 'portfolioGrowth': round(portfolio_growth, 2),
                 'portfolioGrowthPct': round(portfolio_growth_pct, 2),
                 'initialBalance': round(initial_balance, 2),
                 'currentBalance': round(current_balance, 2),
-                'firstTradeDate': stats['first_trade_date'],
+                'firstTradeDate': first_trade_at or stats['first_trade_date'],
+                'firstTradeBalance': round(first_trade_balance, 2),
+                'initialBalanceSource': initial_balance_source,
+                'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                'usingEnvTestKeys': key_state['using_env_test_keys'],
+                'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
                 'isGrowing': portfolio_growth > 0
             }
             
@@ -501,13 +664,21 @@ def get_user_stats(user_id):
                 'averageProfit': 0.00,
                 'totalProfit': 0.00,
                 'totalProfitLoss': 0.00,
+                'realizedPnL': 0.0,
+                'unrealizedPnL': 0.0,
                 'bestTrade': 0.00,
-                'worstTrade': 0.00
+                'worstTrade': 0.00,
+                'hasConfiguredDbKeys': key_state['has_configured_db_keys'],
+                'usingEnvTestKeys': key_state['using_env_test_keys'],
+                'keysRequiredForCurrentMode': key_state['keys_required_for_current_mode'],
+                'firstTradeDate': None,
+                'firstTradeBalance': 0.0,
+                'initialBalanceSource': 'demo_account_seed' if is_demo == 1 else 'system_seed',
             }
             
             # ✅ حفظ في Cache مع Dynamic TTL
             if CACHE_AVAILABLE:
-                cache_key = f"stats_{user_id}"
+                cache_key = f"stats_{user_id}_{requested_mode}" if requested_mode else f"stats_{user_id}"
                 response_cache.set(cache_key, data, ttl=30, user_id=user_id)
             
             response_data, status_code = success_response(data, 'تم جلب الإحصائيات بنجاح')
@@ -570,7 +741,7 @@ def get_successful_coins(user_id):
                 avg_trade_duration_hours,
                 trading_style
             FROM successful_coins
-            WHERE is_active = 1
+            WHERE is_active = TRUE
             ORDER BY score DESC, analysis_date DESC
             LIMIT 10
         """

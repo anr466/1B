@@ -395,5 +395,6 @@ class AuthService {
         await _storage.saveUserId(userId.toInt());
       }
     }
+    await _storage.setOnboardingDone(true);
   }
 }

@@ -42,11 +42,33 @@ CREATE TABLE IF NOT EXISTS user_settings (
     UNIQUE(user_id, is_demo)
 );
 
+CREATE TABLE IF NOT EXISTS demo_accounts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    initial_balance DOUBLE PRECISION DEFAULT 1000.0,
+    available_balance DOUBLE PRECISION DEFAULT 1000.0,
+    invested_balance DOUBLE PRECISION DEFAULT 0.0,
+    total_balance DOUBLE PRECISION DEFAULT 1000.0,
+    total_profit_loss DOUBLE PRECISION DEFAULT 0.0,
+    total_profit_loss_percentage DOUBLE PRECISION DEFAULT 0.0,
+    total_trades INTEGER DEFAULT 0,
+    winning_trades INTEGER DEFAULT 0,
+    losing_trades INTEGER DEFAULT 0,
+    reset_count INTEGER DEFAULT 0,
+    last_reset_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
+
 CREATE TABLE IF NOT EXISTS portfolio (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     balance DOUBLE PRECISION DEFAULT 1000.0,
     initial_balance DOUBLE PRECISION DEFAULT 0.0,
+    first_trade_balance DOUBLE PRECISION,
+    first_trade_at TIMESTAMPTZ,
+    initial_balance_source TEXT DEFAULT 'system_seed',
     totalbalance DOUBLE PRECISION DEFAULT 1000.0,
     availablebalance DOUBLE PRECISION DEFAULT 1000.0,
     total_balance DOUBLE PRECISION DEFAULT 1000.0,
@@ -297,6 +319,16 @@ CREATE TABLE IF NOT EXISTS fcm_tokens (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS user_binance_balance (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    asset TEXT NOT NULL,
+    free_balance DOUBLE PRECISION DEFAULT 0,
+    locked_balance DOUBLE PRECISION DEFAULT 0,
+    total_balance DOUBLE PRECISION DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS user_sessions (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -387,6 +419,8 @@ WHERE phone_number IS NOT NULL AND phone_number <> '';
 CREATE INDEX IF NOT EXISTS idx_users_user_type ON users(user_type);
 CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_binance_keys_user_active ON user_binance_keys(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_user_binance_balance_user ON user_binance_balance(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_binance_balance_user_asset ON user_binance_balance(user_id, asset);
 CREATE INDEX IF NOT EXISTS idx_active_positions_user ON active_positions(user_id);
 CREATE INDEX IF NOT EXISTS idx_active_positions_symbol ON active_positions(symbol);
 CREATE INDEX IF NOT EXISTS idx_active_positions_active ON active_positions(is_active);

@@ -20,7 +20,7 @@ except Exception:
     _FIREBASE_ADMIN_OK = False
 
 try:
-    from database.database_manager import DatabaseManager
+    from backend.infrastructure.db_access import get_db_manager
     _DB_OK = True
 except Exception:
     _DB_OK = False
@@ -60,7 +60,7 @@ class FirebaseNotificationService:
 
     def __init__(self) -> None:
         self._available = False
-        self._db: Optional[DatabaseManager] = None
+        self._db = None
 
         if not _FIREBASE_ADMIN_OK:
             logger.warning("⚠️ firebase_admin غير مثبّت — الإشعارات معطّلة")
@@ -68,7 +68,7 @@ class FirebaseNotificationService:
 
         if _DB_OK:
             try:
-                self._db = DatabaseManager()
+                self._db = get_db_manager()
             except Exception as e:
                 logger.warning(f"⚠️ فشل تهيئة قاعدة البيانات: {e}")
 

@@ -28,9 +28,6 @@ class SecuritySettingsScreen extends ConsumerStatefulWidget {
 class _SecuritySettingsScreenState
     extends ConsumerState<SecuritySettingsScreen> {
   bool _biometricEnabled = false;
-  bool _rememberMeEnabled = false;
-  bool _hasRememberedCredentials = false;
-  bool _hasBiometricCredentials = false;
   String _biometricTypeLabel = '...';
   bool _isBusy = false;
 
@@ -48,84 +45,7 @@ class _SecuritySettingsScreenState
 
   void _loadSecurityState() {
     final storage = ref.read(storageServiceProvider);
-    final remembered = storage.rememberedCredentials;
-    final biometric = storage.biometricCredentials;
     _biometricEnabled = storage.biometricEnabled;
-    _rememberMeEnabled = storage.rememberMeEnabled;
-    _hasRememberedCredentials = remembered.$1 != null && remembered.$2 != null;
-    _hasBiometricCredentials = biometric.$1 != null && biometric.$2 != null;
-  }
-
-  Future<void> _setRememberMe(bool value) async {
-    try {
-      setState(() => _isBusy = true);
-      final storage = ref.read(storageServiceProvider);
-      await storage.setRememberMeEnabled(value);
-      if (!value) {
-        await storage.clearRememberedCredentials();
-      }
-      if (!mounted) return;
-      setState(() {
-        _rememberMeEnabled = value;
-        if (!value) {
-          _hasRememberedCredentials = false;
-        }
-      });
-      AppSnackbar.show(
-        context,
-        message: value
-            ? 'تم تفعيل حفظ بيانات الدخول — سيتم تعبئة الحقول تلقائيًا فقط'
-            : 'تم تعطيل حفظ بيانات الدخول',
-        type: SnackType.success,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppSnackbar.show(
-        context,
-        message: ApiService.extractError(e),
-        type: SnackType.error,
-      );
-    } finally {
-      if (mounted) setState(() => _isBusy = false);
-    }
-  }
-
-  Future<void> _clearSavedCredentials() async {
-    try {
-      setState(() => _isBusy = true);
-      final storage = ref.read(storageServiceProvider);
-      await storage.clearRememberedCredentials();
-      await storage.clearBiometricCredentials();
-      await storage.setRememberMeEnabled(false);
-      await storage.setBiometricEnabled(false);
-      final currentUser = ref.read(authProvider).user;
-      if (currentUser != null) {
-        ref
-            .read(authProvider.notifier)
-            .updateCurrentUser(currentUser.copyWith(biometricEnabled: false));
-      }
-      if (!mounted) return;
-      setState(() {
-        _rememberMeEnabled = false;
-        _biometricEnabled = false;
-        _hasRememberedCredentials = false;
-        _hasBiometricCredentials = false;
-      });
-      AppSnackbar.show(
-        context,
-        message: 'تم حذف بيانات الدخول المحفوظة وتعطيل البصمة',
-        type: SnackType.success,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppSnackbar.show(
-        context,
-        message: ApiService.extractError(e),
-        type: SnackType.error,
-      );
-    } finally {
-      if (mounted) setState(() => _isBusy = false);
-    }
   }
 
   Future<void> _sendChangePasswordOtp() async {
@@ -357,9 +277,6 @@ class _SecuritySettingsScreenState
       if (!mounted) return;
       setState(() {
         _biometricEnabled = value;
-        if (!value) {
-          _hasBiometricCredentials = false;
-        }
       });
       AppSnackbar.show(
         context,
@@ -443,72 +360,6 @@ class _SecuritySettingsScreenState
             ),
 
             const SizedBox(height: SpacingTokens.lg),
-            AppCard(
-              padding: const EdgeInsets.all(SpacingTokens.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'حفظ بيانات الدخول',
-                    style: TypographyTokens.body(cs.onSurface),
-                  ),
-                  const SizedBox(height: SpacingTokens.xxs),
-                  Text(
-                    'الحفظ التلقائي يعبّئ حقول تسجيل الدخول فقط، أما البصمة فتستخدم بيانات محفوظة محليًا بعد تفعيلها. حالة بيانات البصمة: ${_hasBiometricCredentials ? 'محفوظة' : 'غير محفوظة بعد'}',
-                    style: TypographyTokens.caption(
-                      cs.onSurface.withValues(alpha: 0.45),
-                    ),
-                  ),
-                  const SizedBox(height: SpacingTokens.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'حفظ بيانات الدخول التقليدي',
-                              style: TypographyTokens.bodySmall(cs.onSurface),
-                            ),
-                            const SizedBox(height: SpacingTokens.xxs),
-                            Text(
-                              !_rememberMeEnabled
-                                  ? 'معطّل حاليًا'
-                                  : _hasRememberedCredentials
-                                  ? 'مفعّل ويوجد بيانات محفوظة'
-                                  : 'مفعّل بدون بيانات محفوظة بعد',
-                              style: TypographyTokens.caption(
-                                cs.onSurface.withValues(alpha: 0.4),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Switch(
-                        value: _rememberMeEnabled,
-                        onChanged: _isBusy ? null : _setRememberMe,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: SpacingTokens.sm),
-                  _secureActionItem(
-                    cs,
-                    BrandIcons.info,
-                    'دليل الاستخدام',
-                    'افتح الدليل من هنا في أي وقت، إضافة إلى ظهوره للمستخدم الجديد أول مرة',
-                    () => context.push(RouteNames.onboarding),
-                  ),
-                  _secureActionItem(
-                    cs,
-                    BrandIcons.key,
-                    'حذف بيانات الدخول المحفوظة',
-                    'يحذف بيانات الدخول التقليدية والبيومترية المحلية ويعطّلها',
-                    _clearSavedCredentials,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: SpacingTokens.lg),
             const AppSectionLabel(text: 'إجراءات آمنة'),
             const SizedBox(height: SpacingTokens.sm),
 
@@ -557,9 +408,7 @@ class _SecuritySettingsScreenState
                   ),
                   const SizedBox(height: SpacingTokens.xs),
                   Text(
-                    _rememberMeEnabled
-                        ? 'سيتم الاحتفاظ ببيانات الدخول المحفوظة بعد تسجيل الخروج'
-                        : 'عند تسجيل الخروج سيتم إنهاء الجلسة فقط دون حفظ بيانات دخول جديدة',
+                    'بيانات الدخول تُدار تلقائيًا — فعّل "تذكرني" في شاشة الدخول لحفظها',
                     style: TypographyTokens.caption(
                       cs.onSurface.withValues(alpha: 0.45),
                     ),

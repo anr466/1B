@@ -68,7 +68,7 @@ class HeartbeatMonitor:
                 error_logged = self._log_heartbeat_failure(seconds_ago, critical=False)
                 self.last_warning_time = datetime.now()
         else:
-            # Reset counters when healthy
+            self._resolve_heartbeat_failures()
             self.last_warning_time = None
             self.last_critical_time = None
         
@@ -94,6 +94,39 @@ class HeartbeatMonitor:
         elapsed = (datetime.now() - self.last_critical_time).total_seconds()
         return elapsed > 300  # مرة كل 5 دقائق
     
+    def _resolve_heartbeat_failures(self) -> None:
+        try:
+            from backend.utils.error_logger import ErrorLogger, ErrorSource
+
+            error_logger = ErrorLogger()
+            with error_logger.db_manager.get_write_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE system_errors
+                    SET resolved = TRUE,
+                        resolved_at = CURRENT_TIMESTAMP,
+                        resolved_by = 'heartbeat-monitor',
+                        status = 'resolved',
+                        requires_admin = FALSE
+                    WHERE resolved = FALSE
+                      AND source = %s
+                      AND (
+                        error_fingerprint IN (%s, %s)
+                        OR error_message LIKE %s
+                        OR error_message = %s
+                      )
+                    """,
+                    (
+                        ErrorSource.BACKGROUND.value,
+                        'heartbeat:critical',
+                        'heartbeat:warning',
+                        '⚠️ النظام متوقف أو معلق - لم تصل نبضة منذ %',
+                        'تحذير: تأخر في نبضات النظام',
+                    ),
+                )
+        except Exception as e:
+            logger.debug(f"Heartbeat resolve skipped: {e}")
+
     def _log_heartbeat_failure(self, seconds_ago: int, critical: bool = False) -> bool:
         """
         تسجيل فشل heartbeat
@@ -118,7 +151,8 @@ class HeartbeatMonitor:
                     source=ErrorSource.BACKGROUND,
                     message=f'⚠️ النظام متوقف أو معلق - لم تصل نبضة منذ {seconds_ago} ثانية',
                     details=f'آخر نبضة كانت منذ {seconds_ago} ثانية. النظام على الأرجح معلق أو توقف. يجب التحقق فوراً.',
-                    include_traceback=False
+                    include_traceback=False,
+                    fingerprint='heartbeat:critical'
                 )
                 admin_notifier.notify_trading_stopped(
                     f"انقطاع heartbeat: آخر نبضة منذ {seconds_ago} ثانية"
@@ -130,7 +164,8 @@ class HeartbeatMonitor:
                     source=ErrorSource.BACKGROUND,
                     message=f'تحذير: تأخر في نبضات النظام',
                     details=f'آخر نبضة كانت منذ {seconds_ago} ثانية (المتوقع: < 30 ثانية)',
-                    include_traceback=False
+                    include_traceback=False,
+                    fingerprint='heartbeat:warning'
                 )
                 logger.warning(f"⚠️ HEARTBEAT WARNING: {seconds_ago}s ago")
             

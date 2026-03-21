@@ -1,8 +1,9 @@
 # ============================================================================
 # Production Requirements - المكتبات المستخدمة في الإنتاج فقط
 # ============================================================================
-# تم تحليل الكود وتحديد المكتبات المستخدمة فعلاً
-# الهدف: تقليل حجم البيئة الافتراضية من 462 MB إلى 120-150 MB
+# تم تثبيت الإصدارات من البيئة الفعلية المثبتة (pip freeze)
+# Python 3.13.7 - متوافق مع هذا المحرر
+# آخر تحديث: 2026-03-21
 # ============================================================================
 
 # ============================================================================
@@ -12,16 +13,23 @@ fastapi==0.121.0              # FastAPI framework
 uvicorn==0.38.0               # ASGI server
 starlette==0.49.3             # Starlette (dependency of FastAPI)
 pydantic==2.12.4              # Data validation
+pydantic_core==2.41.5         # Pydantic core
 python-multipart==0.0.20      # Form data parsing
+typing-inspection==0.4.2      # Type inspection
+typing_extensions==4.15.0     # Typing extensions
+annotated-types==0.7.0        # Annotated types
 
 # ============================================================================
 # 2. Rate Limiting & Security
 # ============================================================================
 slowapi==0.1.9                # Rate limiting for FastAPI
 limits==4.2                   # Rate limiting library
-Flask-Limiter==3.5.0          # Rate limiting for legacy Flask routes
-bcrypt==4.1.1                 # Password hashing for auth endpoints
+Flask-Limiter==4.1.1          # Rate limiting for legacy Flask routes
+bcrypt==5.0.0                 # Password hashing for auth endpoints
 cryptography==46.0.3          # Encryption & security
+cffi==2.0.0                   # C Foreign Function Interface
+pycparser==3.0                # C parser
+PyJWT==2.11.0                 # JSON Web Tokens
 
 # ============================================================================
 # 3. Firebase & Cloud Services
@@ -29,6 +37,21 @@ cryptography==46.0.3          # Encryption & security
 firebase_admin==7.1.0         # Firebase Admin SDK
 google-auth==2.43.0           # Google authentication
 google-cloud-firestore==2.21.0 # Firestore database
+google-cloud-storage==3.9.0   # Cloud Storage
+google-cloud-core==2.5.0      # Google Cloud core
+google-api-core==2.29.0       # Google API core
+google-crc32c==1.8.0          # CRC32C for Google
+google-resumable-media==2.8.0 # Resumable media uploads
+googleapis-common-protos==1.72.0 # Common protos
+CacheControl==0.14.4          # HTTP caching
+grpcio==1.78.0                # gRPC
+grpcio-status==1.78.0         # gRPC status
+proto-plus==1.27.1            # Proto plus
+protobuf==6.33.5              # Protocol Buffers
+pyasn1==0.6.2                 # ASN.1
+pyasn1_modules==0.4.2         # ASN.1 modules
+rsa==4.9.1                    # RSA encryption
+msgpack==1.1.2                # MessagePack
 
 # ============================================================================
 # 4. Data Processing & Analysis
@@ -40,20 +63,40 @@ scipy==1.16.3                 # Scientific computing
 scikit-learn==1.8.0           # ML preprocessing/classification
 joblib==1.5.3                 # Model/scaler persistence
 xgboost==3.2.0                # ML signal classifier backend
+numba==0.61.2                 # JIT compiler
+llvmlite==0.44.0              # LLVM interface
+narwhals==2.16.0              # DataFrame compatibility
 
 # ============================================================================
 # 5. Backtesting
 # ============================================================================
 backtesting==0.6.5            # Backtesting library
+bokeh==3.8.2                  # Interactive plots (backtesting dep)
+contourpy==1.3.3              # Contour plots
+pillow==12.1.1                # Image processing
+tornado==6.5.4                # Async networking
 
 # ============================================================================
 # 6. HTTP & Networking
 # ============================================================================
 requests==2.32.5              # HTTP library
+httpx==0.28.1                 # Async HTTP client
+httpcore==1.0.9               # HTTP core
+h11==0.16.0                   # HTTP/1.1
+h2==4.3.0                     # HTTP/2
+hpack==4.1.0                  # HTTP/2 header compression
+hyperframe==6.1.0             # HTTP/2 framing
 urllib3==2.5.0                # HTTP client
 certifi==2025.10.5            # SSL certificates
 charset-normalizer==3.4.4     # Character encoding
 idna==3.11                    # Internationalized domain names
+aiohttp==3.13.3               # Async HTTP
+aiohappyeyeballs==2.6.1       # Happy Eyeballs algorithm
+aiosignal==1.4.0              # Async signal handling
+frozenlist==1.8.0             # Frozen list
+multidict==6.7.1              # Multidict
+propcache==0.4.1              # Property caching
+websockets==16.0              # WebSocket client
 
 # ============================================================================
 # 7. Date & Time
@@ -61,11 +104,15 @@ idna==3.11                    # Internationalized domain names
 python-dateutil==2.9.0.post0  # Date utilities
 pytz==2025.2                  # Timezone support
 tzdata==2025.2                # Timezone data
+tzlocal==5.3.1                # Local timezone
+dateparser==1.3.0             # Date parsing
+regex==2026.1.15              # Regex (dateparser dep)
 
 # ============================================================================
 # 8. Binance & Trading
 # ============================================================================
 python-binance==1.0.32        # Binance API client
+pycryptodome==3.23.0          # Cryptographic functions
 
 # ============================================================================
 # 9. Email & Validation
@@ -85,21 +132,35 @@ psycopg2-binary==2.9.10       # PostgreSQL driver
 psutil==7.2.2                 # System health monitor (CPU/MEM/Disk)
 
 # ============================================================================
-# 12. Legacy (Flask - قد يتم حذفه في المستقبل)
+# 12. Legacy (Flask)
 # ============================================================================
 Flask==3.1.2                  # Flask framework (legacy)
 flask-cors==4.0.0             # CORS support for legacy Flask routes
+Werkzeug==3.1.5               # WSGI utilities
+Jinja2==3.1.6                 # Template engine
+MarkupSafe==3.0.3             # String escaping
+itsdangerous==2.2.0           # Data signing
+blinker==1.9.0                # Signal support
+click==8.3.1                  # CLI framework
+
+# ============================================================================
+# 13. Utilities
+# ============================================================================
+six==1.17.0                   # Python 2/3 compatibility
+tqdm==4.67.3                  # Progress bars
+packaging==24.2               # Packaging utilities
+ordered-set==4.1.0            # Ordered set
+annotated-doc==0.0.4          # Annotated doc
+attrs==25.4.0                 # Classes without boilerplate
+Deprecated==1.3.1             # Deprecation decorators
+PyYAML==6.0.3                 # YAML parser
+Pygments==2.19.2              # Syntax highlighting
+cachetools==6.2.6             # Caching utilities
 
 # ============================================================================
 # ملاحظات مهمة:
 # ============================================================================
-# - Python 3.12 (بدلاً من 3.9)
-# - جميع المكتبات متوافقة مع Python 3.12
-# - تم إضافة python-binance (مستخدمة في backend/utils/)
-# - تم إضافة email-validator و dnspython (مستخدمة في Pydantic schemas)
-# - تم حذف 82 مكتبة غير مستخدمة
-# - توفير 30% من حجم البيئة الافتراضية
-# - تسريع التثبيت 50%
-# - تقليل استهلاك الذاكرة 40%
-# - 100% توافق مع جميع المكونات
+# - Python 3.13.7
+# - جميع الإصدارات مثبتة من pip freeze الفعلي
+# - 100% توافق مع البيئة الحالية والمحرر
 # ============================================================================

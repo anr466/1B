@@ -218,6 +218,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        key: const Key('login_screen'),
         backgroundColor: cs.surface,
         body: SafeArea(
           child: SingleChildScrollView(
@@ -333,6 +334,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                   // ─── Login Button ────────────────────
                   AppButton(
+                    key: const Key('login_submit_button'),
                     label: 'تسجيل الدخول',
                     onPressed: isAnyAuthLoading ? null : _login,
                     isLoading: auth.isLoading,

@@ -35,7 +35,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.logging_config import get_logger
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
+from backend.core.state_manager import StateManager
 
 logger = get_logger(__name__)
 
@@ -76,7 +77,8 @@ class TradingStateMachine:
     """
 
     def __init__(self):
-        self.db = DatabaseManager()
+        self.db = get_db_manager()
+        self.state_manager = StateManager(self.db)
         self.project_root = PROJECT_ROOT
         self.pid_file = self.project_root / 'tmp' / 'system.pid'
         self.reconcile_stats = {
@@ -90,73 +92,6 @@ class TradingStateMachine:
             'last_event_type': None,
         }
         self.reconcile_warn_threshold = int(os.getenv('RECONCILE_WARN_THRESHOLD', '5'))
-        self._ensure_db_columns()
-
-    # ==================== DB Schema ====================
-
-    def _ensure_db_columns(self):
-        """Add trading_state, session_id, mode, initiated_by columns if missing."""
-        try:
-            with self.db.get_write_connection() as conn:
-                # Check existing columns
-                cols = [
-                    row[0] for row in conn.execute("""
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_schema = 'public' AND table_name = 'system_status'
-                    """).fetchall()
-                ]
-
-                if 'trading_state' not in cols:
-                    conn.execute("ALTER TABLE system_status ADD COLUMN trading_state TEXT DEFAULT 'STOPPED'")
-                    logger.info("✅ Added trading_state column to system_status")
-
-                if 'session_id' not in cols:
-                    conn.execute("ALTER TABLE system_status ADD COLUMN session_id TEXT")
-                    logger.info("✅ Added session_id column to system_status")
-
-                if 'mode' not in cols:
-                    conn.execute("ALTER TABLE system_status ADD COLUMN mode TEXT DEFAULT 'PAPER'")
-                    logger.info("✅ Added mode column to system_status")
-
-                if 'initiated_by' not in cols:
-                    conn.execute("ALTER TABLE system_status ADD COLUMN initiated_by TEXT")
-                    logger.info("✅ Added initiated_by column to system_status")
-
-                if 'error_count' not in cols:
-                    conn.execute("ALTER TABLE system_status ADD COLUMN error_count INTEGER DEFAULT 0")
-                    logger.info("✅ Added error_count column to system_status")
-
-                if 'last_error' not in cols:
-                    conn.execute("ALTER TABLE system_status ADD COLUMN last_error TEXT")
-                    logger.info("✅ Added last_error column to system_status")
-
-                # Ensure canonical row exists (single-source row id=1)
-                conn.execute("""
-                    INSERT INTO system_status
-                    (id, status, is_running, trading_state, mode, message, last_update)
-                    VALUES (1, 'stopped', FALSE, 'STOPPED', 'PAPER', 'النظام متوقف', CURRENT_TIMESTAMP)
-                    ON CONFLICT (id) DO NOTHING
-                """)
-
-                # Initialize/repair trading_state if NULL/empty/invalid
-                conn.execute("""
-                    UPDATE system_status SET trading_state = 'STOPPED'
-                    WHERE id = 1 AND (
-                        trading_state IS NULL
-                        OR TRIM(trading_state) = ''
-                        OR UPPER(trading_state) NOT IN ('STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'ERROR')
-                    )
-                """)
-
-                # Ensure mode has a sane default
-                conn.execute("""
-                    UPDATE system_status SET mode = 'PAPER'
-                    WHERE id = 1 AND (mode IS NULL OR TRIM(mode) = '')
-                """)
-                conn.commit()
-        except Exception as e:
-            logger.error(f"❌ Failed to ensure DB columns: {e}")
 
     def _normalize_state(self, raw_state: Any) -> str:
         """Normalize DB state into canonical enum values."""
@@ -378,13 +313,18 @@ class TradingStateMachine:
 
                 # ✅ FIX: Sync with StateManager (UnifiedSystemManager)
                 try:
-                    from backend.core.state_manager import StateManager
-                    state_manager = StateManager()
-                    state_manager.write_state({
+                    self.state_manager.reset_monitoring_data()
+                    self.state_manager.write_state({
                         'status': 'running',
+                        'trading_state': RUNNING,
                         'is_running': True,
                         'pid': pid,
                         'started_at': datetime.now().isoformat(),
+                        'heartbeat': {
+                            'last_beat': None,
+                            'beats_count': 0,
+                            'missed_beats': 0,
+                        },
                         'message': 'النظام يعمل'
                     }, user=initiated_by)
                     logger.info("✅ Synced state with StateManager")
@@ -482,10 +422,10 @@ class TradingStateMachine:
 
                 # ✅ FIX: Sync with StateManager (UnifiedSystemManager)
                 try:
-                    from backend.core.state_manager import StateManager
-                    state_manager = StateManager()
-                    state_manager.write_state({
+                    self.state_manager.reset_monitoring_data()
+                    self.state_manager.write_state({
                         'status': 'stopped',
+                        'trading_state': STOPPED,
                         'is_running': False,
                         'pid': None,
                         'started_at': None,
@@ -534,6 +474,19 @@ class TradingStateMachine:
                                 message='إيقاف طوارئ')
                 conn.commit()
 
+            try:
+                self.state_manager.reset_monitoring_data()
+                self.state_manager.write_state({
+                    'status': 'stopped',
+                    'trading_state': STOPPED,
+                    'is_running': False,
+                    'pid': None,
+                    'started_at': None,
+                    'message': 'إيقاف طوارئ'
+                }, user=initiated_by)
+            except Exception as sync_error:
+                logger.warning(f"⚠️ Failed to sync emergency stop with StateManager: {sync_error}")
+
             self._log_transition('ANY', STOPPED, initiated_by, session_id,
                                 'إيقاف طوارئ فوري')
 
@@ -557,6 +510,18 @@ class TradingStateMachine:
                                     started_at=None,
                                     message='تم إعادة التعيين')
                     conn.commit()
+                    try:
+                        self.state_manager.reset_monitoring_data()
+                        self.state_manager.write_state({
+                            'status': 'stopped',
+                            'trading_state': STOPPED,
+                            'is_running': False,
+                            'pid': None,
+                            'started_at': None,
+                            'message': 'تم إعادة التعيين'
+                        }, user=initiated_by)
+                    except Exception as sync_error:
+                        logger.warning(f"⚠️ Failed to sync reset-error with StateManager: {sync_error}")
                     self._log_transition(ERROR, STOPPED, initiated_by, None,
                                         'إعادة تعيين من حالة خطأ')
             return self.get_state()
@@ -729,19 +694,37 @@ class TradingStateMachine:
     def _check_settings_configured(self) -> bool:
         """Check if trading settings exist and are properly configured."""
         try:
+            admin_user_id = self._resolve_active_admin_user_id()
+            if admin_user_id is None:
+                return False
             with self.db.get_connection() as conn:
                 row = conn.execute("""
                     SELECT position_size_percentage, max_positions
                     FROM user_settings
-                    WHERE user_id = 1 AND is_demo = 1
+                    WHERE user_id = %s AND is_demo = %s
                     LIMIT 1
-                """).fetchone()
+                """, (admin_user_id, True)).fetchone()
                 if not row:
                     return False
                 # Settings exist — consider configured if position_size > 0 and max_positions > 0
                 return bool(row[0] and row[0] > 0 and row[1] and row[1] > 0)
         except Exception:
             return False
+
+    def _resolve_active_admin_user_id(self) -> Optional[int]:
+        """Resolve the active admin account dynamically instead of assuming a fixed user id."""
+        try:
+            with self.db.get_connection() as conn:
+                row = conn.execute("""
+                    SELECT id
+                    FROM users
+                    WHERE user_type = 'admin' AND is_active = %s
+                    ORDER BY id
+                    LIMIT 1
+                """, (True,)).fetchone()
+                return int(row[0]) if row else None
+        except Exception:
+            return None
 
     # ==================== Process Management ====================
 
@@ -893,7 +876,7 @@ class TradingStateMachine:
         try:
             with self.db.get_connection() as conn:
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM active_positions WHERE is_active = 1"
+                    "SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE"
                 ).fetchone()
                 return row[0] if row else 0
         except Exception:

@@ -31,8 +31,9 @@ class IndependentLearningSystem:
         
         # مصادر البيانات المسموحة
         self.allowed_sources = {
-            'demo_trading': True,      # التداول الوهمي مسموح
-            'real_trading': True,      # التداول الحقيقي مسموح
+            'demo_trading': False,
+            'real_trading': True,
+            'live_trading': True,
             'backtesting': False       # Backtesting ممنوع
         }
         
@@ -63,8 +64,8 @@ class IndependentLearningSystem:
                 self.logger.debug(f"❌ رفض صفقة من Backtesting: {source}")
                 return False
             
-            # قبول التداول الحقيقي (وهمي وحقيقي)
-            if source in ['demo_trading', 'real_trading', 'live_trading']:
+            # قبول التداول الحقيقي فقط
+            if source in ['real_trading', 'live_trading']:
                 return True
             
             # قبول الصفقات بدون تحديد المصدر (افتراضياً من التداول الفعلي)

@@ -10,13 +10,12 @@ import logging
 import sys
 from pathlib import Path
 
-# ✅ FIX: إضافة استيراد DatabaseManager
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 logger = logging.getLogger(__name__)
 
-_db = DatabaseManager()
+_db = get_db_manager()
 
 def get_user_by_email(email: str) -> Optional[Dict]:
     """

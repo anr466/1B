@@ -3,8 +3,10 @@
 يوفر واجهة آمنة للتفاعل مع Binance API
 """
 
+import os
 import logging
 import json
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from decimal import Decimal
@@ -15,7 +17,7 @@ import sys
 from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "database"))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.utils.trading_context import get_effective_is_demo
 import hashlib
 import hmac
@@ -30,11 +32,25 @@ except ImportError:
 
 class BinanceManager:
     """مدير Binance API للمستخدمين"""
+    _shared_clients: Dict[int, Client] = {}
+    _shared_balance_cache: Dict[int, Dict[str, Any]] = {}
+    _shared_balance_locks: Dict[int, threading.Lock] = {}
+    _shared_guard_lock = threading.Lock()
     
     def __init__(self):
-        self.db_manager = DatabaseManager()
+        self.db_manager = get_db_manager()
         self.logger = logging.getLogger(__name__)
-        self._clients = {}  # تخزين مؤقت للعملاء
+        self._clients = self.__class__._shared_clients  # تخزين مؤقت للعملاء
+        self._balance_cache = self.__class__._shared_balance_cache
+        self._balance_cache_ttl_seconds = 2
+
+    def _get_balance_lock(self, user_id: int) -> threading.Lock:
+        with self.__class__._shared_guard_lock:
+            lock = self.__class__._shared_balance_locks.get(user_id)
+            if lock is None:
+                lock = threading.Lock()
+                self.__class__._shared_balance_locks[user_id] = lock
+            return lock
         
     def _decrypt_api_keys(self, encrypted_key: str, encrypted_secret: str) -> tuple:
         """فك تشفير مفاتيح API باستخدام خدمة التشفير الموحدة"""
@@ -146,6 +162,21 @@ class BinanceManager:
                         'permissions': json.loads(row[4]) if row[4] else [],
                         'last_verified': row[5]
                     }
+
+                allow_env_keys = (os.getenv('ALLOW_ENV_BINANCE_KEYS_FOR_TESTING') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+                env_api_key = (os.getenv('BINANCE_BACKEND_API_KEY') or '').strip()
+                env_api_secret = (os.getenv('BINANCE_BACKEND_API_SECRET') or '').strip()
+                if allow_env_keys and env_api_key and env_api_secret:
+                    self.logger.info(f"✅ استخدام مفاتيح Binance من البيئة للمستخدم {user_id} داخل BinanceManager في وضع الاختبار")
+                    return {
+                        'api_key': env_api_key,
+                        'api_secret': env_api_secret,
+                        'is_testnet': False,
+                        'is_active': True,
+                        'permissions': [],
+                        'last_verified': None,
+                    }
+
                 return None
                 
         except Exception as e:
@@ -185,53 +216,122 @@ class BinanceManager:
         except Exception as e:
             self.logger.error(f"خطأ في إنشاء عميل Binance: {e}")
             return None
+
+    def _get_asset_usdt_price(self, client: Client, asset: str) -> Decimal:
+        asset = (asset or '').upper()
+        if not asset:
+            return Decimal('0')
+        if asset in {'USDT', 'USD'}:
+            return Decimal('1')
+        if asset in {'USDC', 'BUSD', 'FDUSD', 'TUSD', 'USDP'}:
+            return Decimal('1')
+
+        pairs_to_try = [
+            f'{asset}USDT',
+            f'{asset}USDC',
+            f'{asset}BUSD',
+            f'{asset}FDUSD',
+        ]
+        for symbol in pairs_to_try:
+            try:
+                ticker = client.get_symbol_ticker(symbol=symbol)
+                if ticker and ticker.get('price'):
+                    return Decimal(str(ticker['price']))
+            except Exception:
+                continue
+        return Decimal('0')
+
+    def _summarize_account_balances(self, client: Client, account_info: Dict[str, Any]) -> Tuple[Decimal, Decimal, Decimal]:
+        total_usdt = Decimal('0')
+        free_usdt = Decimal('0')
+        locked_usdt = Decimal('0')
+
+        for balance in account_info.get('balances', []):
+            asset = balance.get('asset')
+            free = Decimal(str(balance.get('free', '0') or '0'))
+            locked = Decimal(str(balance.get('locked', '0') or '0'))
+            total = free + locked
+            if total <= 0:
+                continue
+
+            price = self._get_asset_usdt_price(client, asset)
+            if price <= 0:
+                continue
+
+            free_usdt += free * price
+            locked_usdt += locked * price
+            total_usdt += total * price
+
+        return total_usdt, free_usdt, locked_usdt
+
+    def _get_cached_balance_summary(self, user_id: int) -> Optional[Dict[str, float]]:
+        cached = self._balance_cache.get(user_id)
+        if not cached:
+            return None
+        cached_at = cached.get('cached_at')
+        if not cached_at or (datetime.now() - cached_at).total_seconds() > self._balance_cache_ttl_seconds:
+            self._balance_cache.pop(user_id, None)
+            return None
+        return {
+            'total_usdt': float(cached.get('total_usdt', 0.0) or 0.0),
+            'free_usdt': float(cached.get('free_usdt', 0.0) or 0.0),
+            'locked_usdt': float(cached.get('locked_usdt', 0.0) or 0.0),
+        }
+
+    def _set_cached_balance_summary(self, user_id: int, total_usdt: Decimal, free_usdt: Decimal, locked_usdt: Decimal) -> None:
+        self._balance_cache[user_id] = {
+            'cached_at': datetime.now(),
+            'total_usdt': float(total_usdt),
+            'free_usdt': float(free_usdt),
+            'locked_usdt': float(locked_usdt),
+        }
     
     def sync_user_balance(self, user_id: int) -> bool:
         """مزامنة رصيد المستخدم من Binance"""
         try:
-            client = self._get_binance_client(user_id)
-            if not client:
-                return False
-            
-            # جلب معلومات الحساب
-            account_info = client.get_account()
-            
-            with self.db_manager.get_write_connection() as conn:
-                # حذف الأرصدة القديمة
-                conn.execute("DELETE FROM user_binance_balance WHERE user_id = %s", (user_id,))
+            cached_summary = self._get_cached_balance_summary(user_id)
+            if cached_summary is not None:
+                return True
+
+            balance_lock = self._get_balance_lock(user_id)
+            with balance_lock:
+                cached_summary = self._get_cached_balance_summary(user_id)
+                if cached_summary is not None:
+                    return True
+
+                client = self._get_binance_client(user_id)
+                if not client:
+                    return False
                 
-                # إدراج الأرصدة الجديدة
-                for balance in account_info['balances']:
-                    asset = balance['asset']
-                    free = Decimal(balance['free'])
-                    locked = Decimal(balance['locked'])
-                    total = free + locked
+                account_info = client.get_account()
+                
+                with self.db_manager.get_write_connection() as conn:
+                    conn.execute("DELETE FROM user_binance_balance WHERE user_id = %s", (user_id,))
                     
-                    # حفظ فقط الأصول التي لها رصيد
-                    if total > 0:
-                        conn.execute("""
-                            INSERT INTO user_binance_balance 
-                            (user_id, asset, free_balance, locked_balance, total_balance)
-                            VALUES (%s, %s, %s, %s, %s)
-                        """, (user_id, asset, float(free), float(locked), float(total)))
-                
-                # تحديث المحفظة المحلية بالرصيد الحقيقي
-                usdt_balance = next(
-                    (b for b in account_info['balances'] if b['asset'] == 'USDT'), 
-                    {'free': '0', 'locked': '0'}
-                )
-                
-                total_usdt = Decimal(usdt_balance['free']) + Decimal(usdt_balance['locked'])
-                
-                # تحديث أو إنشاء سجل المحفظة
-                conn.execute("""
-                    INSERT INTO portfolio (user_id, total_balance, available_balance, is_demo, updated_at)
-                    VALUES (%s, %s, %s, 0, CURRENT_TIMESTAMP)
-                    ON CONFLICT(user_id, is_demo) DO UPDATE SET 
-                    total_balance = excluded.total_balance, 
-                    available_balance = excluded.available_balance,
-                    updated_at = CURRENT_TIMESTAMP
-                """, (user_id, float(total_usdt), float(total_usdt)))
+                    for balance in account_info['balances']:
+                        asset = balance['asset']
+                        free = Decimal(balance['free'])
+                        locked = Decimal(balance['locked'])
+                        total = free + locked
+                        
+                        if total > 0:
+                            conn.execute("""
+                                INSERT INTO user_binance_balance 
+                                (user_id, asset, free_balance, locked_balance, total_balance)
+                                VALUES (%s, %s, %s, %s, %s)
+                            """, (user_id, asset, float(free), float(locked), float(total)))
+
+                    total_usdt, free_usdt, locked_usdt = self._summarize_account_balances(client, account_info)
+                    self._set_cached_balance_summary(user_id, total_usdt, free_usdt, locked_usdt)
+                    
+                    conn.execute("""
+                        INSERT INTO portfolio (user_id, total_balance, available_balance, is_demo, updated_at)
+                        VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
+                        ON CONFLICT(user_id, is_demo) DO UPDATE SET 
+                        total_balance = excluded.total_balance, 
+                        available_balance = excluded.available_balance,
+                        updated_at = CURRENT_TIMESTAMP
+                    """, (user_id, float(total_usdt), float(free_usdt)))
             
             self.logger.info(f"تم مزامنة رصيد المستخدم {user_id}")
             return True
@@ -535,7 +635,32 @@ class BinanceManager:
                 """, (user_id,)).fetchall()
                 
                 balance_list = []
-                total_usdt = 0
+                total_usdt = 0.0
+                free_usdt = 0.0
+                locked_usdt = 0.0
+
+                cached_summary = self._get_cached_balance_summary(user_id)
+                if cached_summary is not None:
+                    total_usdt = float(cached_summary.get('total_usdt', 0.0) or 0.0)
+                    free_usdt = float(cached_summary.get('free_usdt', 0.0) or 0.0)
+                    locked_usdt = float(cached_summary.get('locked_usdt', 0.0) or 0.0)
+                    for balance in balances:
+                        balance_list.append({
+                            'asset': balance[0],
+                            'free': balance[1],
+                            'locked': balance[2],
+                            'total': balance[3],
+                            'last_sync': balance[4]
+                        })
+                    return {
+                        "success": True,
+                        "balances": balance_list,
+                        "free_usdt": free_usdt,
+                        "locked_usdt": locked_usdt,
+                        "total_usdt": total_usdt
+                    }
+
+                client = self._get_binance_client(user_id)
                 
                 for balance in balances:
                     balance_data = {
@@ -546,13 +671,29 @@ class BinanceManager:
                         'last_sync': balance[4]
                     }
                     balance_list.append(balance_data)
-                    
-                    if balance[0] == 'USDT':
-                        total_usdt = balance[3]
+
+                    price = Decimal('0')
+                    if client:
+                        price = self._get_asset_usdt_price(client, balance[0])
+                    if price <= 0:
+                        continue
+
+                    free_usdt += float(Decimal(str(balance[1] or 0)) * price)
+                    locked_usdt += float(Decimal(str(balance[2] or 0)) * price)
+                    total_usdt += float(Decimal(str(balance[3] or 0)) * price)
+
+                self._balance_cache[user_id] = {
+                    'cached_at': datetime.now(),
+                    'total_usdt': total_usdt,
+                    'free_usdt': free_usdt,
+                    'locked_usdt': locked_usdt,
+                }
                 
                 return {
                     "success": True,
                     "balances": balance_list,
+                    "free_usdt": free_usdt,
+                    "locked_usdt": locked_usdt,
                     "total_usdt": total_usdt
                 }
                 

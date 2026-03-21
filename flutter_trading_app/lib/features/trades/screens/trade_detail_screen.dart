@@ -148,6 +148,11 @@ class TradeDetailScreen extends ConsumerWidget {
                             'الكمية',
                             t.quantity.toStringAsFixed(4),
                           ),
+                          _detailRowWidget(
+                            cs,
+                            'مبلغ الدخول',
+                            MoneyText(amount: t.entryAmount),
+                          ),
                           if (t.pnl != null)
                             _detailRowWidget(
                               cs,
@@ -173,13 +178,13 @@ class TradeDetailScreen extends ConsumerWidget {
                               _detailRow(
                                 cs,
                                 'وقف الخسارة',
-                                '\$${t.stopLoss!.toStringAsFixed(6)}',
+                                '\$${t.stopLoss!.toStringAsFixed(6)}${t.stopLossPct != null ? ' (${t.stopLossPct!.abs().toStringAsFixed(2)}%)' : ''}',
                               ),
                             if (t.takeProfit != null)
                               _detailRow(
                                 cs,
                                 'جني الأرباح',
-                                '\$${t.takeProfit!.toStringAsFixed(6)}',
+                                '\$${t.takeProfit!.toStringAsFixed(6)}${t.takeProfitPct != null ? ' (${t.takeProfitPct!.abs().toStringAsFixed(2)}%)' : ''}',
                               ),
                           ],
                         ),

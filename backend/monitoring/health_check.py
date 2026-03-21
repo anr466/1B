@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import requests
 
+from backend.infrastructure.db_access import get_db_manager
+
 logger = logging.getLogger(__name__)
 
 class HealthCheckService:
@@ -65,8 +67,7 @@ class HealthCheckService:
         """فحص حالة قاعدة البيانات"""
         try:
             start_time = time.time()
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
+            db = get_db_manager()
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(

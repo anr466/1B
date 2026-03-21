@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, time as dt_time, timedelta
 from threading import Thread, Event
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 class DailyResetScheduler:
     """
@@ -25,7 +25,7 @@ class DailyResetScheduler:
             db_manager: مدير قاعدة البيانات (اختياري)
             logger: مسجل الأحداث (اختياري)
         """
-        self.db = db_manager or DatabaseManager()
+        self.db = db_manager or get_db_manager()
         self.logger = logger or logging.getLogger(__name__)
         self.is_running = False
         self.scheduler_thread = None

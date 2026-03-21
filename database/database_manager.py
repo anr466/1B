@@ -471,13 +471,41 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         """Apply lightweight compatibility migrations for existing PostgreSQL databases."""
         try:
             with self.get_write_connection() as conn:
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS trading_state TEXT DEFAULT 'STOPPED'")
                 conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS message TEXT DEFAULT ''")
                 conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ")
                 conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS pid INTEGER")
                 conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS session_id TEXT")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'demo'")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'PAPER'")
                 conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS initiated_by TEXT")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS error_count INTEGER DEFAULT 0")
+                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS last_error TEXT")
                 conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS subsystem_status TEXT DEFAULT '{}' ")
+                conn.execute("""
+                    INSERT INTO system_status
+                    (id, status, is_running, trading_state, mode, message, last_update)
+                    VALUES (1, 'stopped', FALSE, 'STOPPED', 'PAPER', 'النظام متوقف', CURRENT_TIMESTAMP)
+                    ON CONFLICT (id) DO NOTHING
+                """)
+                conn.execute("""
+                    UPDATE system_status SET trading_state = 'STOPPED'
+                    WHERE id = 1 AND (
+                        trading_state IS NULL
+                        OR TRIM(trading_state) = ''
+                        OR UPPER(trading_state) NOT IN ('STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'ERROR')
+                    )
+                """)
+                conn.execute("""
+                    UPDATE system_status SET mode = 'PAPER'
+                    WHERE id = 1 AND (mode IS NULL OR TRIM(mode) = '')
+                """)
+                conn.execute("""
+                    UPDATE system_status
+                    SET error_count = COALESCE(error_count, 0),
+                        message = COALESCE(message, ''),
+                        subsystem_status = COALESCE(NULLIF(subsystem_status, ''), '{}')
+                    WHERE id = 1
+                """)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS admin_notification_settings (
                         id BIGINT PRIMARY KEY,
@@ -552,6 +580,25 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         timeframe TEXT,
                         market_regime TEXT
                     )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_binance_balance (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        asset TEXT NOT NULL,
+                        free_balance DOUBLE PRECISION DEFAULT 0,
+                        locked_balance DOUBLE PRECISION DEFAULT 0,
+                        total_balance DOUBLE PRECISION DEFAULT 0,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_binance_balance_user
+                    ON user_binance_balance(user_id)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_binance_balance_user_asset
+                    ON user_binance_balance(user_id, asset)
                 """)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS trade_learning_log (
@@ -877,6 +924,18 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 conn.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS ux_portfolio_user_mode
                     ON portfolio(user_id, is_demo)
+                """)
+                conn.execute("""
+                    ALTER TABLE portfolio
+                    ADD COLUMN IF NOT EXISTS first_trade_balance DOUBLE PRECISION
+                """)
+                conn.execute("""
+                    ALTER TABLE portfolio
+                    ADD COLUMN IF NOT EXISTS first_trade_at TIMESTAMPTZ
+                """)
+                conn.execute("""
+                    ALTER TABLE portfolio
+                    ADD COLUMN IF NOT EXISTS initial_balance_source TEXT DEFAULT 'system_seed'
                 """)
                 conn.execute("""
                     INSERT INTO user_settings (

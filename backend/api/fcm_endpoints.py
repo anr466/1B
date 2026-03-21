@@ -12,7 +12,7 @@ from flask import Blueprint, request, jsonify, g
 # إضافة مسار المشروع
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 from backend.utils.error_handler import log_error
 from backend.api.auth_middleware import require_auth
 
@@ -20,7 +20,7 @@ from backend.api.auth_middleware import require_auth
 fcm_bp = Blueprint('fcm', __name__, url_prefix='/notifications')
 
 # تهيئة قاعدة البيانات
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 @fcm_bp.route('/fcm-token', methods=['POST'])
 @require_auth

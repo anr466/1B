@@ -329,6 +329,7 @@ def register_registration_routes(bp, shared):
                             INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
                                 is_phone_verified, preferred_verification_method, created_at, user_type)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'user')
+                            RETURNING id
                         """, (username, email, password_hash, phone_number, full_name, is_verified, bool(is_phone_verified), verification_method))
                         
                         user_id = user_insert_cursor.lastrowid
@@ -526,6 +527,7 @@ def register_registration_routes(bp, shared):
                                 INSERT INTO users (username, email, password_hash, phone_number, name, email_verified, 
                                     is_phone_verified, preferred_verification_method, created_at, user_type)
                                 VALUES (%s, %s, %s, %s, %s, TRUE, FALSE, 'email', CURRENT_TIMESTAMP, 'user')
+                                RETURNING id
                             """, (username, email, password_hash, phone_number, full_name))
                             
                             user_id = user_insert_cursor.lastrowid
@@ -648,6 +650,7 @@ def register_registration_routes(bp, shared):
                                 email_verified, is_phone_verified, preferred_verification_method,
                                 user_type, is_active, created_at
                             ) VALUES (%s, %s, %s, %s, %s, TRUE, TRUE, 'sms', 'user', TRUE, %s)
+                            RETURNING id
                         """, (username, email, phone, password_hash, full_name,
                               time.strftime('%Y-%m-%d %H:%M:%S')))
                         

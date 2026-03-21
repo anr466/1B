@@ -46,8 +46,10 @@ class _MainShellState extends ConsumerState<MainShell> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        key: const Key('main_shell'),
         body: widget.child,
         bottomNavigationBar: Container(
+          key: const Key('main_shell_nav'),
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest,
             border: Border(
@@ -92,6 +94,7 @@ class _MainShellState extends ConsumerState<MainShell> {
         : SpacingTokens.tabIconInactive;
 
     return GestureDetector(
+      key: Key('main_shell_tab_$index'),
       onTap: () => _onTabTap(index),
       behavior: HitTestBehavior.opaque,
       child: SizedBox(

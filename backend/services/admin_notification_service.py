@@ -19,13 +19,14 @@ import requests
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from threading import Thread
+from backend.infrastructure.db_access import get_db_manager
 
 # إضافة مسار المشروع
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # استيراد خدمة Firebase للإشعارات
 try:
-    from utils.firebase_notification_service import FirebaseNotificationService
+    from backend.utils.firebase_notification_service import FirebaseNotificationService
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False
@@ -40,6 +41,7 @@ class AdminNotificationService:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.db = get_db_manager()
         
         # إعدادات الإشعارات (تُحمّل من قاعدة البيانات أو متغيرات البيئة)
         self.telegram_bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -62,11 +64,7 @@ class AdminNotificationService:
     def _load_notification_settings(self):
         """تحميل إعدادات الإشعارات من قاعدة البيانات"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 
                 # التحقق من وجود إعدادات
@@ -163,11 +161,7 @@ class AdminNotificationService:
                           alert_type: str, data: Dict = None):
         """حفظ الإشعار في قاعدة البيانات"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 
                 data_json = json.dumps(data) if data else None
@@ -332,15 +326,11 @@ class AdminNotificationService:
     def _get_admin_user_id(self) -> Optional[int]:
         """جلب معرف حساب الأدمن"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id FROM users 
-                    WHERE user_type = 'admin' AND is_active = 1
+                    WHERE user_type = 'admin' AND is_active = TRUE
                     LIMIT 1
                 """)
                 result = cursor.fetchone()
@@ -367,9 +357,7 @@ class AdminNotificationService:
     def notify_trading_stopped(self, reason: str):
         """إشعار بتوقف التداول"""
         try:
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            with db.get_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -481,11 +469,7 @@ class AdminNotificationService:
             admin_email = _pick_str('admin_email', self.admin_email)
             webhook_url = _pick_str('webhook_url', self.webhook_url)
 
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE admin_notification_settings SET
@@ -543,11 +527,7 @@ class AdminNotificationService:
     def get_unread_alerts(self, limit: int = 50) -> List[Dict]:
         """الحصول على الإشعارات غير المقروءة"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_connection() as conn:
+            with self.db.get_connection() as conn:
                 conn.row_factory = lambda row: dict(row)
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -580,11 +560,7 @@ class AdminNotificationService:
     def get_unread_count(self) -> int:
         """عدد الإشعارات غير المقروءة"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM system_alerts WHERE read = 0")
                 count = cursor.fetchone()[0]
@@ -596,11 +572,7 @@ class AdminNotificationService:
     def mark_as_read(self, alert_id: int) -> bool:
         """تحديد إشعار كمقروء"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE system_alerts SET read = 1 WHERE id = %s", (alert_id,))
             
@@ -612,11 +584,7 @@ class AdminNotificationService:
     def mark_all_as_read(self) -> bool:
         """تحديد جميع الإشعارات كمقروءة"""
         try:
-            # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
-            from database.database_manager import DatabaseManager
-            db = DatabaseManager()
-            
-            with db.get_write_connection() as conn:
+            with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE system_alerts SET read = 1 WHERE read = 0")
             

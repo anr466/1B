@@ -73,6 +73,7 @@ EMULATOR_IP = "10.0.2.2"  # IP خاص بمحاكي Android
 # ============================================================
 
 from config.logging_config import setup_logging, LOGS_DIR, LOG_FILE, ERROR_LOG_FILE, disable_print_in_production, is_production
+from backend.infrastructure.db_access import get_db_manager
 
 # ✅ تعطيل print() في الإنتاج - يحول الرسائل إلى ملف logs/print_output.log
 if disable_print_in_production():
@@ -209,8 +210,7 @@ def ensure_port_available(port, max_retries=3):
 def check_database_connection():
     """فحص اتصال قاعدة البيانات"""
     try:
-        from database.database_manager import DatabaseManager
-        db = DatabaseManager()
+        db = get_db_manager()
         with db.get_connection() as conn:
             conn.execute("SELECT 1").fetchone()
         logger.info("✅ قاعدة البيانات متصلة")
@@ -244,8 +244,7 @@ def cleanup_on_exit():
 
     try:
         _safe_log("🧹 تنظيف الموارد...")
-        from database.database_manager import DatabaseManager
-        db = DatabaseManager()
+        db = get_db_manager()
         db.close()
         _safe_log("✅ تم إغلاق اتصالات قاعدة البيانات")
     except Exception as e:
@@ -351,8 +350,7 @@ async def api_version():
 async def health_check():
     """فحص صحة النظام"""
     try:
-        from database.database_manager import DatabaseManager
-        db = DatabaseManager()
+        db = get_db_manager()
         with db.get_connection() as conn:
             conn.execute("SELECT 1").fetchone()
         

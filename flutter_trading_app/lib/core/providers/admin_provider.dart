@@ -12,12 +12,6 @@ final systemStatusProvider = FutureProvider.autoDispose<SystemStatusModel>((
   return repo.getTradingState();
 });
 
-final publicSystemStatusProvider =
-    FutureProvider.autoDispose<SystemStatusModel>((ref) async {
-      final repo = ref.watch(adminRepositoryProvider);
-      return repo.getPublicTradingState();
-    });
-
 /// Live polling provider — syncs with backend trading cycle every 15 seconds
 final tradingCycleLiveProvider = StreamProvider.autoDispose<SystemStatusModel>((
   ref,

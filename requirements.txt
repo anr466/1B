@@ -1,103 +1,85 @@
 # ==================== Trading AI Bot - Backend Requirements ====================
-# تم إنشاء هذا الملف: 2025-11-20
+# آخر تحديث: 2026-03-21
+# Python 3.13.7 - متوافق مع هذا المحرر
 # ⚠️ تحذير: لا تحذف هذا الملف - إنه ضروري لتشغيل النظام
 # 
 # لتثبيت جميع المكتبات:
 #   pip install -r requirements.txt
 #
-# لتثبيت مكتبة واحدة:
-#   pip install package_name==version
-#
-# لتحديث جميع المكتبات:
-#   pip install --upgrade -r requirements.txt
+# ملاحظة: يُفضل استخدام requirements-prod.txt أو requirements-dev.txt
+# هذا الملف للتوافق العام فقط
+# ==============================================================================
 
 # ==================== FastAPI & Web Framework ====================
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-flask==3.0.0
+fastapi==0.121.0
+uvicorn==0.38.0
+starlette==0.49.3
+Flask==3.1.2
 flask-cors==4.0.0
-python-multipart==0.0.6
+python-multipart==0.0.20
 
 # ==================== Database ====================
 # sqlite3  # Built-in with Python (no need to install)
-sqlalchemy==2.0.23
-alembic==1.12.1
 psycopg2-binary==2.9.10
 
 # ==================== Authentication & Security ====================
-pyjwt==2.10.1
-bcrypt==4.1.1
-cryptography==41.0.7
-python-dotenv==1.0.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+PyJWT==2.11.0
+bcrypt==5.0.0
+cryptography==46.0.3
+python-dotenv==1.2.1
+pydantic==2.12.4
+pydantic_core==2.41.5
 email-validator==2.3.0
 dnspython==2.8.0
 
 # ==================== API & HTTP ====================
-requests==2.31.0
-httpx>=0.24.0
-aiohttp==3.9.1
+requests==2.32.5
+httpx==0.28.1
+aiohttp==3.13.3
 
 # ==================== Binance Trading ====================
-python-binance==1.0.17
-ccxt==4.0.96
+python-binance==1.0.32
 
 # ==================== Data Processing & Analysis ====================
-pandas>=2.1.3
-numpy>=1.26.2
-scipy==1.11.4
-scikit-learn==1.3.2
+pandas==2.3.3
+numpy==2.2.6
+scipy==1.16.3
+scikit-learn==1.8.0
 
 # ==================== Machine Learning ====================
-xgboost==2.0.3
-joblib==1.3.2
+xgboost==3.2.0
+joblib==1.5.3
 
 # ==================== Rate Limiting & Performance ====================
 slowapi==0.1.9
-Flask-Limiter==3.5.0
-redis==5.0.1
-cachetools==5.3.2
+Flask-Limiter==4.1.1
+limits==4.2
+cachetools==6.2.6
 
 # ==================== Logging & Monitoring ====================
-python-json-logger==2.0.7
-sentry-sdk==1.38.0
-prometheus-client==0.19.0
-psutil==5.9.6
+psutil==7.2.2
 
 # ==================== Task Scheduling ====================
-schedule==1.2.0
-APScheduler==3.10.4
-celery==5.3.4
+# schedule و APScheduler و celery تم حذفها (غير مثبتة في البيئة الحالية)
 
-# ==================== Email & Notifications ====================
-python-telegram-bot>=20.3
-firebase-admin==6.2.0
+# ==================== Notifications ====================
+# python-telegram-bot تم حذفها (غير مثبتة في البيئة الحالية)
+firebase_admin==7.1.0
 
 # ==================== Testing ====================
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
-pytest-mock==3.12.0
+pytest==9.0.2
 
 # ==================== Development Tools ====================
-black==23.12.0
-flake8==6.1.0
-pylint==3.0.3
-isort==5.13.2
-mypy==1.7.1
+black==25.9.0
+flake8==7.3.0
 
 # ==================== Utilities ====================
-python-dateutil==2.8.2
-pytz==2023.3
-click==8.1.7
-tqdm==4.66.1
-colorama==0.4.6
-tabulate==0.9.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+click==8.3.1
+tqdm==4.67.3
+PyYAML==6.0.3
 
-# ==================== Optional: Advanced Features ====================
-# Uncomment if needed:
-# tensorflow==2.15.0  # For ML models
-# torch==2.1.1  # For deep learning
-# plotly==5.18.0  # For advanced charts
-# dash==2.14.1  # For dashboards
+# ==================== Backtesting ====================
+backtesting==0.6.5
+pandas-ta==0.4.71b0

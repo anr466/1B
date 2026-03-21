@@ -27,7 +27,7 @@ from functools import wraps
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 # استيراد خدمة OTP الموحدة
 try:
@@ -38,7 +38,7 @@ except ImportError:
     otp_service = None
     OTP_SERVICE_AVAILABLE = False
 
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 logger = logging.getLogger(__name__)
 
 # إنشاء Blueprint
@@ -548,10 +548,17 @@ def cancel_verification(action):
 
 # ==================== تنفيذ العمليات ====================
 
-def execute_secure_action(user_id, action, new_value, old_password=None):
-    """تنفيذ العملية الحساسة بعد التحقق"""
+def execute_secure_action(action: str, user_id: int, new_value: Any = None, old_password: str = None) -> Dict[str, Any]:
+    """تنفيذ العملية الآمنة بعد التحقق من OTP"""
     try:
-        with db_manager.get_write_connection() as conn:
+        def load_api_permissions(client):
+            if hasattr(client, 'get_api_key_permission'):
+                return client.get_api_key_permission()
+            if hasattr(client, 'get_account_api_permissions'):
+                return client.get_account_api_permissions()
+            raise AttributeError('Binance client permissions API is unavailable')
+
+        with db_manager.get_connection() as conn:
             cursor = conn.cursor()
             
             if action == 'change_name':
@@ -627,7 +634,7 @@ def execute_secure_action(user_id, action, new_value, old_password=None):
                 try:
                     from binance.client import Client
                     client = Client(api_key, secret_key)
-                    api_perms = client.get_api_key_permission()
+                    api_perms = load_api_permissions(client)
                     
                     if api_perms.get('enableWithdrawals', False):
                         return {

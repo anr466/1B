@@ -14,6 +14,9 @@ class SettingsModel {
   final String tradingMode;
   final String activePortfolio;
   final bool hasBinanceKeys;
+  final bool hasConfiguredDbKeys;
+  final bool usingEnvTestKeys;
+  final bool keysRequiredForCurrentMode;
   final bool canToggle;
 
   const SettingsModel({
@@ -28,6 +31,9 @@ class SettingsModel {
     this.tradingMode = '',
     this.activePortfolio = '',
     this.hasBinanceKeys = false,
+    this.hasConfiguredDbKeys = false,
+    this.usingEnvTestKeys = false,
+    this.keysRequiredForCurrentMode = true,
     this.canToggle = false,
   });
 
@@ -87,6 +93,21 @@ class SettingsModel {
           json['has_binance_keys'] == 1 ||
           json['hasBinanceKeys'] == true ||
           json['hasBinanceKeys'] == 1,
+      hasConfiguredDbKeys:
+          json['has_configured_db_keys'] == true ||
+          json['has_configured_db_keys'] == 1 ||
+          json['hasConfiguredDbKeys'] == true ||
+          json['hasConfiguredDbKeys'] == 1,
+      usingEnvTestKeys:
+          json['using_env_test_keys'] == true ||
+          json['using_env_test_keys'] == 1 ||
+          json['usingEnvTestKeys'] == true ||
+          json['usingEnvTestKeys'] == 1,
+      keysRequiredForCurrentMode:
+          json['keys_required_for_current_mode'] == true ||
+          json['keys_required_for_current_mode'] == 1 ||
+          json['keysRequiredForCurrentMode'] == true ||
+          json['keysRequiredForCurrentMode'] == 1,
       canToggle:
           json['can_toggle'] == true ||
           json['can_toggle'] == 1 ||
@@ -107,6 +128,9 @@ class SettingsModel {
     'tradingMode': tradingMode,
     'activePortfolio': activePortfolio,
     'hasBinanceKeys': hasBinanceKeys,
+    'hasConfiguredDbKeys': hasConfiguredDbKeys,
+    'usingEnvTestKeys': usingEnvTestKeys,
+    'keysRequiredForCurrentMode': keysRequiredForCurrentMode,
     'canToggle': canToggle,
   };
 
@@ -122,6 +146,9 @@ class SettingsModel {
     String? tradingMode,
     String? activePortfolio,
     bool? hasBinanceKeys,
+    bool? hasConfiguredDbKeys,
+    bool? usingEnvTestKeys,
+    bool? keysRequiredForCurrentMode,
     bool? canToggle,
   }) {
     return SettingsModel(
@@ -136,6 +163,10 @@ class SettingsModel {
       tradingMode: tradingMode ?? this.tradingMode,
       activePortfolio: activePortfolio ?? this.activePortfolio,
       hasBinanceKeys: hasBinanceKeys ?? this.hasBinanceKeys,
+      hasConfiguredDbKeys: hasConfiguredDbKeys ?? this.hasConfiguredDbKeys,
+      usingEnvTestKeys: usingEnvTestKeys ?? this.usingEnvTestKeys,
+      keysRequiredForCurrentMode:
+          keysRequiredForCurrentMode ?? this.keysRequiredForCurrentMode,
       canToggle: canToggle ?? this.canToggle,
     );
   }

@@ -22,11 +22,11 @@ except (ImportError, ModuleNotFoundError):
             return jsonify({'success': False, 'error': 'Auth system unavailable'}), 503
         return decorated
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 # إنشاء Blueprint
 ml_status_bp = Blueprint('ml_status', __name__, url_prefix='/ml')
-db_manager = DatabaseManager()
+db_manager = get_db_manager()
 
 
 @ml_status_bp.route('/status', methods=['GET'])

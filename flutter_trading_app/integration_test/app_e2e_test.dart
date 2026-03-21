@@ -44,186 +44,336 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
   }
 
+  Future<void> pumpFor(
+    WidgetTester tester,
+    Duration duration, {
+    Duration step = const Duration(milliseconds: 250),
+  }) async {
+    var elapsed = Duration.zero;
+    while (elapsed < duration) {
+      await tester.pump(step);
+      elapsed += step;
+    }
+  }
+
+  Future<void> activateControl(WidgetTester tester, Finder finder) async {
+    final widget = tester.widget(finder.first);
+
+    if (widget is TextButton && widget.onPressed != null) {
+      widget.onPressed!.call();
+      await pumpFor(tester, const Duration(seconds: 1));
+      return;
+    }
+
+    if (widget is ElevatedButton && widget.onPressed != null) {
+      widget.onPressed!.call();
+      await pumpFor(tester, const Duration(seconds: 1));
+      return;
+    }
+
+    await tester.tap(finder.first, warnIfMissed: false);
+    await pumpFor(tester, const Duration(seconds: 1));
+  }
+
+  Future<void> submitLogin(WidgetTester tester) async {
+    final loginBtn = find.byKey(const Key('login_submit_button'));
+    final elevatedLoginBtn = find.widgetWithText(ElevatedButton, 'تسجيل الدخول');
+    final appButtonLabel = find.text('تسجيل الدخول');
+
+    if (tester.any(loginBtn)) {
+      await activateControl(tester, loginBtn);
+      await pumpFor(tester, const Duration(seconds: 8));
+      return;
+    }
+
+    if (tester.any(elevatedLoginBtn)) {
+      await activateControl(tester, elevatedLoginBtn);
+      await pumpFor(tester, const Duration(seconds: 8));
+      return;
+    }
+
+    if (tester.any(appButtonLabel)) {
+      await activateControl(tester, appButtonLabel);
+      await pumpFor(tester, const Duration(seconds: 8));
+      return;
+    }
+
+    final widgetTypes = tester.allWidgets
+        .map((w) => w.runtimeType.toString())
+        .toSet()
+        .take(80)
+        .toList();
+    final visibleTexts = find
+        .byType(Text)
+        .evaluate()
+        .map((e) => (e.widget as Text).data)
+        .whereType<String>()
+        .where((text) => text.trim().isNotEmpty)
+        .take(40)
+        .toList();
+    print('⚠️ login debug widgetTypes=$widgetTypes');
+    print('⚠️ login debug visibleTexts=$visibleTexts');
+    throw TestFailure('Login button not found on login screen.');
+  }
+
+  Future<bool> skipOnboardingIfVisible(WidgetTester tester) async {
+    final skipByKey = find.byKey(
+      const Key('onboarding_skip_button'),
+      skipOffstage: false,
+    );
+    final skipByText = find.text('تخطي', skipOffstage: false);
+    final nextByText = find.text('التالي', skipOffstage: false);
+    final startNowByText = find.text('ابدأ الآن', skipOffstage: false);
+
+    if (tester.any(skipByKey)) {
+      await tester.ensureVisible(skipByKey.first);
+      await activateControl(tester, skipByKey);
+      await pumpFor(tester, const Duration(seconds: 2));
+      return true;
+    }
+
+    if (tester.any(skipByText)) {
+      await tester.ensureVisible(skipByText.first);
+      await activateControl(tester, skipByText);
+      await pumpFor(tester, const Duration(seconds: 2));
+      return true;
+    }
+
+    if (tester.any(nextByText) || tester.any(startNowByText)) {
+      final action = tester.any(startNowByText) ? startNowByText : nextByText;
+      await tester.ensureVisible(action.first);
+      await activateControl(tester, action);
+      await pumpFor(tester, const Duration(seconds: 1));
+      return true;
+    }
+
+    return false;
+  }
+
+  Future<String> waitForStartupState(WidgetTester tester) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (DateTime.now().isBefore(deadline)) {
+      if (tester.any(find.byKey(const Key('main_shell'))) ||
+          tester.any(find.byKey(const Key('dashboard_screen')))) {
+        return 'dashboard';
+      }
+      if (tester.any(find.byKey(const Key('onboarding_screen'))) ||
+          tester.any(find.byKey(const Key('onboarding_skip_button'))) ||
+          tester.any(find.text('تخطي', skipOffstage: false)) ||
+          tester.any(find.text('التالي', skipOffstage: false)) ||
+          tester.any(find.text('ابدأ الآن', skipOffstage: false))) {
+        return 'onboarding';
+      }
+      if (tester.any(find.byKey(const Key('login_screen')))) {
+        return 'login';
+      }
+      if (tester.any(find.byKey(const Key('splash_screen')))) {
+        await tester.pump(const Duration(milliseconds: 300));
+        continue;
+      }
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    return 'unknown';
+  }
+
+  Future<void> completeOnboardingIfNeeded(WidgetTester tester) async {
+    for (var i = 0; i < 3; i++) {
+      if (await skipOnboardingIfVisible(tester)) {
+        continue;
+      }
+
+      final startupState = await waitForStartupState(tester);
+      if (startupState != 'onboarding') {
+        return;
+      }
+
+      final skipButton = find.byKey(const Key('onboarding_skip_button'));
+      if (tester.any(skipButton)) {
+        await tapAndSettle(tester, skipButton.first);
+        await tester.pumpAndSettle(const Duration(seconds: 2));
+        continue;
+      }
+
+      throw TestFailure('Onboarding is visible but no skip control was found.');
+    }
+  }
+
+  Future<void> loginIfNeeded(WidgetTester tester) async {
+    for (var i = 0; i < 4; i++) {
+      await completeOnboardingIfNeeded(tester);
+      final startupState = await waitForStartupState(tester);
+      if (startupState == 'dashboard') return;
+      if (startupState == 'onboarding') {
+        await tester.pumpAndSettle(const Duration(seconds: 1));
+        continue;
+      }
+      if (startupState != 'login') {
+        throw TestFailure('Expected login or dashboard state, got: $startupState');
+      }
+
+      if (!tester.any(find.byKey(const Key('login_screen')))) {
+        await tester.pumpAndSettle(const Duration(seconds: 1));
+        continue;
+      }
+
+      await waitFor(
+        tester,
+        find.byKey(const Key('login_screen')),
+        timeout: const Duration(seconds: 10),
+      );
+
+      final textFields = find.byType(TextFormField);
+      await waitFor(tester, textFields, timeout: const Duration(seconds: 10));
+
+      await tester.enterText(textFields.first, adminEmail);
+      await tester.pumpAndSettle();
+
+      if (textFields.evaluate().length > 1) {
+        await tester.enterText(textFields.at(1), adminPassword);
+        await tester.pumpAndSettle();
+      }
+
+      await submitLogin(tester);
+    }
+    throw TestFailure('Bootstrap did not stabilize on dashboard after onboarding/login attempts.');
+  }
+
+  Future<void> ensureDashboardReady(WidgetTester tester) async {
+    await loginIfNeeded(tester);
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (DateTime.now().isBefore(deadline)) {
+      if (tester.any(find.byKey(const Key('main_shell'))) ||
+          tester.any(find.byKey(const Key('dashboard_screen')))) {
+        return;
+      }
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    throw TestFailure('Timed out waiting for dashboard/main shell after bootstrap.');
+  }
+
+  Future<void> bootstrapToDashboard(WidgetTester tester) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 45));
+    while (DateTime.now().isBefore(deadline)) {
+      if (await skipOnboardingIfVisible(tester)) {
+        continue;
+      }
+
+      final state = await waitForStartupState(tester);
+      if (state == 'dashboard') {
+        return;
+      }
+
+      if (state == 'onboarding') {
+        final advanced = await skipOnboardingIfVisible(tester);
+        if (!advanced) {
+          await tester.pumpAndSettle(const Duration(seconds: 1));
+        }
+        continue;
+      }
+
+      if (state == 'login') {
+        final loginScreen = find.byKey(const Key('login_screen'));
+        await waitFor(tester, loginScreen, timeout: const Duration(seconds: 10));
+        final textFields = find.byType(TextFormField);
+        await waitFor(tester, textFields, timeout: const Duration(seconds: 10));
+        await tester.enterText(textFields.first, adminEmail);
+        await pumpFor(tester, const Duration(milliseconds: 500));
+        if (textFields.evaluate().length > 1) {
+          await tester.enterText(textFields.at(1), adminPassword);
+          await pumpFor(tester, const Duration(milliseconds: 500));
+        }
+        await submitLogin(tester);
+        continue;
+      }
+
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    throw TestFailure('Bootstrap did not reach dashboard before timeout.');
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // 1. App Launch
   // ═══════════════════════════════════════════════════════════════
 
   testWidgets('App launches without crash', (tester) async {
     app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    final startupState = await waitForStartupState(tester);
 
-    // يجب أن تظهر شاشة Login أو Dashboard (إذا كان مسجلاً مسبقاً)
-    final hasLoginScreen  = tester.any(find.byKey(const Key('login_screen')))  ||
-                            tester.any(find.text('تسجيل الدخول'))              ||
-                            tester.any(find.text('Login'));
-    final hasDashboard    = tester.any(find.byKey(const Key('dashboard_screen'))) ||
-                            tester.any(find.text('لوحة التحكم'));
+    final hasLoginScreen  = startupState == 'login';
+    final hasDashboard    = startupState == 'dashboard';
+    final hasOnboarding   = startupState == 'onboarding';
     final hasAnyContent   = tester.any(find.byType(Scaffold));
 
-    expect(hasLoginScreen || hasDashboard || hasAnyContent, isTrue,
+    expect(hasLoginScreen || hasDashboard || hasOnboarding || hasAnyContent, isTrue,
         reason: 'App should show at least a Scaffold on launch');
 
-    print('✅ App launched successfully');
+    print('✅ App launched successfully (state=$startupState)');
   });
 
   // ═══════════════════════════════════════════════════════════════
   // 2. Login Flow
   // ═══════════════════════════════════════════════════════════════
 
-  testWidgets('Login flow — valid credentials succeed', (tester) async {
+  testWidgets('Full app flow reaches dashboard and survives primary interactions', (
+    tester,
+  ) async {
     app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
 
-    // Skip if already logged in
-    if (!tester.any(find.byType(TextFormField)) &&
-        !tester.any(find.byType(TextField))) {
-      print('⚠️ Already logged in — skipping login test');
-      return;
-    }
+    var startupState = await waitForStartupState(tester);
+    expect(
+      startupState == 'login' || startupState == 'dashboard' || startupState == 'onboarding',
+      isTrue,
+      reason: 'App should stabilize on onboarding, login, or dashboard',
+    );
 
-    // Find email field
-    final emailFields = find.byType(TextFormField);
-    if (!tester.any(emailFields)) {
-      print('⚠️ No text fields found — skipping');
-      return;
-    }
+    await bootstrapToDashboard(tester);
+    startupState = await waitForStartupState(tester);
 
-    // Enter credentials
-    await tester.enterText(emailFields.first, adminEmail);
-    await tester.pumpAndSettle();
-
-    // Enter password (second field)
-    if (emailFields.evaluate().length > 1) {
-      await tester.enterText(emailFields.at(1), adminPassword);
-      await tester.pumpAndSettle();
-    }
-
-    // Tap login button
-    final loginBtn = find.byType(ElevatedButton);
-    if (tester.any(loginBtn)) {
-      await tapAndSettle(tester, loginBtn.first);
-      await tester.pumpAndSettle(const Duration(seconds: 8));
-    }
-
-    // After login — should not see login error
     expect(find.text('بيانات غير صحيحة'), findsNothing,
         reason: 'Valid credentials should not produce auth error');
+    expect(startupState, 'dashboard', reason: 'App should reach dashboard after bootstrap');
 
-    print('✅ Login flow completed');
+    final shell = find.byKey(const Key('main_shell'));
+    final navBar = find.byKey(const Key('main_shell_nav'));
+    final dashboard = find.byKey(const Key('dashboard_screen'));
+    final refreshIndicator = find.byKey(const Key('dashboard_refresh'));
+
+    expect(shell, findsOneWidget);
+    expect(navBar, findsOneWidget);
+    expect(dashboard, findsOneWidget);
+    expect(refreshIndicator, findsOneWidget);
+
+    final navItems = find.byWidgetPredicate(
+      (widget) => widget.key is Key &&
+          (widget.key as Key).toString().contains('main_shell_tab_'),
+    );
+    final count = navItems.evaluate().length;
+    expect(count, greaterThanOrEqualTo(5));
+
+    for (int i = 0; i < count; i++) {
+      await tester.tap(navItems.at(i), warnIfMissed: false);
+      await pumpFor(tester, const Duration(seconds: 2));
+      expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
+    }
+
+    await tester.tap(navItems.at(0), warnIfMissed: false);
+    await pumpFor(tester, const Duration(seconds: 2));
+
+    final dashboardRefresh = find.byKey(const Key('dashboard_refresh'));
+    if (dashboardRefresh.evaluate().isNotEmpty) {
+      await tester.drag(dashboardRefresh.first, const Offset(0, 300));
+      await tester.pump(const Duration(milliseconds: 500));
+      await pumpFor(tester, const Duration(seconds: 5));
+    }
+
+    expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
+    print('✅ Full app flow completed');
   });
 
   // ═══════════════════════════════════════════════════════════════
   // 3. Dashboard Screen
   // ═══════════════════════════════════════════════════════════════
 
-  testWidgets('Dashboard loads key widgets', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 8));
-
-    // نتحقق من وجود NavigationBar أو BottomNavigationBar
-    final hasNav = tester.any(find.byType(NavigationBar))        ||
-                   tester.any(find.byType(BottomNavigationBar))  ||
-                   tester.any(find.byType(NavigationRail));
-
-    if (hasNav) {
-      print('✅ Navigation bar found');
-    } else {
-      print('⚠️ Navigation bar not found — may still be on login screen');
-    }
-
-    // يجب أن يكون هناك Scaffold على الأقل
-    expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
-
-    print('✅ Dashboard check complete');
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // 4. Navigation Flow
-  // ═══════════════════════════════════════════════════════════════
-
-  testWidgets('Bottom navigation tabs are tappable', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 8));
-
-    final navBar = find.byType(NavigationBar);
-    if (!tester.any(navBar)) {
-      print('⚠️ No NavigationBar — skipping navigation test');
-      return;
-    }
-
-    // Tap each navigation item
-    final navItems = find.descendant(
-      of: navBar,
-      matching: find.byType(InkWell),
-    );
-
-    final count = navItems.evaluate().length;
-    print('Found $count navigation items');
-
-    for (int i = 0; i < count; i++) {
-      try {
-        await tester.tap(navItems.at(i));
-        await tester.pumpAndSettle(const Duration(milliseconds: 800));
-        print('✅ Tapped nav item $i');
-      } catch (e) {
-        print('⚠️ Could not tap nav item $i: $e');
-      }
-    }
-
-    expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
-    print('✅ Navigation flow complete');
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // 5. Pull-to-Refresh
-  // ═══════════════════════════════════════════════════════════════
-
-  testWidgets('Pull-to-refresh does not crash', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 8));
-
-    final refreshIndicator = find.byType(RefreshIndicator);
-    if (!tester.any(refreshIndicator)) {
-      print('⚠️ No RefreshIndicator found — skipping');
-      return;
-    }
-
-    // Simulate pull-to-refresh gesture
-    await tester.drag(
-      find.byType(RefreshIndicator).first,
-      const Offset(0, 300),
-    );
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle(const Duration(seconds: 5));
-
-    expect(find.byType(Scaffold), findsAtLeastNWidgets(1),
-        reason: 'App should not crash after pull-to-refresh');
-
-    print('✅ Pull-to-refresh did not crash');
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // 6. No Overflow / Render Errors
-  // ═══════════════════════════════════════════════════════════════
-
-  testWidgets('No render overflow errors on main screens', (tester) async {
-    app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 8));
-
-    // Navigate to each tab and check for overflows
-    final navBar = find.byType(NavigationBar);
-    if (tester.any(navBar)) {
-      final items = find.descendant(of: navBar, matching: find.byType(InkWell));
-      for (int i = 0; i < items.evaluate().length; i++) {
-        try {
-          await tester.tap(items.at(i));
-          await tester.pumpAndSettle(const Duration(seconds: 2));
-        } catch (_) {}
-      }
-    }
-
-    // No exception means no overflow that would crash the test
-    expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
-    print('✅ No render errors detected');
-  });
 }

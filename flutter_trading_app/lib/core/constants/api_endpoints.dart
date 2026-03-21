@@ -63,8 +63,11 @@ class ApiEndpoints {
     return url;
   }
 
-  static String validateSettings(int userId) =>
-      '/user/settings/$userId/validate';
+  static String validateSettings(int userId, {String? mode}) {
+    var url = '/user/settings/$userId/validate';
+    if (mode != null) url += '?mode=$mode';
+    return url;
+  }
   static String updateSettings(int userId, {String? mode}) {
     var url = '/user/settings/$userId';
     if (mode != null) url += '?mode=$mode';
@@ -95,7 +98,11 @@ class ApiEndpoints {
   }
 
   static String userProfile(int userId) => '/user/profile/$userId';
-  static String qualifiedCoins(int userId) => '/user/successful-coins/$userId';
+  static String qualifiedCoins(int userId, {String? mode}) {
+    var url = '/user/successful-coins/$userId';
+    if (mode != null) url += '?mode=$mode';
+    return url;
+  }
   static String resetData(int userId) => '/user/reset-data/$userId';
   static String dailyStatus(int userId, {String? mode}) {
     var url = '/user/daily-status/$userId';

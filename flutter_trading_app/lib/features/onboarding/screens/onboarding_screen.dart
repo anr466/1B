@@ -71,6 +71,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        key: const Key('onboarding_screen'),
         backgroundColor: cs.surface,
         body: SafeArea(
           child: Column(
@@ -81,6 +82,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(SpacingTokens.base),
                   child: TextButton(
+                    key: const Key('onboarding_skip_button'),
                     onPressed: _completeOnboarding,
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(

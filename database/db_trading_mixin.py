@@ -285,15 +285,22 @@ class DbTradingMixin:
         except Exception as e:
             self.logger.error(f"خطأ في تحديث Trailing SL: {e}")
 
-    def get_active_positions_for_user(self, user_id: int) -> List[Dict[str, Any]]:
+    def get_active_positions_for_user(self, user_id: int, is_demo: Optional[bool] = None) -> List[Dict[str, Any]]:
         """الحصول على جميع الصفقات المفتوحة للمستخدم مع trailing_sl_price"""
         try:
             with self.get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT * FROM active_positions 
-                    WHERE user_id = %s AND is_active = TRUE
-                    ORDER BY created_at DESC
-                """, (user_id,)).fetchall()
+                if is_demo is None:
+                    rows = conn.execute("""
+                        SELECT * FROM active_positions 
+                        WHERE user_id = %s AND is_active = TRUE
+                        ORDER BY created_at DESC
+                    """, (user_id,)).fetchall()
+                else:
+                    rows = conn.execute("""
+                        SELECT * FROM active_positions 
+                        WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
+                        ORDER BY created_at DESC
+                    """, (user_id, is_demo)).fetchall()
                 
                 return [dict(row) for row in rows]
                 
@@ -301,15 +308,22 @@ class DbTradingMixin:
             self.logger.error(f"خطأ في جلب الصفقات المفتوحة: {e}")
             return []
 
-    def get_active_positions(self, user_id: int) -> List[Dict[str, Any]]:
+    def get_active_positions(self, user_id: int, is_demo: Optional[bool] = None) -> List[Dict[str, Any]]:
         """الحصول على جميع الصفقات المفتوحة للمستخدم"""
         try:
             with self.get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT * FROM active_positions 
-                    WHERE user_id = %s AND is_active = TRUE
-                    ORDER BY created_at DESC
-                """, (user_id,)).fetchall()
+                if is_demo is None:
+                    rows = conn.execute("""
+                        SELECT * FROM active_positions 
+                        WHERE user_id = %s AND is_active = TRUE
+                        ORDER BY created_at DESC
+                    """, (user_id,)).fetchall()
+                else:
+                    rows = conn.execute("""
+                        SELECT * FROM active_positions 
+                        WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
+                        ORDER BY created_at DESC
+                    """, (user_id, is_demo)).fetchall()
                 
                 return [dict(row) for row in rows]
                 
@@ -384,11 +398,11 @@ class DbTradingMixin:
             self.logger.error(f"خطأ في get_user_trades_paginated: {e}")
             return {'trades': [], 'total': 0}
 
-    def get_coins_for_monitoring(self, user_id: int) -> List[Dict[str, Any]]:
+    def get_coins_for_monitoring(self, user_id: int, is_demo: Optional[bool] = None) -> List[Dict[str, Any]]:
         """الحصول على قائمة العملات للمراقبة (ناجحة + صفقات مفتوحة)"""
         try:
             successful_coins = self.get_successful_coins()
-            active_positions = self.get_active_positions(user_id)
+            active_positions = self.get_active_positions(user_id, is_demo=is_demo)
             
             all_symbols = {coin['symbol']: coin for coin in successful_coins}
             
@@ -567,6 +581,7 @@ class DbTradingMixin:
                  position_size, position_type, timeframe, entry_date,
                  is_active, created_at, highest_price, signal_metadata)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP, %s, %s)
+                RETURNING id
             """, (
                 user_id,
                 symbol,
@@ -772,21 +787,85 @@ class DbTradingMixin:
         losing_trades = stats_row[3] if stats_row else 0
         
         # حساب نسبة نمو المحفظة
-        initial_balance_row = conn.execute("""
-            SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
-        """, (user_id, is_demo_flag)).fetchone()
+        if is_demo_flag:
+            initial_balance_row = conn.execute(
+                "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+                (user_id,),
+            ).fetchone()
+        else:
+            initial_balance_row = conn.execute("""
+                SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
+            """, (user_id, is_demo_flag)).fetchone()
         initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
+        if not is_demo_flag and initial_balance <= 0 and total_balance > 0 and (invested_balance > 0 or total_trades > 0):
+            initial_balance = float(total_balance)
+        has_real_trade_activity = (not is_demo_flag) and total_balance > 0 and (invested_balance > 0 or total_trades > 0)
         portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
 
         conn.execute("""
             UPDATE portfolio
             SET total_balance = %s, available_balance = %s, invested_balance = %s,
                 total_profit_loss = %s, total_profit_loss_percentage = %s,
+                initial_balance = CASE
+                    WHEN (initial_balance IS NULL OR initial_balance <= 0) AND %s > 0 THEN %s
+                    ELSE initial_balance
+                END,
+                first_trade_balance = CASE
+                    WHEN (first_trade_balance IS NULL OR first_trade_balance <= 0) AND %s THEN %s
+                    ELSE first_trade_balance
+                END,
+                first_trade_at = CASE
+                    WHEN first_trade_at IS NULL AND %s THEN CURRENT_TIMESTAMP
+                    ELSE first_trade_at
+                END,
+                initial_balance_source = CASE
+                    WHEN %s THEN 'first_system_trade_snapshot'
+                    WHEN COALESCE(initial_balance_source, '') = '' THEN 'system_seed'
+                    ELSE initial_balance_source
+                END,
                 total_trades = %s, winning_trades = %s, losing_trades = %s,
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = %s AND is_demo = %s
         """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
+              initial_balance, initial_balance,
+              has_real_trade_activity, initial_balance,
+              has_real_trade_activity,
+              has_real_trade_activity,
               total_trades, winning_trades, losing_trades, user_id, is_demo_flag))
+
+        if is_demo_flag:
+            conn.execute(
+                """
+                INSERT INTO demo_accounts (
+                    user_id, initial_balance, available_balance, invested_balance,
+                    total_balance, total_profit_loss, total_profit_loss_percentage,
+                    total_trades, winning_trades, losing_trades, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    initial_balance = EXCLUDED.initial_balance,
+                    available_balance = EXCLUDED.available_balance,
+                    invested_balance = EXCLUDED.invested_balance,
+                    total_balance = EXCLUDED.total_balance,
+                    total_profit_loss = EXCLUDED.total_profit_loss,
+                    total_profit_loss_percentage = EXCLUDED.total_profit_loss_percentage,
+                    total_trades = EXCLUDED.total_trades,
+                    winning_trades = EXCLUDED.winning_trades,
+                    losing_trades = EXCLUDED.losing_trades,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    user_id,
+                    initial_balance,
+                    new_balance,
+                    invested_balance,
+                    total_balance,
+                    total_pnl,
+                    portfolio_growth_pct,
+                    total_trades,
+                    winning_trades,
+                    losing_trades,
+                ),
+            )
 
         return True
 
@@ -821,21 +900,85 @@ class DbTradingMixin:
                 losing_trades = stats_row[3] if stats_row else 0
                 
                 # حساب نسبة نمو المحفظة
-                initial_balance_row = conn.execute("""
-                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
-                """, (user_id, is_demo_flag)).fetchone()
+                if is_demo_flag:
+                    initial_balance_row = conn.execute(
+                        "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+                        (user_id,),
+                    ).fetchone()
+                else:
+                    initial_balance_row = conn.execute("""
+                        SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
+                    """, (user_id, is_demo_flag)).fetchone()
                 initial_balance = float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
+                if not is_demo_flag and initial_balance <= 0 and total_balance > 0 and (invested_balance > 0 or total_trades > 0):
+                    initial_balance = float(total_balance)
+                has_real_trade_activity = (not is_demo_flag) and total_balance > 0 and (invested_balance > 0 or total_trades > 0)
                 portfolio_growth_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0
                 
                 conn.execute("""
                     UPDATE portfolio 
                     SET total_balance = %s, available_balance = %s, invested_balance = %s,
                         total_profit_loss = %s, total_profit_loss_percentage = %s,
+                        initial_balance = CASE
+                            WHEN (initial_balance IS NULL OR initial_balance <= 0) AND %s > 0 THEN %s
+                            ELSE initial_balance
+                        END,
+                        first_trade_balance = CASE
+                            WHEN (first_trade_balance IS NULL OR first_trade_balance <= 0) AND %s THEN %s
+                            ELSE first_trade_balance
+                        END,
+                        first_trade_at = CASE
+                            WHEN first_trade_at IS NULL AND %s THEN CURRENT_TIMESTAMP
+                            ELSE first_trade_at
+                        END,
+                        initial_balance_source = CASE
+                            WHEN %s THEN 'first_system_trade_snapshot'
+                            WHEN COALESCE(initial_balance_source, '') = '' THEN 'system_seed'
+                            ELSE initial_balance_source
+                        END,
                         total_trades = %s, winning_trades = %s, losing_trades = %s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = %s AND is_demo = %s
                 """, (total_balance, new_balance, invested_balance, total_pnl, portfolio_growth_pct,
+                      initial_balance, initial_balance,
+                      has_real_trade_activity, initial_balance,
+                      has_real_trade_activity,
+                      has_real_trade_activity,
                       total_trades, winning_trades, losing_trades, user_id, is_demo_flag))
+
+                if is_demo_flag:
+                    conn.execute(
+                        """
+                        INSERT INTO demo_accounts (
+                            user_id, initial_balance, available_balance, invested_balance,
+                            total_balance, total_profit_loss, total_profit_loss_percentage,
+                            total_trades, winning_trades, losing_trades, updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            initial_balance = EXCLUDED.initial_balance,
+                            available_balance = EXCLUDED.available_balance,
+                            invested_balance = EXCLUDED.invested_balance,
+                            total_balance = EXCLUDED.total_balance,
+                            total_profit_loss = EXCLUDED.total_profit_loss,
+                            total_profit_loss_percentage = EXCLUDED.total_profit_loss_percentage,
+                            total_trades = EXCLUDED.total_trades,
+                            winning_trades = EXCLUDED.winning_trades,
+                            losing_trades = EXCLUDED.losing_trades,
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (
+                            user_id,
+                            initial_balance,
+                            new_balance,
+                            invested_balance,
+                            total_balance,
+                            total_pnl,
+                            portfolio_growth_pct,
+                            total_trades,
+                            winning_trades,
+                            losing_trades,
+                        ),
+                    )
                 
                 return True
         except Exception as e:

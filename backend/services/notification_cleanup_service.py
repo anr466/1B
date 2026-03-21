@@ -8,7 +8,7 @@ Notification Cleanup Service - خدمة تنظيف الإشعارات
 import logging
 from typing import Dict, Any
 
-from database.database_manager import DatabaseManager
+from backend.infrastructure.db_access import get_db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class NotificationCleanupService:
     
     def __init__(self):
         """تهيئة الخدمة"""
-        self.db = DatabaseManager()
+        self.db = get_db_manager()
         logger.info("✅ تم تهيئة Notification Cleanup Service")
     
     def cleanup_notifications(self, user_id: int = None) -> Dict[str, Any]:

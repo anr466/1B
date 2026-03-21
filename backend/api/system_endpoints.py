@@ -5,6 +5,7 @@ System Endpoints - نقاط نهاية النظام العامة
 from flask import Blueprint, jsonify, request
 from config.logging_config import get_logger
 from backend.api.auth_middleware import require_auth
+from backend.infrastructure.db_access import get_db_manager
 
 # إنشاء Blueprint (بدون /api لأن Flask مثبت على /api في unified_server.py)
 system_bp = Blueprint('system', __name__, url_prefix='/system')
@@ -20,8 +21,7 @@ def get_system_status():
     لا يحتاج مصادقة - معلومات عامة
     """
     try:
-        from database.database_manager import DatabaseManager
-        db = DatabaseManager()
+        db = get_db_manager()
         
         # الحصول على حالة النظام من قاعدة البيانات
         with db.get_connection() as conn:
@@ -75,14 +75,13 @@ def reset_account_data():
     يحذف جميع الصفقات والمحفظة والإعدادات
     """
     try:
-        from ..database.database_manager import DatabaseManager
         import os
         jwt_secret = os.getenv('JWT_SECRET_KEY')
         if not jwt_secret:
             return jsonify({'success': False, 'error': 'Server configuration error'}), 500
         from ..utils.jwt_manager import JWTManager
         
-        db = DatabaseManager()
+        db = get_db_manager()
         data = request.get_json()
         
         # الحصول على user_id من Token
@@ -141,8 +140,7 @@ def health_check():
     فحص صحة النظام - لا يحتاج مصادقة
     """
     try:
-        from database.database_manager import DatabaseManager
-        db = DatabaseManager()
+        db = get_db_manager()
         
         # فحص الاتصال بقاعدة البيانات
         with db.get_connection() as conn:

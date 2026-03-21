@@ -105,6 +105,7 @@ class DataProvider:
             cache_dir = _project_root / ".cache"
         self.cache_dir = Path(cache_dir)
         self.cache_ttl = cache_ttl
+        self.price_cache_ttl = 2
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
@@ -626,6 +627,12 @@ class DataProvider:
             logger.warning("⚠️ Connection issue, returning cached/default prices...")
         
         try:
+            if symbol:
+                cache_key = self._get_cache_key('current_price', symbol=symbol)
+                success, cached_price = self._load_from_cache(cache_key)
+                if success:
+                    return float(cached_price)
+
             # جلب الأسعار من Binance API مع Retry Logic
             if RETRY_AVAILABLE:
                 ticker_data = self._fetch_symbol_ticker_from_api(symbol)
@@ -633,7 +640,14 @@ class DataProvider:
                 ticker_data = self.client.get_symbol_ticker(symbol=symbol) if symbol else self.client.get_symbol_ticker()
             
             if symbol:
-                return float(ticker_data['price'])
+                price = float(ticker_data['price'])
+                original_ttl = self.cache_ttl
+                try:
+                    self.cache_ttl = self.price_cache_ttl
+                    self._save_to_cache(price, cache_key)
+                finally:
+                    self.cache_ttl = original_ttl
+                return price
             else:
                 return {t['symbol']: float(t['price']) for t in ticker_data}
                 

@@ -192,13 +192,17 @@ def register_mobile_trades_routes(bp, shared):
             trades_list = trades_data.get('trades', [])
             if trades_list:
                 for trade in trades_list:
+                    entry_price = float(trade.get('entry_price', 0)) if trade.get('entry_price') else 0
+                    quantity = float(trade.get('quantity', 0)) if trade.get('quantity') else 0
+                    position_size = float(trade.get('position_size', 0)) if trade.get('position_size') else (entry_price * quantity)
                     formatted_trades.append({
                         'id': trade.get('id'),
                         'symbol': trade.get('symbol'),
                         'side': trade.get('side', 'buy'),
-                        'entryPrice': float(trade.get('entry_price', 0)) if trade.get('entry_price') else 0,
+                        'entryPrice': entry_price,
                         'exitPrice': float(trade.get('exit_price', 0)) if trade.get('exit_price') else 0,
-                        'quantity': float(trade.get('quantity', 0)) if trade.get('quantity') else 0,
+                        'quantity': quantity,
+                        'positionSize': position_size,
                         'profitLoss': float(trade.get('profit_loss', 0)) if trade.get('profit_loss') else 0,
                         'profitLossPercentage': float(trade.get('profit_loss_percentage', 0)) if trade.get('profit_loss_percentage') else 0,
                         'status': trade.get('status', 'unknown'),
@@ -614,13 +618,13 @@ def register_mobile_trades_routes(bp, shared):
                         MAX(profit_loss) as best_trade,
                         MIN(profit_loss) as worst_trade
                     FROM active_positions
-                    WHERE user_id = %s AND is_demo = %s AND is_active = 0
+                    WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                 """, (portfolio_owner_id, is_demo)).fetchone()
                 
                 by_symbol = conn.execute("""
                     SELECT symbol, COUNT(*) as count, SUM(profit_loss) as total
                     FROM active_positions
-                    WHERE user_id = %s AND is_demo = %s AND is_active = 0
+                    WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                     GROUP BY symbol
                     ORDER BY total DESC
                     LIMIT 10
@@ -629,7 +633,7 @@ def register_mobile_trades_routes(bp, shared):
                 by_strategy = conn.execute("""
                     SELECT strategy, COUNT(*) as count, AVG(profit_loss) as avg
                     FROM active_positions
-                    WHERE user_id = %s AND is_demo = %s AND is_active = 0
+                    WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                     GROUP BY strategy
                     ORDER BY count DESC
                     LIMIT 5
@@ -685,9 +689,11 @@ def register_mobile_trades_routes(bp, shared):
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
             
             with db.get_connection() as conn:
+                portfolio_balance_query = "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1" if is_demo == 1 else "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s ORDER BY updated_at DESC LIMIT 1"
+                portfolio_balance_params = (portfolio_owner_id,) if is_demo == 1 else (portfolio_owner_id, bool(is_demo))
                 portfolio_balance_row = conn.execute(
-                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s ORDER BY updated_at DESC LIMIT 1",
-                    (portfolio_owner_id, is_demo)
+                    portfolio_balance_query,
+                    portfolio_balance_params
                 ).fetchone()
 
                 # fallback: في real mode فقط، يمكن استخدام آخر رصيد Binance إن لم تتوفر محفظة

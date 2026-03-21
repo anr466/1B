@@ -55,9 +55,10 @@ class ScannerMixin:
         # ===== Phase 0+1: فحص بوابات الحماية قبل أي شيء =====
         portfolio = self._load_user_portfolio()
         balance = portfolio.get('balance', 0)
+        risk_balance = portfolio.get('total_value', balance)
         open_positions = self._get_open_positions()
         
-        can_trade, gate_reason = self._check_risk_gates(open_positions, balance)
+        can_trade, gate_reason = self._check_risk_gates(open_positions, risk_balance)
         if not can_trade:
             self.logger.info(f"   🛡️ Risk Gate BLOCKED: {gate_reason}")
             return entries

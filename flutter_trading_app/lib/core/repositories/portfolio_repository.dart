@@ -34,8 +34,13 @@ class PortfolioRepository {
     throw Exception(data['message'] ?? data['error'] ?? 'فشل تحميل الإحصائيات');
   }
 
-  Future<List<Map<String, dynamic>>> getSuccessfulCoins(int userId) async {
-    final response = await _api.get(ApiEndpoints.qualifiedCoins(userId));
+  Future<List<Map<String, dynamic>>> getSuccessfulCoins(
+    int userId, {
+    String? mode,
+  }) async {
+    final response = await _api.get(
+      ApiEndpoints.qualifiedCoins(userId, mode: mode),
+    );
     final data = response.data;
     if (data['success'] == true) {
       final nested = ParsingService.asMap(data['data']);

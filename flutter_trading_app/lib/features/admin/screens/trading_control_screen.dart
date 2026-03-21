@@ -79,6 +79,12 @@ class TradingControlScreen extends ConsumerWidget {
                 data: (ml) => _mlSection(cs, ml),
               ),
 
+              const SizedBox(height: SpacingTokens.lg),
+
+              const AppSectionLabel(text: 'الحساب التجريبي'),
+              const SizedBox(height: SpacingTokens.sm),
+              _demoResetSection(context, ref, cs),
+
               const SizedBox(height: SpacingTokens.xl),
             ],
           ),
@@ -186,6 +192,47 @@ class TradingControlScreen extends ConsumerWidget {
               onPressed: () => _resetError(context, ref),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _demoResetSection(
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme cs,
+  ) {
+    return AppCard(
+      padding: const EdgeInsets.all(SpacingTokens.base),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              BrandIcon(BrandIcons.refresh, size: 20, color: cs.tertiary),
+              const SizedBox(width: SpacingTokens.sm),
+              Text(
+                'إعادة ضبط الحساب التجريبي',
+                style: TypographyTokens.body(cs.onSurface)
+                    .copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: SpacingTokens.xs),
+          Text(
+            'تصفير جميع الصفقات والأرصدة والسجلات التجريبية. لا يؤثر على الحساب الحقيقي أبداً.',
+            style: TypographyTokens.caption(
+              cs.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+          const SizedBox(height: SpacingTokens.md),
+          AppButton(
+            label: 'إعادة ضبط الحساب التجريبي',
+            variant: AppButtonVariant.outline,
+            isFullWidth: true,
+            height: 44,
+            onPressed: () => _resetDemoAccount(context, ref),
+          ),
         ],
       ),
     );
@@ -371,6 +418,72 @@ class TradingControlScreen extends ConsumerWidget {
         type: (result['success'] == true && applied)
             ? SnackType.warning
             : SnackType.error,
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      AppSnackbar.show(
+        context,
+        message: UxMessages.error,
+        type: SnackType.error,
+      );
+    }
+  }
+
+  Future<void> _resetDemoAccount(BuildContext context, WidgetRef ref) async {
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(
+            'إعادة ضبط الحساب التجريبي',
+            style: TypographyTokens.h3(Theme.of(context).colorScheme.onSurface),
+          ),
+          content: const Text(
+            'سيتم حذف جميع الصفقات التجريبية وإعادة ضبط الرصيد التجريبي إلى الوضع الافتراضي. لا يؤثر على الحساب الحقيقي. هل أنت متأكد؟',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(
+                'إعادة الضبط',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final repo = ref.read(adminRepositoryProvider);
+      final result = await repo.resetDemo();
+      ref.invalidate(portfolioProvider);
+      ref.invalidate(statsProvider);
+      ref.invalidate(activePositionsProvider);
+      ref.invalidate(recentTradesProvider);
+      ref.invalidate(dailyStatusProvider);
+      if (!context.mounted) return;
+      final backendMessage =
+          (result['message'] ?? result['error'] ?? '').toString();
+      AppSnackbar.show(
+        context,
+        message: result['success'] == true
+            ? (backendMessage.isNotEmpty
+                  ? backendMessage
+                  : 'تمت إعادة ضبط الحساب التجريبي بنجاح')
+            : (backendMessage.isNotEmpty ? backendMessage : UxMessages.error),
+        type:
+            result['success'] == true ? SnackType.success : SnackType.error,
       );
     } catch (e) {
       if (!context.mounted) return;

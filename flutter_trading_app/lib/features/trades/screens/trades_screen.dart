@@ -229,7 +229,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                             ),
                             const SizedBox(height: SpacingTokens.xs),
                             Text(
-                              'دخول: \$${trade.entryPrice.toStringAsFixed(4)}',
+                              'مبلغ الدخول: \$${trade.entryAmount.toStringAsFixed(2)}',
                               style: TypographyTokens.caption(
                                 cs.onSurface.withValues(alpha: 0.4),
                               ),
@@ -243,6 +243,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                           if (trade.pnl != null)
                             PnlIndicator(
                               amount: trade.pnl!,
+                              percentage: trade.pnlPct,
                               compact: true,
                               fontSize: 13,
                             )

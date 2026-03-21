@@ -176,7 +176,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'إجمالي الربح',
+                                            'إجمالي الربح الحالي',
                                             style: TypographyTokens.caption(
                                               cs.onSurface.withValues(
                                                 alpha: 0.4,
@@ -193,6 +193,59 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(width: SpacingTokens.sm),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'الربح غير المحقق',
+                                            style: TypographyTokens.caption(
+                                              cs.onSurface.withValues(
+                                                alpha: 0.4,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                            height: SpacingTokens.xs,
+                                          ),
+                                          PnlIndicator(
+                                            amount: p.unrealizedPnl,
+                                            percentage: p.unrealizedPnlPct,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: SpacingTokens.md),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'الربح المحقق',
+                                            style: TypographyTokens.caption(
+                                              cs.onSurface.withValues(
+                                                alpha: 0.4,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                            height: SpacingTokens.xs,
+                                          ),
+                                          PnlIndicator(
+                                            amount: p.realizedPnl,
+                                            percentage: p.realizedPnlPct,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: SpacingTokens.sm),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
@@ -261,7 +314,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
     final total = p.currentBalance > 0 ? p.currentBalance : p.initialBalance;
     final availablePct = total > 0 ? (p.availableBalance / total) * 100 : 0.0;
-    final pnlPct = total > 0 ? (p.totalPnl / total) * 100 : 0.0;
     final reservedPct = total > 0 ? (p.reservedBalance / total) * 100 : 0.0;
 
     final sections = <PieChartSectionData>[
@@ -270,16 +322,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
           value: p.availableBalance,
           title: '${availablePct.toStringAsFixed(0)}%',
           color: semantic.positive,
-          radius: 55,
-          titleStyle: TypographyTokens.caption(
-            cs.surface,
-          ).copyWith(fontWeight: FontWeight.w700, color: cs.surface),
-        ),
-      if (p.totalPnl != 0)
-        PieChartSectionData(
-          value: p.totalPnl.abs(),
-          title: '${pnlPct.toStringAsFixed(0)}%',
-          color: p.totalPnl > 0 ? semantic.positive : semantic.negative,
           radius: 55,
           titleStyle: TypographyTokens.caption(
             cs.surface,
@@ -351,9 +393,16 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                   ),
                   const SizedBox(height: SpacingTokens.sm),
                   _legendItem(
-                  'ربح/خسارة',
+                  'إجمالي الربح',
                   p.totalPnl,
                   p.totalPnl >= 0 ? semantic.positive : semantic.negative,
+                  cs,
+                  ),
+                  const SizedBox(height: SpacingTokens.sm),
+                  _legendItem(
+                  'غير محقق',
+                  p.unrealizedPnl,
+                  p.unrealizedPnl >= 0 ? semantic.info : semantic.negative,
                   cs,
                   ),
                   const SizedBox(height: SpacingTokens.sm),

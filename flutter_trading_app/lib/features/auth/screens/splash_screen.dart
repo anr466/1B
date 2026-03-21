@@ -160,6 +160,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const Key('splash_screen'),
       backgroundColor: _deepBlack,
       body: FadeTransition(
         opacity: _exitOpacity,
