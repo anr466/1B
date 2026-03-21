@@ -161,14 +161,14 @@ class DbPortfolioMixin:
         self._ensure_demo_account(conn, user_id)
         conn.execute("DELETE FROM active_positions WHERE user_id = %s AND is_demo = TRUE", (user_id,))
         conn.execute("DELETE FROM user_trades WHERE user_id = %s AND is_demo = TRUE", (user_id,))
-        try:
-            conn.execute("DELETE FROM user_binance_orders WHERE user_id = %s AND is_demo = TRUE", (user_id,))
-        except Exception:
-            pass
-        try:
-            conn.execute("DELETE FROM portfolio_growth_history WHERE user_id = %s AND is_demo = TRUE", (user_id,))
-        except Exception:
-            pass
+        # PostgreSQL aborts entire transaction on error — use SAVEPOINT for optional tables
+        for optional_table in ('user_binance_orders', 'portfolio_growth_history'):
+            try:
+                conn.execute("SAVEPOINT sp_optional_delete")
+                conn.execute(f"DELETE FROM {optional_table} WHERE user_id = %s AND is_demo = TRUE", (user_id,))
+                conn.execute("RELEASE SAVEPOINT sp_optional_delete")
+            except Exception:
+                conn.execute("ROLLBACK TO SAVEPOINT sp_optional_delete")
 
         conn.execute(
             """
@@ -430,35 +430,16 @@ class DbPortfolioMixin:
                 )
                 self.logger.info(f"تمت إعادة تهيئة الحساب التجريبي للمستخدم {user_id} من المصدر الموحد demo_accounts")
                 
-                try:
-                    conn.execute("DELETE FROM user_binance_balance WHERE user_id = %s", (user_id,))
-                    self.logger.info(f"تم مسح user_binance_balance للمستخدم {user_id}")
-                except Exception as e:
-                    self.logger.warning(f"جدول user_binance_balance غير موجود: {e}")
-                
-                try:
-                    conn.execute("DELETE FROM user_binance_balances WHERE user_id = %s", (user_id,))
-                    self.logger.info(f"تم مسح user_binance_balances للمستخدم {user_id}")
-                except Exception as e:
-                    self.logger.warning(f"جدول user_binance_balances غير موجود: {e}")
-                
-                try:
-                    conn.execute("DELETE FROM notifications WHERE user_id = %s", (user_id,))
-                    self.logger.info(f"تم مسح إشعارات المستخدم {user_id}")
-                except Exception as e:
-                    self.logger.warning(f"جدول notifications غير موجود: {e}")
-                
-                try:
-                    conn.execute("DELETE FROM notification_history WHERE user_id = %s", (user_id,))
-                    self.logger.info(f"تم مسح سجل الإشعارات للمستخدم {user_id}")
-                except Exception as e:
-                    self.logger.warning(f"جدول notification_history غير موجود: {e}")
-                
-                try:
-                    conn.execute("DELETE FROM activity_logs WHERE user_id = %s", (user_id,))
-                    self.logger.info(f"تم مسح سجل الأنشطة للمستخدم {user_id}")
-                except Exception as e:
-                    self.logger.warning(f"جدول activity_logs غير موجود: {e}")
+                # PostgreSQL aborts entire transaction on error — use SAVEPOINT for optional cleanup
+                for tbl_name in ('user_binance_balance', 'user_binance_balances',
+                                 'notifications', 'notification_history', 'activity_logs'):
+                    try:
+                        conn.execute("SAVEPOINT sp_reset_cleanup")
+                        conn.execute(f"DELETE FROM {tbl_name} WHERE user_id = %s", (user_id,))
+                        conn.execute("RELEASE SAVEPOINT sp_reset_cleanup")
+                        self.logger.info(f"تم مسح {tbl_name} للمستخدم {user_id}")
+                    except Exception:
+                        conn.execute("ROLLBACK TO SAVEPOINT sp_reset_cleanup")
                 
                 conn.execute("""
                     INSERT INTO user_settings 

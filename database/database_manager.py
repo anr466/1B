@@ -1010,7 +1010,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         WHEN COALESCE(available_balance, 0) > 0 THEN available_balance
                         ELSE 1000
                     END
-                    WHERE initial_balance IS NULL OR initial_balance <= 0
+                    WHERE is_demo = TRUE AND (initial_balance IS NULL OR initial_balance <= 0)
                 """)
                 conn.execute("""
                     INSERT INTO operation_log (operation_type, operation_name, status, start_time, details)
