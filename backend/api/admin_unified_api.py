@@ -511,7 +511,7 @@ def get_error_stats():
         critical = cursor.fetchone()[0]
         
         # Unresolved errors
-        cursor.execute("SELECT COUNT(*) FROM system_errors WHERE resolved = 0")
+        cursor.execute("SELECT COUNT(*) FROM system_errors WHERE resolved = FALSE")
         unresolved = cursor.fetchone()[0]
         
         # Errors by severity
@@ -598,7 +598,7 @@ def delete_resolved_errors():
         conn = get_safe_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "DELETE FROM system_errors WHERE status IN ('resolved', 'auto_resolved') OR resolved = 1"
+            "DELETE FROM system_errors WHERE status IN ('resolved', 'auto_resolved') OR resolved = TRUE"
         )
         deleted = cursor.rowcount
         conn.commit()

@@ -279,7 +279,7 @@ def register_admin_logs_routes(bp, shared):
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE system_errors
-                SET resolved = 1,
+                SET resolved = TRUE,
                     resolved_at = CURRENT_TIMESTAMP,
                     resolved_by = %s,
                     status = 'resolved',
@@ -341,7 +341,7 @@ def register_admin_logs_routes(bp, shared):
                 update_cursor.execute("""
                     UPDATE system_errors
                     SET status = 'auto_resolved',
-                        resolved = 1,
+                        resolved = TRUE,
                         resolved_at = CURRENT_TIMESTAMP,
                         resolved_by = 'auto_fix_retry',
                         attempt_count = attempt_count + 1,

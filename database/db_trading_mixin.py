@@ -133,7 +133,7 @@ class DbTradingMixin:
                 INSERT OR REPLACE INTO successful_coins 
                 (symbol, strategy, timeframe, score, profit_pct, win_rate, 
                  total_trades, market_trend, analysis_date, is_active)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
             """, (
                 coin_data['symbol'],
                 coin_data['strategy'],

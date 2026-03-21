@@ -87,11 +87,11 @@ def register_admin_ml_routes(bp, shared):
             )
             settings = cursor.fetchone()
             
-            cursor.execute("SELECT COUNT(*) FROM successful_coins WHERE is_active=1")
+            cursor.execute("SELECT COUNT(*) FROM successful_coins WHERE is_active=TRUE")
             active_coins = cursor.fetchone()[0]
             
             cursor.execute(
-                "SELECT COUNT(*) FROM active_positions WHERE user_id=%s AND is_demo=%s AND is_active=1",
+                "SELECT COUNT(*) FROM active_positions WHERE user_id=%s AND is_demo=%s AND is_active=TRUE",
                 (admin_id, is_demo),
             )
             active_positions = cursor.fetchone()[0]
@@ -115,7 +115,7 @@ def register_admin_ml_routes(bp, shared):
                     COUNT(*) as total,
                     SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as wins,
                     SUM(profit_loss) as total_pnl
-                FROM active_positions WHERE user_id=%s AND is_demo=%s AND is_active=0
+                FROM active_positions WHERE user_id=%s AND is_demo=%s AND is_active=FALSE
             """, (admin_id, is_demo))
             trades_stats = cursor.fetchone()
             
@@ -141,7 +141,7 @@ def register_admin_ml_routes(bp, shared):
                        quantity, COALESCE(profit_loss, 0) as profit_loss, 
                        COALESCE(profit_pct, 0) as profit_loss_percentage, created_at
                 FROM active_positions 
-                WHERE user_id=%s AND is_demo=%s AND is_active=1
+                WHERE user_id=%s AND is_demo=%s AND is_active=TRUE
                 ORDER BY created_at DESC
                 LIMIT 10
             """, (admin_id, is_demo))
@@ -160,7 +160,7 @@ def register_admin_ml_routes(bp, shared):
             cursor.execute("""
                 SELECT symbol, profit_loss, COALESCE(closed_at, updated_at) as exit_time
                 FROM active_positions 
-                WHERE user_id=%s AND is_demo=%s AND is_active=0
+                WHERE user_id=%s AND is_demo=%s AND is_active=FALSE
                 ORDER BY COALESCE(closed_at, updated_at) DESC
                 LIMIT 5
             """, (admin_id, is_demo))

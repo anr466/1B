@@ -290,7 +290,7 @@ class DbNotificationsMixin:
                 conn.execute("""
                     INSERT INTO user_biometric_auth 
                     (user_id, biometric_type, biometric_hash, device_id, created_at, is_active)
-                    VALUES (%s, %s, %s, %s, datetime('now'), 1)
+                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, TRUE)
                 """, (
                     user_id,
                     biometric_type,

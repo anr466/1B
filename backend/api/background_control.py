@@ -217,7 +217,7 @@ def get_background_status():
                     conn.execute("""
                         UPDATE system_status 
                         SET trading_state = 'RUNNING',
-                            status = 'running', is_running = 1, last_update = CURRENT_TIMESTAMP,
+                            status = 'running', is_running = TRUE, last_update = CURRENT_TIMESTAMP,
                             message = 'النظام يعمل (تم المزامنة)'
                         WHERE id = 1
                     """)
@@ -226,7 +226,7 @@ def get_background_status():
                     conn.execute("""
                         UPDATE system_status 
                         SET trading_state = 'STOPPED',
-                            status = 'stopped', is_running = 0, last_update = CURRENT_TIMESTAMP,
+                            status = 'stopped', is_running = FALSE, last_update = CURRENT_TIMESTAMP,
                             message = 'النظام متوقف (تم المزامنة)'
                         WHERE id = 1
                     """)

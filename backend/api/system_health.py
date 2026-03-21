@@ -78,7 +78,7 @@ def check_binance_api():
         # ✅ FIX: استخدام DatabaseManager بدلاً من sqlite3.connect
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM user_binance_keys WHERE is_active=1")
+            cursor.execute("SELECT COUNT(*) FROM user_binance_keys WHERE is_active=TRUE")
             active_keys = cursor.fetchone()[0]
         
         if active_keys > 0:
@@ -169,7 +169,7 @@ def get_critical_errors():
                 cursor.execute("""
                     SELECT id, error_type, error_message, timestamp, resolved
                     FROM system_errors
-                    WHERE severity = 'critical' AND resolved = 0
+                    WHERE severity = 'critical' AND resolved = FALSE
                     ORDER BY timestamp DESC
                     LIMIT 10
                 """)
@@ -209,7 +209,7 @@ def resolve_error(error_id):
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE system_errors 
-                SET resolved = 1, resolved_at = %s
+                SET resolved = TRUE, resolved_at = %s
                 WHERE id = %s
             """, (datetime.now().isoformat(), error_id))
         
