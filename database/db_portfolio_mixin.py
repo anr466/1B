@@ -17,6 +17,13 @@ class DbPortfolioMixin:
     DEMO_ACCOUNT_INITIAL_BALANCE = 1000.0
 
     def _ensure_demo_account(self, conn, user_id: int) -> None:
+        # Guard: only admin users may have an experimental demo account
+        admin_check = conn.execute(
+            "SELECT user_type FROM users WHERE id = %s LIMIT 1", (user_id,)
+        ).fetchone()
+        if not admin_check or (admin_check[0] if not isinstance(admin_check, dict) else admin_check.get('user_type')) != 'admin':
+            return
+
         conn.execute(
             """
             INSERT INTO demo_accounts (

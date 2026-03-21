@@ -994,8 +994,8 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         is_demo, created_at, updated_at
                     )
                     SELECT
-                        u.id, 10000.0, 10000.0, 0.0,
-                        0.0, 0.0, 10000.0,
+                        u.id, 1000.0, 1000.0, 0.0,
+                        0.0, 0.0, 1000.0,
                         TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     FROM users u
                     WHERE u.user_type = 'admin'
