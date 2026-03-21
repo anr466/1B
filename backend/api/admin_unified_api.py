@@ -154,20 +154,20 @@ def get_admin_dashboard():
         cursor.execute("SELECT COUNT(*) FROM users WHERE user_type='admin'")
         admin_users = cursor.fetchone()[0]
         
-        # إحصائيات التداول
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE")
+        # إحصائيات التداول — استبعاد الحسابات التجريبية
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = FALSE AND is_demo = FALSE")
         total_trades = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE AND is_demo = FALSE")
         active_trades = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM active_positions")
+        cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_demo = FALSE")
         active_positions = cursor.fetchone()[0]
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND profit_loss > 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND is_demo = FALSE AND profit_loss > 0")
         total_profit = cursor.fetchone()[0] or 0
         
-        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND profit_loss < 0")
+        cursor.execute("SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE AND is_demo = FALSE AND profit_loss < 0")
         total_loss = cursor.fetchone()[0] or 0
         
         # حالة النظام
@@ -213,8 +213,15 @@ def get_admin_dashboard():
         }
     
     try:
-        result = get_cached_or_fetch('admin_dashboard', fetch_dashboard)
-        return jsonify(result)
+        # Dashboard needs real-time updates - temporarily reduce cache TTL
+        global _cache_ttl
+        original_ttl = _cache_ttl
+        _cache_ttl = 5  # 5 seconds cache for real-time updates
+        try:
+            result = get_cached_or_fetch('admin_dashboard', fetch_dashboard)
+            return jsonify(result)
+        finally:
+            _cache_ttl = original_ttl  # Restore original TTL
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
