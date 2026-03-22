@@ -386,11 +386,7 @@ class TradingControlScreen extends ConsumerWidget {
       ref.invalidate(dailyStatusProvider);
 
       final backendMessage =
-          (result['message'] ??
-                  result['error'] ??
-                  result['data']?['message'] ??
-                  '')
-              .toString();
+          (result['message'] ?? result['data']?['message'] ?? '').toString();
 
       // Show success if either the API returned success OR we have a valid state
       AppSnackbar.show(
@@ -401,12 +397,37 @@ class TradingControlScreen extends ConsumerWidget {
         type: (success || applied) ? SnackType.success : SnackType.error,
       );
     } catch (e) {
-      if (!context.mounted) return;
-      AppSnackbar.show(
-        context,
-        message: UxMessages.error,
-        type: SnackType.error,
-      );
+      // Even if API call failed, verify actual state
+      final mounted = context.mounted;
+      if (!mounted) return;
+      try {
+        final repo = ref.read(adminRepositoryProvider);
+        final actualState = await repo.getTradingState();
+        final actualRunning =
+            actualState.isEffectivelyRunning || actualState.isRunning;
+
+        // Check if operation actually succeeded despite exception
+        final operationSucceeded = isRunning ? !actualRunning : actualRunning;
+        if (mounted && operationSucceeded) {
+          ref.read(tradingCycleLiveProvider.notifier).refresh();
+          ref.invalidate(systemStatusProvider);
+          AppSnackbar.show(
+            context,
+            message: isRunning ? 'تم إيقاف التداول' : 'تم تشغيل التداول',
+            type: SnackType.success,
+          );
+          return;
+        }
+      } catch (_) {}
+
+      // Show detailed error message from repository
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالإنترنت.',
+          type: SnackType.error,
+        );
+      }
     } finally {
       ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }
@@ -512,12 +533,33 @@ class TradingControlScreen extends ConsumerWidget {
         type: applied ? SnackType.warning : SnackType.error,
       );
     } catch (e) {
-      if (!context.mounted) return;
-      AppSnackbar.show(
-        context,
-        message: UxMessages.error,
-        type: SnackType.error,
-      );
+      // Even if API call failed, verify actual state
+      final mounted = context.mounted;
+      if (!mounted) return;
+      try {
+        final repo = ref.read(adminRepositoryProvider);
+        final actualState = await repo.getTradingState();
+        if (mounted &&
+            !actualState.isEffectivelyRunning &&
+            !actualState.isRunning) {
+          ref.read(tradingCycleLiveProvider.notifier).refresh();
+          ref.invalidate(systemStatusProvider);
+          AppSnackbar.show(
+            context,
+            message: 'تم الإيقاف الطارئ بنجاح',
+            type: SnackType.warning,
+          );
+          return;
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالإنترنت.',
+          type: SnackType.error,
+        );
+      }
     } finally {
       ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }
@@ -645,12 +687,31 @@ class TradingControlScreen extends ConsumerWidget {
         type: applied ? SnackType.success : SnackType.error,
       );
     } catch (e) {
-      if (!context.mounted) return;
-      AppSnackbar.show(
-        context,
-        message: UxMessages.error,
-        type: SnackType.error,
-      );
+      // Even if API call failed, verify actual state
+      final mounted = context.mounted;
+      if (!mounted) return;
+      try {
+        final repo = ref.read(adminRepositoryProvider);
+        final actualState = await repo.getTradingState();
+        if (mounted && !actualState.isError) {
+          ref.read(tradingCycleLiveProvider.notifier).refresh();
+          ref.invalidate(systemStatusProvider);
+          AppSnackbar.show(
+            context,
+            message: 'تم إعادة تعيين الخطأ بنجاح',
+            type: SnackType.success,
+          );
+          return;
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالإنترنت.',
+          type: SnackType.error,
+        );
+      }
     } finally {
       ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }

@@ -93,7 +93,10 @@ class ApiService {
   }
 
   bool _isSafeRetryMethod(String method) {
-    return method.toUpperCase() == 'GET';
+    // GET is always safe to retry
+    // POST is safe to retry for connection errors (idempotent trading operations)
+    final m = method.toUpperCase();
+    return m == 'GET' || m == 'POST';
   }
 
   bool _isRecoverableConnectionError(DioException err) {

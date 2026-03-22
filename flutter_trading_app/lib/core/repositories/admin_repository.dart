@@ -55,27 +55,59 @@ class AdminRepository {
   }
 
   Future<Map<String, dynamic>> startTrading() async {
-    final response = await _api.post(ApiEndpoints.tradingStart);
-    final data = ParsingService.asMap(response.data);
-    return {'success': _isSuccessfulResponse(data), ...data};
+    try {
+      final response = await _api.post(ApiEndpoints.tradingStart);
+      final data = ParsingService.asMap(response.data);
+      return {'success': _isSuccessfulResponse(data), ...data};
+    } catch (e) {
+      return _handleApiError(e);
+    }
   }
 
   Future<Map<String, dynamic>> stopTrading() async {
-    final response = await _api.post(ApiEndpoints.tradingStop);
-    final data = ParsingService.asMap(response.data);
-    return {'success': _isSuccessfulResponse(data), ...data};
+    try {
+      final response = await _api.post(ApiEndpoints.tradingStop);
+      final data = ParsingService.asMap(response.data);
+      return {'success': _isSuccessfulResponse(data), ...data};
+    } catch (e) {
+      return _handleApiError(e);
+    }
   }
 
   Future<Map<String, dynamic>> emergencyStop() async {
-    final response = await _api.post(ApiEndpoints.tradingEmergencyStop);
-    final data = ParsingService.asMap(response.data);
-    return {'success': _isSuccessfulResponse(data), ...data};
+    try {
+      final response = await _api.post(ApiEndpoints.tradingEmergencyStop);
+      final data = ParsingService.asMap(response.data);
+      return {'success': _isSuccessfulResponse(data), ...data};
+    } catch (e) {
+      return _handleApiError(e);
+    }
   }
 
   Future<Map<String, dynamic>> resetError() async {
-    final response = await _api.post(ApiEndpoints.tradingResetError);
-    final data = ParsingService.asMap(response.data);
-    return {'success': _isSuccessfulResponse(data), ...data};
+    try {
+      final response = await _api.post(ApiEndpoints.tradingResetError);
+      final data = ParsingService.asMap(response.data);
+      return {'success': _isSuccessfulResponse(data), ...data};
+    } catch (e) {
+      return _handleApiError(e);
+    }
+  }
+
+  Map<String, dynamic> _handleApiError(dynamic error) {
+    String message = 'فشل الاتصال بالخادم';
+    if (error.toString().contains('401')) {
+      message = 'انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى';
+    } else if (error.toString().contains('403')) {
+      message = 'غير مصرح بالوصول';
+    } else if (error.toString().contains('500')) {
+      message = 'خطأ في الخادم';
+    } else if (error.toString().contains('timeout')) {
+      message = 'انتهت مهلة الاتصال، حاول مرة أخرى';
+    } else if (error.toString().contains('connection')) {
+      message = 'فشل الاتصال بالإنترنت';
+    }
+    return {'success': false, 'message': message, 'error': error.toString()};
   }
 
   Future<Map<String, dynamic>> resetDemo({bool resetMl = false}) async {
