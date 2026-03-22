@@ -25,16 +25,6 @@ final settingsDataProvider = FutureProvider.autoDispose<SettingsModel>((
   return repo.getSettings(auth.user!.id, mode: mode);
 });
 
-/// Daily risk status provider
-final dailyRiskStatusProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
-      final auth = ref.watch(authProvider);
-      if (!auth.isAuthenticated || auth.user == null) return {};
-      final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-      final repo = ref.watch(settingsRepositoryProvider);
-      return repo.getDailyStatus(auth.user!.id, mode: mode);
-    });
-
 /// Trading Settings Screen — إعدادات التداول (sliders + save)
 class TradingSettingsScreen extends ConsumerStatefulWidget {
   const TradingSettingsScreen({super.key});
@@ -84,7 +74,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
         setState(() => _tradingMode = mode);
         ref.read(adminPortfolioModeProvider.notifier).state = mode;
         ref.invalidate(settingsDataProvider);
-        ref.invalidate(dailyRiskStatusProvider);
         ref.invalidate(dailyStatusProvider);
         ref.invalidate(portfolioProvider);
         ref.invalidate(statsProvider);
@@ -160,7 +149,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
           type: SnackType.success,
         );
         ref.invalidate(settingsDataProvider);
-        ref.invalidate(dailyRiskStatusProvider);
         ref.invalidate(dailyStatusProvider);
         ref.invalidate(portfolioProvider);
         ref.invalidate(statsProvider);
@@ -268,7 +256,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                 const SizedBox(height: SpacingTokens.md),
 
                 // حالة المخاطرة اليومية
-                _DailyRiskCard(dailyStatus: ref.watch(dailyRiskStatusProvider)),
+                _DailyRiskCard(dailyStatus: ref.watch(dailyStatusProvider)),
                 const SizedBox(height: SpacingTokens.md),
 
                 AppCard(
@@ -432,7 +420,9 @@ class _PortfolioModeSwitcher extends StatelessWidget {
                             : Icons.lock_outline,
                         isActive: !_isDemo,
                         activeColor: realColor,
-                        onTap: !_isDemo || (_requiresBinanceKeys && !hasConfiguredDbKeys)
+                        onTap:
+                            !_isDemo ||
+                                (_requiresBinanceKeys && !hasConfiguredDbKeys)
                             ? null
                             : () => onModeSelected('real'),
                       ),

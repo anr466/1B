@@ -244,10 +244,8 @@ class AdminRepository {
     bool? requiresAdmin,
   }) async {
     final response = await _api.get(
-      '/admin/system-errors',
+      ApiEndpoints.systemErrors(page: page, limit: perPage),
       queryParameters: {
-        'page': page,
-        'limit': perPage,
         if (severity != null) 'severity': severity,
         if (source != null) 'source': source,
         if (status != null) 'status': status,
@@ -271,7 +269,7 @@ class AdminRepository {
   }
 
   Future<Map<String, dynamic>> getSystemErrorDetails(int errorId) async {
-    final response = await _api.get('/admin/system-errors/$errorId');
+    final response = await _api.get(ApiEndpoints.systemErrorDetails(errorId));
     final data = response.data;
     if (data['success'] == true) {
       return Map<String, dynamic>.from(data['data'] ?? {});
@@ -284,7 +282,7 @@ class AdminRepository {
     String? notes,
   }) async {
     final response = await _api.post(
-      '/admin/system-errors/$errorId/resolve',
+      ApiEndpoints.resolveSystemError(errorId),
       data: {
         'resolved_by': 'admin',
         if (notes != null && notes.isNotEmpty) 'notes': notes,
@@ -294,12 +292,12 @@ class AdminRepository {
   }
 
   Future<Map<String, dynamic>> retryAutoFix(int errorId) async {
-    final response = await _api.post('/admin/system-errors/$errorId/retry');
+    final response = await _api.post(ApiEndpoints.retrySystemError(errorId));
     return response.data;
   }
 
   Future<int> clearResolvedErrors() async {
-    final response = await _api.delete('/admin/errors/resolved');
+    final response = await _api.delete(ApiEndpoints.clearResolvedErrors);
     final data = response.data;
     if (data['success'] == true) {
       return ParsingService.asInt(

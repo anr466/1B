@@ -68,11 +68,13 @@ class ApiEndpoints {
     if (mode != null) url += '?mode=$mode';
     return url;
   }
+
   static String updateSettings(int userId, {String? mode}) {
     var url = '/user/settings/$userId';
     if (mode != null) url += '?mode=$mode';
     return url;
   }
+
   static String tradingMode(int userId) =>
       '/user/settings/trading-mode/$userId';
   static String binanceKeys(int userId) => '/user/binance-keys/$userId';
@@ -103,6 +105,7 @@ class ApiEndpoints {
     if (mode != null) url += '?mode=$mode';
     return url;
   }
+
   static String resetData(int userId) => '/user/reset-data/$userId';
   static String dailyStatus(int userId, {String? mode}) {
     var url = '/user/daily-status/$userId';
@@ -174,6 +177,19 @@ class ApiEndpoints {
   static const String circuitBreakers = '/admin/system/circuit-breakers';
   static const String circuitBreakersReset =
       '/admin/system/circuit-breakers/reset';
+
+  // ─── System Errors ──────────────────────────────
+  static String systemErrors({int page = 1, int limit = 50}) {
+    return '/admin/system-errors?page=$page&limit=$limit';
+  }
+
+  static String systemErrorDetails(int errorId) =>
+      '/admin/system-errors/$errorId';
+  static String resolveSystemError(int errorId) =>
+      '/admin/system-errors/$errorId/resolve';
+  static String retrySystemError(int errorId) =>
+      '/admin/system-errors/$errorId/retry';
+  static const String clearResolvedErrors = '/admin/errors/resolved';
 
   // Backward-compatible aliases used in some repositories
   static const String adminTradingState = tradingState;

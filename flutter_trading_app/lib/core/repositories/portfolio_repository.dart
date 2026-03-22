@@ -54,7 +54,9 @@ class PortfolioRepository {
             'تنسيق بيانات العملات المؤهلة غير صالح',
       );
     }
-    throw Exception(data['message'] ?? data['error'] ?? 'فشل تحميل العملات المؤهلة');
+    throw Exception(
+      data['message'] ?? data['error'] ?? 'فشل تحميل العملات المؤهلة',
+    );
   }
 
   Future<List<TradeModel>> getActivePositions(
@@ -73,7 +75,6 @@ class PortfolioRepository {
             (j) => TradeModel.fromJson({
               ...(j as Map<String, dynamic>),
               'user_id': userId,
-              'status': 'open',
             }),
           )
           .toList();
@@ -97,11 +98,11 @@ class PortfolioRepository {
         return List<Map<String, dynamic>>.from(growthData);
       }
       throw Exception(
-        data['message'] ??
-            data['error'] ??
-            'تنسيق بيانات نمو المحفظة غير صالح',
+        data['message'] ?? data['error'] ?? 'تنسيق بيانات نمو المحفظة غير صالح',
       );
     }
-    throw Exception(data['message'] ?? data['error'] ?? 'فشل تحميل نمو المحفظة');
+    throw Exception(
+      data['message'] ?? data['error'] ?? 'فشل تحميل نمو المحفظة',
+    );
   }
 }

@@ -152,31 +152,11 @@ class StorageService {
   static const _keyBioPass = 'bio_pass';
 
   Future<void> saveBiometricCredentials(String user, String pass) async {
-    final userToSave = CredentialEncryption.encrypt(
-      CredentialEncryption.decrypt(user),
-    );
-    final passToSave = CredentialEncryption.encrypt(
-      CredentialEncryption.decrypt(pass),
-    );
-    await _p.setString(_keyBioUser, userToSave);
-    await _p.setString(_keyBioPass, passToSave);
+    await _saveCredentials(_keyBioUser, _keyBioPass, user, pass);
   }
 
   (String?, String?) get biometricCredentials {
-    final rawUser = _p.getString(_keyBioUser);
-    final rawPass = _p.getString(_keyBioPass);
-    if (rawUser == null || rawPass == null) return (null, null);
-    final user = CredentialEncryption.decrypt(rawUser);
-    final pass = CredentialEncryption.decrypt(rawPass);
-
-    final normalizedUser = CredentialEncryption.encrypt(user);
-    final normalizedPass = CredentialEncryption.encrypt(pass);
-    if (rawUser != normalizedUser || rawPass != normalizedPass) {
-      _p.setString(_keyBioUser, normalizedUser);
-      _p.setString(_keyBioPass, normalizedPass);
-    }
-
-    return (user, pass);
+    return _getCredentials(_keyBioUser, _keyBioPass);
   }
 
   Future<void> clearBiometricCredentials() async {
@@ -192,19 +172,33 @@ class StorageService {
   bool get rememberMeEnabled => _p.getBool(_keyRememberMe) ?? false;
 
   Future<void> saveRememberedCredentials(String user, String pass) async {
+    await _saveCredentials(_keyRememberedUser, _keyRememberedPass, user, pass);
+  }
+
+  (String?, String?) get rememberedCredentials {
+    return _getCredentials(_keyRememberedUser, _keyRememberedPass);
+  }
+
+  // ─── Shared credential helpers ─────────────────
+  Future<void> _saveCredentials(
+    String userKey,
+    String passKey,
+    String user,
+    String pass,
+  ) async {
     final userToSave = CredentialEncryption.encrypt(
       CredentialEncryption.decrypt(user),
     );
     final passToSave = CredentialEncryption.encrypt(
       CredentialEncryption.decrypt(pass),
     );
-    await _p.setString(_keyRememberedUser, userToSave);
-    await _p.setString(_keyRememberedPass, passToSave);
+    await _p.setString(userKey, userToSave);
+    await _p.setString(passKey, passToSave);
   }
 
-  (String?, String?) get rememberedCredentials {
-    final rawUser = _p.getString(_keyRememberedUser);
-    final rawPass = _p.getString(_keyRememberedPass);
+  (String?, String?) _getCredentials(String userKey, String passKey) {
+    final rawUser = _p.getString(userKey);
+    final rawPass = _p.getString(passKey);
     if (rawUser == null || rawPass == null) return (null, null);
     final user = CredentialEncryption.decrypt(rawUser);
     final pass = CredentialEncryption.decrypt(rawPass);
@@ -212,8 +206,8 @@ class StorageService {
     final normalizedUser = CredentialEncryption.encrypt(user);
     final normalizedPass = CredentialEncryption.encrypt(pass);
     if (rawUser != normalizedUser || rawPass != normalizedPass) {
-      _p.setString(_keyRememberedUser, normalizedUser);
-      _p.setString(_keyRememberedPass, normalizedPass);
+      _p.setString(userKey, normalizedUser);
+      _p.setString(passKey, normalizedPass);
     }
 
     return (user, pass);
