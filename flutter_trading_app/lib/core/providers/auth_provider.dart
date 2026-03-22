@@ -46,16 +46,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
   }
 
-  /// Check existing session on app start
-  /// Keeps startup routing predictable: authenticated users continue,
-  /// first-run users can be directed to onboarding, and unauthenticated
-  /// users go to the login flow. "Remember Me" only pre-fills credentials.
+  /// Check existing session on app start with strict validation
   Future<void> checkAuth() async {
     state = state.copyWith(status: AuthStatus.loading, error: null);
     try {
       final authService = _ref.read(authServiceProvider);
+      
+      // First check if token exists
+      if (!authService.hasToken) {
+        state = const AuthState(status: AuthStatus.unauthenticated);
+        return;
+      }
+      
       final result = await authService.restoreSession();
-      if (result['success'] == true && result['user'] != null) {
+      
+      // Strict validation: must have success AND valid user data
+      if (result['success'] == true && 
+          result['user'] != null &&
+          result['user'] is Map &&
+          result['user']['id'] != null) {
         final user = UserModel.fromJson(
           Map<String, dynamic>.from(result['user'] as Map),
         );
@@ -64,11 +73,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
         _startNotificationPolling(user.id);
         return;
       }
+      
+      // Clear any stale data on failure
+      await authService.logout();
       state = const AuthState(status: AuthStatus.unauthenticated);
     } catch (e) {
+      // Clear auth on any error
+      try {
+        final authService = _ref.read(authServiceProvider);
+        await authService.logout();
+      } catch (_) {}
       state = AuthState(
         status: AuthStatus.unauthenticated,
-        error: ApiService.extractError(e),
+        error: null, // Don't show error on auto-check
       );
     }
   }

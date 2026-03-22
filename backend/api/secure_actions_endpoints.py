@@ -22,6 +22,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from typing import Any, Dict
 
 # Database
 import sys

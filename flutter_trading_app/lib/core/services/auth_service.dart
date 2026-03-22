@@ -212,14 +212,26 @@ class AuthService {
 
     try {
       final data = await validateSession();
-      if (data['success'] == true) {
+      if (data['success'] == true && data['user'] != null) {
         await _saveAuthData(data);
         return data;
       }
+      // Session invalid - clear all auth data
       await _storage.clearAuth();
-      return data;
-    } catch (_) {
-      rethrow;
+      await _storage.clearBiometricCredentials();
+      return {
+        'success': false, 
+        'message': data['error'] ?? 'الجلسة منتهية الصلاحية'
+      };
+    } catch (e) {
+      // API error or network failure - clear auth to prevent bypass
+      await _storage.clearAuth();
+      await _storage.clearBiometricCredentials();
+      return {
+        'success': false, 
+        'message': 'فشل التحقق من الجلسة',
+        'error': e.toString(),
+      };
     }
   }
 

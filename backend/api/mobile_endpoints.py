@@ -197,15 +197,6 @@ def get_user_portfolio(user_id):
     # ✅ قراءة mode من query parameters (للأدمن)
     requested_mode = request.args.get('mode', None)
     
-    # ✅ محاولة الحصول من Cache أولاً
-    if CACHE_AVAILABLE:
-        cache_key = f"portfolio_{user_id}_{requested_mode}" if requested_mode else f"portfolio_{user_id}"
-        cached_data = response_cache.get(cache_key)
-        if cached_data:
-            logger.debug(f"✅ Portfolio من Cache للمستخدم {user_id}")
-            response_data, status_code = success_response(cached_data, 'تم جلب المحفظة من الذاكرة المؤقتة')
-            return jsonify(response_data), status_code
-    
     try:
         # ✅ استخدام db_manager المُعرّف مسبقاً بدلاً من إنشاء instance جديد
         db = db_manager
@@ -219,6 +210,16 @@ def get_user_portfolio(user_id):
         is_demo = trading_context['is_demo']
         portfolio_owner_id = trading_context['portfolio_owner_id']
         key_state = _resolve_key_state(db, user_id, is_admin, bool(is_demo))
+        resolved_mode = requested_mode if requested_mode in ('demo', 'real') else ('demo' if bool(is_demo) else 'real')
+        cache_key = f"portfolio_{user_id}_{resolved_mode}"
+
+        # ✅ محاولة الحصول من Cache بعد حسم الوضع الفعلي (تجنب خلط real/demo)
+        if CACHE_AVAILABLE:
+            cached_data = response_cache.get(cache_key)
+            if cached_data:
+                logger.debug(f"✅ Portfolio من Cache للمستخدم {user_id} mode={resolved_mode}")
+                response_data, status_code = success_response(cached_data, 'تم جلب المحفظة من الذاكرة المؤقتة')
+                return jsonify(response_data), status_code
 
         def load_portfolio_base_balances(owner_id, demo_flag):
             try:
@@ -384,7 +385,6 @@ def get_user_portfolio(user_id):
         
         # ✅ حفظ في Cache مع توحيد Cache Key + Dynamic TTL
         if CACHE_AVAILABLE:
-            cache_key = f"portfolio_{user_id}_{requested_mode}" if requested_mode else f"portfolio_{user_id}"
             response_cache.set(cache_key, data, ttl=30, user_id=user_id)
         
         response_data, status_code = success_response(data, 'تم جلب المحفظة بنجاح')
@@ -426,15 +426,6 @@ def get_user_stats(user_id):
     # ✅ قراءة mode من query parameters (للأدمن)
     requested_mode = request.args.get('mode', None)
     
-    # ✅ محاولة الحصول من Cache
-    if CACHE_AVAILABLE:
-        cache_key = f"stats_{user_id}_{requested_mode}" if requested_mode else f"stats_{user_id}"
-        cached_data = response_cache.get(cache_key)
-        if cached_data:
-            logger.debug(f"✅ Stats من Cache للمستخدم {user_id}")
-            response_data, status_code = success_response(cached_data, 'تم جلب الإحصائيات من الذاكرة المؤقتة')
-            return jsonify(response_data), status_code
-    
     try:
         # ✅ استخدام db_manager المُعرّف مسبقاً
         db = db_manager
@@ -444,6 +435,16 @@ def get_user_stats(user_id):
         is_demo = trading_context['is_demo']
         portfolio_owner_id = trading_context['portfolio_owner_id']
         key_state = _resolve_key_state(db, user_id, is_admin, bool(is_demo))
+        resolved_mode = requested_mode if requested_mode in ('demo', 'real') else ('demo' if bool(is_demo) else 'real')
+        cache_key = f"stats_{user_id}_{resolved_mode}"
+
+        # ✅ محاولة الحصول من Cache بعد حسم الوضع الفعلي (تجنب خلط real/demo)
+        if CACHE_AVAILABLE:
+            cached_data = response_cache.get(cache_key)
+            if cached_data:
+                logger.debug(f"✅ Stats من Cache للمستخدم {user_id} mode={resolved_mode}")
+                response_data, status_code = success_response(cached_data, 'تم جلب الإحصائيات من الذاكرة المؤقتة')
+                return jsonify(response_data), status_code
 
         def load_stats_base_balances(owner_id, demo_flag):
             try:
@@ -647,7 +648,6 @@ def get_user_stats(user_id):
             
             # ✅ حفظ في Cache مع توحيد Cache Key + Dynamic TTL
             if CACHE_AVAILABLE:
-                cache_key = f"stats_{user_id}_{requested_mode}" if requested_mode else f"stats_{user_id}"
                 response_cache.set(cache_key, data, ttl=30, user_id=user_id)
             
             response_data, status_code = success_response(data, 'تم جلب الإحصائيات بنجاح')
@@ -678,7 +678,6 @@ def get_user_stats(user_id):
             
             # ✅ حفظ في Cache مع Dynamic TTL
             if CACHE_AVAILABLE:
-                cache_key = f"stats_{user_id}_{requested_mode}" if requested_mode else f"stats_{user_id}"
                 response_cache.set(cache_key, data, ttl=30, user_id=user_id)
             
             response_data, status_code = success_response(data, 'تم جلب الإحصائيات بنجاح')

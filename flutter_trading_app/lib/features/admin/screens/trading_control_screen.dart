@@ -18,14 +18,18 @@ import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
 /// Trading Control Screen — التحكم بالتداول (تشغيل/إيقاف/طوارئ/ML)
+final _tradingControlActionBusyProvider =
+    StateProvider.autoDispose<bool>((ref) => false);
+
 class TradingControlScreen extends ConsumerWidget {
   const TradingControlScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final status = ref.watch(systemStatusProvider);
+    final status = ref.watch(tradingCycleLiveProvider);
     final mlStatus = ref.watch(mlStatusProvider);
+    final isActionBusy = ref.watch(_tradingControlActionBusyProvider);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -39,6 +43,7 @@ class TradingControlScreen extends ConsumerWidget {
                 child: RefreshIndicator(
           color: cs.primary,
           onRefresh: () async {
+            ref.invalidate(tradingCycleLiveProvider);
             ref.invalidate(systemStatusProvider);
             ref.invalidate(mlStatusProvider);
           },
@@ -57,7 +62,8 @@ class TradingControlScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                data: (s) => _statusSection(context, ref, cs, s),
+                data: (s) =>
+                    _statusSection(context, ref, cs, s, isActionBusy),
               ),
 
               const SizedBox(height: SpacingTokens.lg),
@@ -83,7 +89,7 @@ class TradingControlScreen extends ConsumerWidget {
 
               const AppSectionLabel(text: 'الحساب التجريبي'),
               const SizedBox(height: SpacingTokens.sm),
-              _demoResetSection(context, ref, cs),
+              _demoResetSection(context, ref, cs, isActionBusy),
 
               const SizedBox(height: SpacingTokens.xl),
             ],
@@ -102,7 +108,11 @@ class TradingControlScreen extends ConsumerWidget {
     WidgetRef ref,
     ColorScheme cs,
     dynamic s,
+    bool isActionBusy,
   ) {
+    final rawState = s.state.toString().toUpperCase();
+    final isTransitioning = rawState == 'STARTING' || rawState == 'STOPPING';
+    final isBusy = isActionBusy || isTransitioning;
     final effectivelyRunning = s.isEffectivelyRunning == true;
     final badgeType = effectivelyRunning
         ? BadgeType.success
@@ -161,12 +171,16 @@ class TradingControlScreen extends ConsumerWidget {
             children: [
               Expanded(
                 child: AppButton(
-                  label: s.isRunning ? 'إيقاف' : 'تشغيل',
+                  label: isTransitioning
+                      ? 'جارٍ التنفيذ...'
+                      : (s.isRunning ? 'إيقاف' : 'تشغيل'),
                   variant: s.isRunning
                       ? AppButtonVariant.outline
                       : AppButtonVariant.primary,
                   height: 44,
-                  onPressed: () => _toggleTrading(context, ref, s.isRunning),
+                  onPressed: isBusy
+                      ? null
+                      : () => _toggleTrading(context, ref, s.isRunning),
                 ),
               ),
               const SizedBox(width: SpacingTokens.sm),
@@ -175,7 +189,7 @@ class TradingControlScreen extends ConsumerWidget {
                   label: 'إيقاف طوارئ',
                   variant: AppButtonVariant.danger,
                   height: 44,
-                  onPressed: s.isStopped
+                  onPressed: (s.isStopped || isBusy)
                       ? null
                       : () => _emergencyStop(context, ref),
                 ),
@@ -189,7 +203,7 @@ class TradingControlScreen extends ConsumerWidget {
               variant: AppButtonVariant.outline,
               isFullWidth: true,
               height: 44,
-              onPressed: () => _resetError(context, ref),
+              onPressed: isBusy ? null : () => _resetError(context, ref),
             ),
           ],
         ],
@@ -201,6 +215,7 @@ class TradingControlScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     ColorScheme cs,
+    bool isActionBusy,
   ) {
     return AppCard(
       padding: const EdgeInsets.all(SpacingTokens.base),
@@ -231,7 +246,7 @@ class TradingControlScreen extends ConsumerWidget {
             variant: AppButtonVariant.outline,
             isFullWidth: true,
             height: 44,
-            onPressed: () => _resetDemoAccount(context, ref),
+            onPressed: isActionBusy ? null : () => _resetDemoAccount(context, ref),
           ),
         ],
       ),
@@ -291,6 +306,9 @@ class TradingControlScreen extends ConsumerWidget {
     WidgetRef ref,
     bool isRunning,
   ) async {
+    if (ref.read(_tradingControlActionBusyProvider)) return;
+    ref.read(_tradingControlActionBusyProvider.notifier).state = true;
+
     final bio = ref.read(biometricServiceProvider);
     if (await bio.isAvailable) {
       final label = isRunning ? 'تأكيد إيقاف التداول' : 'تأكيد تشغيل التداول';
@@ -302,6 +320,7 @@ class TradingControlScreen extends ConsumerWidget {
           message: 'فشل التحقق من البصمة',
           type: SnackType.error,
         );
+        ref.read(_tradingControlActionBusyProvider.notifier).state = false;
         return;
       }
     }
@@ -317,8 +336,8 @@ class TradingControlScreen extends ConsumerWidget {
           ? (state == 'STOPPED' || state == 'STOPPING')
           : (state == 'RUNNING' || state == 'STARTING');
       if (!context.mounted) return;
-      ref.invalidate(systemStatusProvider);
       ref.invalidate(tradingCycleLiveProvider);
+      ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
@@ -343,10 +362,15 @@ class TradingControlScreen extends ConsumerWidget {
         message: UxMessages.error,
         type: SnackType.error,
       );
+    } finally {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }
   }
 
   Future<void> _emergencyStop(BuildContext context, WidgetRef ref) async {
+    if (ref.read(_tradingControlActionBusyProvider)) return;
+    ref.read(_tradingControlActionBusyProvider.notifier).state = true;
+
     final bio = ref.read(biometricServiceProvider);
     if (await bio.isAvailable) {
       final ok = await bio.authenticate(reason: 'تأكيد إيقاف الطوارئ');
@@ -357,10 +381,14 @@ class TradingControlScreen extends ConsumerWidget {
           message: 'فشل التحقق من البصمة',
           type: SnackType.error,
         );
+        ref.read(_tradingControlActionBusyProvider.notifier).state = false;
         return;
       }
     }
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => Directionality(
@@ -390,7 +418,10 @@ class TradingControlScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed != true || !context.mounted) return;
+    if (confirmed != true || !context.mounted) {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
+      return;
+    }
 
     try {
       final repo = ref.read(adminRepositoryProvider);
@@ -399,8 +430,8 @@ class TradingControlScreen extends ConsumerWidget {
           .toString()
           .toUpperCase();
       final applied = state == 'STOPPED' || state == 'ERROR';
-      ref.invalidate(systemStatusProvider);
       ref.invalidate(tradingCycleLiveProvider);
+      ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
@@ -426,11 +457,19 @@ class TradingControlScreen extends ConsumerWidget {
         message: UxMessages.error,
         type: SnackType.error,
       );
+    } finally {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }
   }
 
   Future<void> _resetDemoAccount(BuildContext context, WidgetRef ref) async {
-    if (!context.mounted) return;
+    if (ref.read(_tradingControlActionBusyProvider)) return;
+    ref.read(_tradingControlActionBusyProvider.notifier).state = true;
+
+    if (!context.mounted) {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => Directionality(
@@ -462,7 +501,10 @@ class TradingControlScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed != true || !context.mounted) return;
+    if (confirmed != true || !context.mounted) {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
+      return;
+    }
 
     try {
       final repo = ref.read(adminRepositoryProvider);
@@ -492,10 +534,15 @@ class TradingControlScreen extends ConsumerWidget {
         message: UxMessages.error,
         type: SnackType.error,
       );
+    } finally {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }
   }
 
   Future<void> _resetError(BuildContext context, WidgetRef ref) async {
+    if (ref.read(_tradingControlActionBusyProvider)) return;
+    ref.read(_tradingControlActionBusyProvider.notifier).state = true;
+
     try {
       final repo = ref.read(adminRepositoryProvider);
       final result = await repo.resetError();
@@ -503,8 +550,8 @@ class TradingControlScreen extends ConsumerWidget {
           .toString()
           .toUpperCase();
       final applied = state == 'STOPPED' || state == 'RUNNING';
-      ref.invalidate(systemStatusProvider);
       ref.invalidate(tradingCycleLiveProvider);
+      ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
@@ -530,6 +577,8 @@ class TradingControlScreen extends ConsumerWidget {
         message: UxMessages.error,
         type: SnackType.error,
       );
+    } finally {
+      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
     }
   }
 }

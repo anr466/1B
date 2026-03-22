@@ -36,7 +36,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
     Future.microtask(() {
       ref.read(tradesListProvider.notifier).loadFirstPage();
     });
-    // Auto-refresh active positions every 30 seconds
+    // Auto-refresh every 30 seconds (after initial 3-second delay)
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       ref.read(tradesListProvider.notifier).loadFirstPage(

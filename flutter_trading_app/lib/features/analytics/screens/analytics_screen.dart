@@ -49,10 +49,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   void initState() {
     super.initState();
+    // Auto-refresh every 60 seconds (after initial 3-second delay)
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (!mounted) return;
       ref.invalidate(statsProvider);
       ref.invalidate(_analyticsTradesProvider);
+    });
+    // Delay first refresh to allow initial build to settle
+    Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        ref.invalidate(statsProvider);
+        ref.invalidate(_analyticsTradesProvider);
+      }
     });
   }
 

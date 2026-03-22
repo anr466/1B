@@ -12,7 +12,7 @@ final systemStatusProvider = FutureProvider.autoDispose<SystemStatusModel>((
   return repo.getTradingState();
 });
 
-/// Live polling provider — syncs with backend trading cycle every 15 seconds
+/// Live polling provider — syncs with backend trading cycle every 60 seconds
 final tradingCycleLiveProvider = StreamProvider.autoDispose<SystemStatusModel>((
   ref,
 ) async* {
@@ -21,8 +21,8 @@ final tradingCycleLiveProvider = StreamProvider.autoDispose<SystemStatusModel>((
   // Emit immediately
   yield await repo.getTradingState();
 
-  // Then poll every 15 seconds
-  await for (final _ in Stream.periodic(const Duration(seconds: 15))) {
+  // Then poll every 60 seconds (reduced from 15s to prevent UI flicker)
+  await for (final _ in Stream.periodic(const Duration(seconds: 60))) {
     try {
       yield await repo.getTradingState();
     } catch (_) {
@@ -38,10 +38,8 @@ final adminUsersProvider =
       return repo.getAllUsers();
     });
 
-/// ML Status
-final mlStatusProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
-  ref,
-) async {
+/// ML Status — cached to prevent card recreation
+final mlStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final auth = ref.watch(authProvider);
   final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
   final repo = ref.watch(adminRepositoryProvider);

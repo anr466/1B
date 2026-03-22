@@ -110,12 +110,13 @@ _cache_ttl = 30  # ثانية
 if CACHE_INVALIDATION_AVAILABLE:
     set_admin_cache(_cache)
 
-def get_cached_or_fetch(cache_key, fetch_func):
+def get_cached_or_fetch(cache_key, fetch_func, cache_ttl=None):
     """جلب من Cache أو تنفيذ الدالة"""
     now = time.time()
+    ttl_to_use = cache_ttl if cache_ttl is not None else _cache_ttl
     if cache_key in _cache:
         data, timestamp = _cache[cache_key]
-        if now - timestamp < _cache_ttl:
+        if now - timestamp < ttl_to_use:
             return data
     
     data = fetch_func()

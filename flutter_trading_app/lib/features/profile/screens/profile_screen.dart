@@ -55,9 +55,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } else {
       AppSnackbar.show(
         context,
-        message: newValue
-            ? 'لا يمكن تفعيل التداول بينما النظام العام متوقف أو غير مؤكد'
-            : 'حدث خطأ أثناء التحديث',
+        message: 'تعذر إتمام العملية، حاول مرة أخرى',
         type: SnackType.error,
       );
     }

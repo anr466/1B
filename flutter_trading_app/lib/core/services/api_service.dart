@@ -10,6 +10,7 @@ class ApiService {
   late final Dio _dio;
   final StorageService _storage;
   bool _isRefreshing = false;
+  bool _isRecoveringConnection = false;
 
   /// Callback invoked when session expires (refresh token fails).
   /// Set by AuthNotifier to trigger forced logout.
@@ -50,6 +51,24 @@ class ApiService {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
+    if (_isRecoverableConnectionError(err) && !_isRecoveringConnection) {
+      _isRecoveringConnection = true;
+      try {
+        final switched = await _switchToReachableBaseUrl();
+        if (switched && _isSafeRetryMethod(err.requestOptions.method)) {
+          final retryOptions = err.requestOptions;
+          retryOptions.baseUrl = _dio.options.baseUrl;
+          retryOptions.extra['_network_retried'] = true;
+          final response = await _dio.fetch(retryOptions);
+          return handler.resolve(response);
+        }
+      } catch (_) {
+        // keep original error path
+      } finally {
+        _isRecoveringConnection = false;
+      }
+    }
+
     if (err.response?.statusCode == 401 && !_isRefreshing) {
       _isRefreshing = true;
       try {
@@ -71,6 +90,58 @@ class ApiService {
       onSessionExpired?.call();
     }
     handler.next(err);
+  }
+
+  bool _isSafeRetryMethod(String method) {
+    return method.toUpperCase() == 'GET';
+  }
+
+  bool _isRecoverableConnectionError(DioException err) {
+    if (err.requestOptions.extra['_network_retried'] == true) return false;
+    if (err.response != null) return false;
+    return err.type == DioExceptionType.connectionError ||
+        err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.receiveTimeout ||
+        err.type == DioExceptionType.sendTimeout;
+  }
+
+  Future<bool> _switchToReachableBaseUrl() async {
+    final current = _dio.options.baseUrl;
+    final currentUri = Uri.tryParse(current);
+    if (currentUri == null) return false;
+
+    final candidates = <String>{
+      current,
+      currentUri.replace(host: '10.0.2.2').toString(),
+      currentUri.replace(host: '127.0.0.1').toString(),
+      currentUri.replace(host: 'localhost').toString(),
+    };
+
+    for (final candidate in candidates) {
+      final ok = await _isBaseUrlReachable(candidate);
+      if (ok) {
+        _dio.options.baseUrl = candidate;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _isBaseUrlReachable(String baseUrl) async {
+    try {
+      final probe = Dio(
+        BaseOptions(
+          baseUrl: baseUrl,
+          connectTimeout: const Duration(seconds: 3),
+          receiveTimeout: const Duration(seconds: 3),
+          headers: {'Content-Type': 'application/json'},
+        ),
+      );
+      final response = await probe.get(ApiEndpoints.systemStatus);
+      return (response.statusCode ?? 500) < 500;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ─── Token Refresh ──────────────────────────────

@@ -32,9 +32,14 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
   @override
   void initState() {
     super.initState();
+    // Auto-refresh every 30 seconds (after initial 3-second delay)
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       ref.invalidate(portfolioProvider);
+    });
+    // Delay first refresh to allow initial build to settle
+    Timer(const Duration(seconds: 3), () {
+      if (mounted) ref.invalidate(portfolioProvider);
     });
   }
 

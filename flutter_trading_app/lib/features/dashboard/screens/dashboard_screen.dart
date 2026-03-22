@@ -39,14 +39,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-refresh every 30 seconds
+    // Auto-refresh every 30 seconds (after initial 3-second delay to avoid startup shake)
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
-      ref.invalidate(portfolioProvider);
-      ref.invalidate(statsProvider);
-      ref.invalidate(recentTradesProvider);
-      ref.invalidate(activePositionsProvider);
-      ref.invalidate(accountTradingProvider);
+      _refresh();
+    });
+    // Delay first refresh to allow initial build to settle
+    Timer(const Duration(seconds: 3), () {
+      if (mounted) _refresh();
     });
   }
 
@@ -524,8 +524,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 600),
+                              Container(
                                 width: 6,
                                 height: 6,
                                 decoration: BoxDecoration(

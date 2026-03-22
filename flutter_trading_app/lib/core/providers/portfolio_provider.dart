@@ -102,31 +102,43 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     if (user == null) return false;
 
     final previous = state.enabled ?? user.tradingEnabled;
-    _setStateSafely(state.copyWith(enabled: previous, isLoading: true));
+    
+    // Optimistic UI update - show change immediately
+    _setStateSafely(state.copyWith(
+      enabled: enabled, 
+      isLoading: true,
+    ));
+    _syncAuthTrading(enabled);
 
     try {
-      // Fetch system state for display only — does NOT block user activation
-      final status = await _ref
-          .read(adminRepositoryProvider)
-          .getPublicTradingState();
-      final systemRunning = status.isEffectivelyRunning || status.isRunning;
-      final systemState = status.state.toString().toUpperCase();
-
       final repo = _ref.read(settingsRepositoryProvider);
       final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
       await repo.updateSettings(user.id, {'tradingEnabled': enabled}, mode: mode);
-      if (_disposed) return false;
+      
+      // Reload settings from backend to confirm sync
+      final settings = await repo.getSettings(user.id, mode: mode);
+      final status = await _ref
+          .read(adminRepositoryProvider)
+          .getPublicTradingState()
+          .timeout(const Duration(seconds: 3));
+      
+      if (_disposed) return true;
       _setStateSafely(state.copyWith(
-        enabled: enabled,
-        systemRunning: systemRunning,
-        systemState: systemState,
+        enabled: settings.tradingEnabled,
+        systemRunning: status.isEffectivelyRunning || status.isRunning,
+        systemState: status.state.toString().toUpperCase(),
         isLoading: false,
       ));
-      _syncAuthTrading(enabled);
+      _syncAuthTrading(settings.tradingEnabled);
       return true;
     } catch (_) {
       if (_disposed) return false;
-      _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
+      // Revert on failure
+      _setStateSafely(state.copyWith(
+        enabled: previous, 
+        isLoading: false,
+      ));
+      _syncAuthTrading(previous);
       return false;
     }
   }
@@ -146,7 +158,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
 final adminPortfolioModeProvider = StateProvider<String>((ref) => 'real');
 
 final accountTradingProvider =
-    StateNotifierProvider.autoDispose<
+    StateNotifierProvider<
       AccountTradingNotifier,
       AccountTradingState
     >((ref) {

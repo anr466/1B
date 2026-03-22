@@ -319,10 +319,45 @@ class PositionManagerMixin:
         sl = position.get('stop_loss', 0)
         if sl and sl > 0:
             sl_breached = False
-            if position_type == 'SHORT' and current_price >= sl:
-                sl_breached = True
-            elif position_type != 'SHORT' and current_price <= sl:
-                sl_breached = True
+            
+            # فحص تاريخي في حال توقف النظام وتذبذب السعر
+            try:
+                # نجلب بيانات لآخر 24 ساعة (أو منذ التحديث)
+                df_sl = self.data_provider.get_historical_data(symbol, '15m', limit=96)
+                if df_sl is not None and not df_sl.empty:
+                    ref_time = position.get('updated_at') or position.get('created_at')
+                    df_sl_filtered = df_sl
+                    if ref_time:
+                        if isinstance(ref_time, str):
+                            ref_dt = pd.to_datetime(ref_time.replace('Z', '+00:00')).tz_localize(None)
+                        else:
+                            ref_dt = pd.to_datetime(ref_time).tz_localize(None)
+                        
+                        if isinstance(df_sl.index, pd.DatetimeIndex):
+                            # Ensure index is tz-naive for comparison
+                            if df_sl.index.tz is not None:
+                                df_sl.index = df_sl.index.tz_localize(None)
+                            df_sl_filtered = df_sl[df_sl.index >= ref_dt]
+                    
+                    if not df_sl_filtered.empty:
+                        if position_type == 'SHORT':
+                            highest_high = df_sl_filtered['high'].max()
+                            if highest_high >= sl:
+                                sl_breached = True
+                                self.logger.warning(f"🚨 [{symbol}] HISTORICAL SL BREACH: High {highest_high:.4f} >= SL {sl:.4f}")
+                        else:
+                            lowest_low = df_sl_filtered['low'].min()
+                            if lowest_low <= sl:
+                                sl_breached = True
+                                self.logger.warning(f"🚨 [{symbol}] HISTORICAL SL BREACH: Low {lowest_low:.4f} <= SL {sl:.4f}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to fetch historical data for downtime SL check: {e}")
+
+            if not sl_breached:
+                if position_type == 'SHORT' and current_price >= sl:
+                    sl_breached = True
+                elif position_type != 'SHORT' and current_price <= sl:
+                    sl_breached = True
             
             if sl_breached:
                 self.logger.warning(

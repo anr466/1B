@@ -81,16 +81,25 @@ class RiskManagerMixin:
                 f"🌡️ Market caution: ${original_size:.2f} × {caution:.1f} = ${position_size:.2f}"
             )
 
-        # ✅ الحد الأدنى $10 (متطلبات Binance)
-        if position_size < 10:
-            self.logger.warning(f"⚠️ Position size ${position_size:.2f} < $10 minimum")
-            return 0  # لا يكفي للتداول
-        
         # ✅ لا يتجاوز 15% من الرصيد (حماية — أكثر صرامة مع Kelly)
         max_size = balance * 0.15
         if position_size > max_size:
             position_size = max_size
             self.logger.warning(f"⚠️ Position size capped at 15%: ${position_size:.2f}")
+
+        # ✅ تطبيق الحد الأقصى للمبلغ الاسمي (trade_amount) من إعدادات المستخدم إن وجد
+        try:
+            trade_amount_limit = float(self.user_settings.get('trade_amount', 0))
+            if trade_amount_limit > 0 and position_size > trade_amount_limit:
+                position_size = trade_amount_limit
+                self.logger.info(f"🚦 Position size capped by User trade_amount limit: ${position_size:.2f}")
+        except Exception:
+            pass
+
+        # ✅ الحد الأدنى $10 (متطلبات Binance)
+        if position_size < 10:
+            self.logger.warning(f"⚠️ Position size ${position_size:.2f} < $10 minimum")
+            return 0  # لا يكفي للتداول
         
         self.logger.info(f"📊 Final Position size: ${position_size:.2f}")
         
@@ -127,7 +136,7 @@ class RiskManagerMixin:
                 daily_pnl += pnl
                 if pnl > 0:
                     consecutive_losses = 0
-                else:
+                elif pnl < 0:
                     losses += 1
                     consecutive_losses += 1
             
@@ -235,9 +244,9 @@ class RiskManagerMixin:
         
         self.daily_state['daily_pnl'] += pnl
         
-        if is_win:
+        if pnl > 0:
             self.daily_state['consecutive_losses'] = 0
-        else:
+        elif pnl < 0:
             self.daily_state['losses_today'] += 1
             self.daily_state['consecutive_losses'] += 1
             

@@ -603,6 +603,9 @@ def register_mobile_trades_routes(bp, shared):
     def get_trades_distribution(user_id):
         """جلب توزيع الصفقات"""
         try:
+            if not verify_user_access(user_id):
+                return jsonify({'success': False, 'error': 'Unauthorized access to another user\'s data'}), 403
+
             db = db_manager
             is_demo, portfolio_owner_id = _resolve_trade_context(db, user_id, request.args.get('mode', None))
             

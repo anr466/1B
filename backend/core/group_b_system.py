@@ -325,8 +325,10 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                     ).fetchone()
 
             if row:
-                total_balance = float(row[0] or 0.0)
-                available_balance = float(row[1] or total_balance or 0.0)
+                total_balance_str = str(row[0] or '0.0').replace(',', '')
+                available_balance_str = str(row[1] or row[0] or '0.0').replace(',', '')
+                total_balance = float(total_balance_str)
+                available_balance = float(available_balance_str)
                 return {
                     'balance': available_balance,
                     'total_value': total_balance,
