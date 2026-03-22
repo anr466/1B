@@ -18,8 +18,9 @@ import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
 /// Trading Control Screen — التحكم بالتداول (تشغيل/إيقاف/طوارئ/ML)
-final _tradingControlActionBusyProvider =
-    StateProvider.autoDispose<bool>((ref) => false);
+final _tradingControlActionBusyProvider = StateProvider.autoDispose<bool>(
+  (ref) => false,
+);
 
 class TradingControlScreen extends ConsumerWidget {
   const TradingControlScreen({super.key});
@@ -41,60 +42,60 @@ class TradingControlScreen extends ConsumerWidget {
               AppScreenHeader(title: 'التحكم بالتداول', showBack: true),
               Expanded(
                 child: RefreshIndicator(
-          color: cs.primary,
-          onRefresh: () async {
-            ref.invalidate(tradingCycleLiveProvider);
-            ref.invalidate(systemStatusProvider);
-            ref.invalidate(mlStatusProvider);
-          },
-          child: ListView(
-            padding: const EdgeInsets.all(SpacingTokens.base),
-            children: [
-              // ─── System Status ─────────────────────
-              status.when(
-                loading: () =>
-                    const LoadingShimmer(itemCount: 1, itemHeight: 120),
-                error: (e, _) => AppCard(
-                  child: Center(
-                    child: Text(
-                      'خطأ: $e',
-                      style: TypographyTokens.bodySmall(cs.error),
-                    ),
+                  color: cs.primary,
+                  onRefresh: () async {
+                    ref.invalidate(tradingCycleLiveProvider);
+                    ref.invalidate(systemStatusProvider);
+                    ref.invalidate(mlStatusProvider);
+                  },
+                  child: ListView(
+                    padding: const EdgeInsets.all(SpacingTokens.base),
+                    children: [
+                      // ─── System Status ─────────────────────
+                      status.when(
+                        loading: () =>
+                            const LoadingShimmer(itemCount: 1, itemHeight: 120),
+                        error: (e, _) => AppCard(
+                          child: Center(
+                            child: Text(
+                              'خطأ: $e',
+                              style: TypographyTokens.bodySmall(cs.error),
+                            ),
+                          ),
+                        ),
+                        data: (s) =>
+                            _statusSection(context, ref, cs, s, isActionBusy),
+                      ),
+
+                      const SizedBox(height: SpacingTokens.lg),
+
+                      const AppSectionLabel(text: 'نموذج الذكاء الاصطناعي'),
+                      const SizedBox(height: SpacingTokens.sm),
+                      mlStatus.when(
+                        loading: () =>
+                            const LoadingShimmer(itemCount: 1, itemHeight: 80),
+                        error: (_, __) => AppCard(
+                          padding: const EdgeInsets.all(SpacingTokens.md),
+                          child: Text(
+                            'غير متاح',
+                            style: TypographyTokens.bodySmall(
+                              cs.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                        data: (ml) => _mlSection(cs, ml),
+                      ),
+
+                      const SizedBox(height: SpacingTokens.lg),
+
+                      const AppSectionLabel(text: 'الحساب التجريبي'),
+                      const SizedBox(height: SpacingTokens.sm),
+                      _demoResetSection(context, ref, cs, isActionBusy),
+
+                      const SizedBox(height: SpacingTokens.xl),
+                    ],
                   ),
                 ),
-                data: (s) =>
-                    _statusSection(context, ref, cs, s, isActionBusy),
-              ),
-
-              const SizedBox(height: SpacingTokens.lg),
-
-              const AppSectionLabel(text: 'نموذج الذكاء الاصطناعي'),
-              const SizedBox(height: SpacingTokens.sm),
-              mlStatus.when(
-                loading: () =>
-                    const LoadingShimmer(itemCount: 1, itemHeight: 80),
-                error: (_, __) => AppCard(
-                  padding: const EdgeInsets.all(SpacingTokens.md),
-                  child: Text(
-                    'غير متاح',
-                    style: TypographyTokens.bodySmall(
-                      cs.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ),
-                data: (ml) => _mlSection(cs, ml),
-              ),
-
-              const SizedBox(height: SpacingTokens.lg),
-
-              const AppSectionLabel(text: 'الحساب التجريبي'),
-              const SizedBox(height: SpacingTokens.sm),
-              _demoResetSection(context, ref, cs, isActionBusy),
-
-              const SizedBox(height: SpacingTokens.xl),
-            ],
-          ),
-        ),
               ),
             ],
           ),
@@ -111,21 +112,29 @@ class TradingControlScreen extends ConsumerWidget {
     bool isActionBusy,
   ) {
     final rawState = s.state.toString().toUpperCase();
-    final isTransitioning = rawState == 'STARTING' || rawState == 'STOPPING';
+    final isStarting = rawState == 'STARTING';
+    final isStopping = rawState == 'STOPPING';
+    final isTransitioning = isStarting || isStopping;
     final isBusy = isActionBusy || isTransitioning;
+
+    final isRunning = rawState == 'RUNNING';
+    final isStopped = rawState == 'STOPPED';
+    final isError = rawState == 'ERROR' || rawState == 'ERROR_STOPPED';
     final effectivelyRunning = s.isEffectivelyRunning == true;
+
     final badgeType = effectivelyRunning
         ? BadgeType.success
-        : s.isRunning
+        : isRunning
         ? BadgeType.warning
-        : s.isError
+        : isError
         ? BadgeType.error
         : BadgeType.warning;
+
     final stateLabel = effectivelyRunning
         ? 'يعمل فعلياً'
-        : s.isRunning
+        : isRunning
         ? 'تشغيل غير مؤكد'
-        : s.isError
+        : isError
         ? 'خطأ'
         : 'متوقف';
 
@@ -136,14 +145,16 @@ class TradingControlScreen extends ConsumerWidget {
         children: [
           Row(
             children: [
-              BrandIcon(
+              Icon(
                 effectivelyRunning
-                    ? BrandIcons.checkCircle
-                    : BrandIcons.warning,
+                    ? Icons.check_circle
+                    : isError
+                    ? Icons.error
+                    : Icons.warning,
                 size: 24,
                 color: effectivelyRunning
                     ? cs.primary
-                    : s.isError
+                    : isError
                     ? cs.error
                     : cs.tertiary,
               ),
@@ -155,14 +166,19 @@ class TradingControlScreen extends ConsumerWidget {
           ),
           const SizedBox(height: SpacingTokens.md),
 
-          AppInfoRow(label: 'الوضع', value: s.tradingMode == 'real' ? 'حقيقي' : 'تجريبي'),
+          AppInfoRow(
+            label: 'الوضع',
+            value: s.tradingMode == 'real' ? 'حقيقي' : 'تجريبي',
+          ),
           AppInfoRow(label: 'الحالة', value: s.state),
           AppInfoRow(
             label: 'التحقق التشغيلي',
             value: s.runtimeVerificationLabel.toString(),
           ),
-          if (s.errorCount > 0) AppInfoRow(label: 'عدد الأخطاء', value: '${s.errorCount}'),
-          if (s.lastError != null) AppInfoRow(label: 'آخر خطأ', value: s.lastError!),
+          if (s.errorCount > 0)
+            AppInfoRow(label: 'عدد الأخطاء', value: '${s.errorCount}'),
+          if (s.lastError != null)
+            AppInfoRow(label: 'آخر خطأ', value: s.lastError!),
 
           const SizedBox(height: SpacingTokens.lg),
 
@@ -173,14 +189,14 @@ class TradingControlScreen extends ConsumerWidget {
                 child: AppButton(
                   label: isTransitioning
                       ? 'جارٍ التنفيذ...'
-                      : (s.isRunning ? 'إيقاف' : 'تشغيل'),
-                  variant: s.isRunning
+                      : (isRunning ? 'إيقاف' : 'تشغيل'),
+                  variant: isRunning
                       ? AppButtonVariant.outline
                       : AppButtonVariant.primary,
                   height: 44,
                   onPressed: isBusy
                       ? null
-                      : () => _toggleTrading(context, ref, s.isRunning),
+                      : () => _toggleTrading(context, ref, isRunning),
                 ),
               ),
               const SizedBox(width: SpacingTokens.sm),
@@ -189,14 +205,14 @@ class TradingControlScreen extends ConsumerWidget {
                   label: 'إيقاف طوارئ',
                   variant: AppButtonVariant.danger,
                   height: 44,
-                  onPressed: (s.isStopped || isBusy)
+                  onPressed: (isStopped || isBusy)
                       ? null
                       : () => _emergencyStop(context, ref),
                 ),
               ),
             ],
           ),
-          if (s.isError) ...[
+          if (isError) ...[
             const SizedBox(height: SpacingTokens.sm),
             AppButton(
               label: 'إعادة تعيين الخطأ',
@@ -228,8 +244,9 @@ class TradingControlScreen extends ConsumerWidget {
               const SizedBox(width: SpacingTokens.sm),
               Text(
                 'إعادة ضبط الحساب التجريبي',
-                style: TypographyTokens.body(cs.onSurface)
-                    .copyWith(fontWeight: FontWeight.w600),
+                style: TypographyTokens.body(
+                  cs.onSurface,
+                ).copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -246,7 +263,9 @@ class TradingControlScreen extends ConsumerWidget {
             variant: AppButtonVariant.outline,
             isFullWidth: true,
             height: 44,
-            onPressed: isActionBusy ? null : () => _resetDemoAccount(context, ref),
+            onPressed: isActionBusy
+                ? null
+                : () => _resetDemoAccount(context, ref),
           ),
         ],
       ),
@@ -289,13 +308,22 @@ class TradingControlScreen extends ConsumerWidget {
           ),
           const SizedBox(height: SpacingTokens.sm),
           AppInfoRow(label: 'الحالة', value: statusText),
-          AppInfoRow(label: 'الجاهزية', value: isReady ? 'جاهز للتصفية' : 'قيد التدريب'),
-          AppInfoRow(label: 'التقدم', value: '${progressPct.toStringAsFixed(1)}%'),
+          AppInfoRow(
+            label: 'الجاهزية',
+            value: isReady ? 'جاهز للتصفية' : 'قيد التدريب',
+          ),
+          AppInfoRow(
+            label: 'التقدم',
+            value: '${progressPct.toStringAsFixed(1)}%',
+          ),
           AppInfoRow(
             label: 'البيانات',
             value: '${totalSamples.toInt()} / ${requiredSamples.toInt()}',
           ),
-          AppInfoRow(label: 'الدقة', value: '${(accuracy * 100).toStringAsFixed(1)}%'),
+          AppInfoRow(
+            label: 'الدقة',
+            value: '${(accuracy * 100).toStringAsFixed(1)}%',
+          ),
         ],
       ),
     );
@@ -491,9 +519,7 @@ class TradingControlScreen extends ConsumerWidget {
               onPressed: () => Navigator.pop(context, true),
               child: Text(
                 'إعادة الضبط',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
           ],
@@ -515,8 +541,8 @@ class TradingControlScreen extends ConsumerWidget {
       ref.invalidate(recentTradesProvider);
       ref.invalidate(dailyStatusProvider);
       if (!context.mounted) return;
-      final backendMessage =
-          (result['message'] ?? result['error'] ?? '').toString();
+      final backendMessage = (result['message'] ?? result['error'] ?? '')
+          .toString();
       AppSnackbar.show(
         context,
         message: result['success'] == true
@@ -524,8 +550,7 @@ class TradingControlScreen extends ConsumerWidget {
                   ? backendMessage
                   : 'تمت إعادة ضبط الحساب التجريبي بنجاح')
             : (backendMessage.isNotEmpty ? backendMessage : UxMessages.error),
-        type:
-            result['success'] == true ? SnackType.success : SnackType.error,
+        type: result['success'] == true ? SnackType.success : SnackType.error,
       );
     } catch (e) {
       if (!context.mounted) return;
