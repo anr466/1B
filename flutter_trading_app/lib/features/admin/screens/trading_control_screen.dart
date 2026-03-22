@@ -357,12 +357,24 @@ class TradingControlScreen extends ConsumerWidget {
       final result = isRunning
           ? await repo.stopTrading()
           : await repo.startTrading();
-      final state = (result['trading_state'] ?? result['state'] ?? '')
-          .toString()
-          .toUpperCase();
+
+      // ✅ FIX: Check success AND valid response (not just state matching)
+      final success = result['success'] == true;
+      final state =
+          (result['trading_state'] ??
+                  result['state'] ??
+                  result['data']?['trading_state'] ??
+                  result['data']?['state'] ??
+                  '')
+              .toString()
+              .toUpperCase();
+
+      // ✅ For stop: accept STOPPED, STOPPING, or success flag
+      // ✅ For start: accept RUNNING, STARTING, or success flag
       final applied = isRunning
-          ? (state == 'STOPPED' || state == 'STOPPING')
-          : (state == 'RUNNING' || state == 'STARTING');
+          ? (state == 'STOPPED' || state == 'STOPPING' || success)
+          : (state == 'RUNNING' || state == 'STARTING' || success);
+
       if (!context.mounted) return;
       ref.invalidate(tradingCycleLiveProvider);
       ref.invalidate(systemStatusProvider);
@@ -372,16 +384,21 @@ class TradingControlScreen extends ConsumerWidget {
       ref.invalidate(activePositionsProvider);
       ref.invalidate(recentTradesProvider);
       ref.invalidate(dailyStatusProvider);
-      final backendMessage = (result['message'] ?? result['error'] ?? '')
-          .toString();
+
+      final backendMessage =
+          (result['message'] ??
+                  result['error'] ??
+                  result['data']?['message'] ??
+                  '')
+              .toString();
+
+      // Show success if either the API returned success OR we have a valid state
       AppSnackbar.show(
         context,
-        message: (result['success'] == true && applied)
+        message: (success || applied)
             ? (backendMessage.isNotEmpty ? backendMessage : UxMessages.success)
             : (backendMessage.isNotEmpty ? backendMessage : UxMessages.error),
-        type: (result['success'] == true && applied)
-            ? SnackType.success
-            : SnackType.error,
+        type: (success || applied) ? SnackType.success : SnackType.error,
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -454,10 +471,22 @@ class TradingControlScreen extends ConsumerWidget {
     try {
       final repo = ref.read(adminRepositoryProvider);
       final result = await repo.emergencyStop();
-      final state = (result['trading_state'] ?? result['state'] ?? '')
-          .toString()
-          .toUpperCase();
-      final applied = state == 'STOPPED' || state == 'ERROR';
+
+      // ✅ FIX: More flexible success check
+      final success = result['success'] == true;
+      final state =
+          (result['trading_state'] ??
+                  result['state'] ??
+                  result['data']?['trading_state'] ??
+                  '')
+              .toString()
+              .toUpperCase();
+      final applied =
+          success ||
+          state == 'STOPPED' ||
+          state == 'STOPPING' ||
+          state == 'ERROR';
+
       ref.invalidate(tradingCycleLiveProvider);
       ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
@@ -467,16 +496,20 @@ class TradingControlScreen extends ConsumerWidget {
       ref.invalidate(recentTradesProvider);
       ref.invalidate(dailyStatusProvider);
       if (!context.mounted) return;
-      final backendMessage = (result['message'] ?? result['error'] ?? '')
-          .toString();
+      final backendMessage =
+          (result['message'] ??
+                  result['error'] ??
+                  result['data']?['message'] ??
+                  '')
+              .toString();
       AppSnackbar.show(
         context,
-        message: (result['success'] == true && applied)
-            ? (backendMessage.isNotEmpty ? backendMessage : UxMessages.success)
+        message: applied
+            ? (backendMessage.isNotEmpty
+                  ? backendMessage
+                  : 'تم الإيقاف الطارئ بنجاح')
             : (backendMessage.isNotEmpty ? backendMessage : UxMessages.error),
-        type: (result['success'] == true && applied)
-            ? SnackType.warning
-            : SnackType.error,
+        type: applied ? SnackType.warning : SnackType.error,
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -571,10 +604,22 @@ class TradingControlScreen extends ConsumerWidget {
     try {
       final repo = ref.read(adminRepositoryProvider);
       final result = await repo.resetError();
-      final state = (result['trading_state'] ?? result['state'] ?? '')
-          .toString()
-          .toUpperCase();
-      final applied = state == 'STOPPED' || state == 'RUNNING';
+
+      // ✅ FIX: More flexible success check
+      final success = result['success'] == true;
+      final state =
+          (result['trading_state'] ??
+                  result['state'] ??
+                  result['data']?['trading_state'] ??
+                  '')
+              .toString()
+              .toUpperCase();
+      final applied =
+          success ||
+          state == 'STOPPED' ||
+          state == 'RUNNING' ||
+          state == 'ERROR';
+
       ref.invalidate(tradingCycleLiveProvider);
       ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
@@ -584,16 +629,20 @@ class TradingControlScreen extends ConsumerWidget {
       ref.invalidate(recentTradesProvider);
       ref.invalidate(dailyStatusProvider);
       if (!context.mounted) return;
-      final backendMessage = (result['message'] ?? result['error'] ?? '')
-          .toString();
+      final backendMessage =
+          (result['message'] ??
+                  result['error'] ??
+                  result['data']?['message'] ??
+                  '')
+              .toString();
       AppSnackbar.show(
         context,
-        message: (result['success'] == true && applied)
-            ? (backendMessage.isNotEmpty ? backendMessage : UxMessages.success)
+        message: applied
+            ? (backendMessage.isNotEmpty
+                  ? backendMessage
+                  : 'تم إعادة تعيين الخطأ بنجاح')
             : (backendMessage.isNotEmpty ? backendMessage : UxMessages.error),
-        type: (result['success'] == true && applied)
-            ? SnackType.success
-            : SnackType.error,
+        type: applied ? SnackType.success : SnackType.error,
       );
     } catch (e) {
       if (!context.mounted) return;
