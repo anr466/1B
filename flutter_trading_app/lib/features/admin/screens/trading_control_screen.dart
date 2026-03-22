@@ -28,7 +28,7 @@ class TradingControlScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final status = ref.watch(tradingCycleLiveProvider);
+    final statusAsync = ref.watch(tradingCycleLiveProvider);
     final mlStatus = ref.watch(mlStatusProvider);
     final isActionBusy = ref.watch(_tradingControlActionBusyProvider);
 
@@ -44,7 +44,7 @@ class TradingControlScreen extends ConsumerWidget {
                 child: RefreshIndicator(
                   color: cs.primary,
                   onRefresh: () async {
-                    ref.invalidate(tradingCycleLiveProvider);
+                    await ref.read(tradingCycleLiveProvider.notifier).refresh();
                     ref.invalidate(systemStatusProvider);
                     ref.invalidate(mlStatusProvider);
                   },
@@ -52,7 +52,7 @@ class TradingControlScreen extends ConsumerWidget {
                     padding: const EdgeInsets.all(SpacingTokens.base),
                     children: [
                       // ─── System Status ─────────────────────
-                      status.when(
+                      statusAsync.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 1, itemHeight: 120),
                         error: (e, _) => AppCard(
@@ -376,7 +376,7 @@ class TradingControlScreen extends ConsumerWidget {
           : (state == 'RUNNING' || state == 'STARTING' || success);
 
       if (!context.mounted) return;
-      ref.invalidate(tradingCycleLiveProvider);
+      ref.read(tradingCycleLiveProvider.notifier).refresh();
       ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
@@ -487,7 +487,7 @@ class TradingControlScreen extends ConsumerWidget {
           state == 'STOPPING' ||
           state == 'ERROR';
 
-      ref.invalidate(tradingCycleLiveProvider);
+      ref.read(tradingCycleLiveProvider.notifier).refresh();
       ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
@@ -620,7 +620,7 @@ class TradingControlScreen extends ConsumerWidget {
           state == 'RUNNING' ||
           state == 'ERROR';
 
-      ref.invalidate(tradingCycleLiveProvider);
+      ref.read(tradingCycleLiveProvider.notifier).refresh();
       ref.invalidate(systemStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);

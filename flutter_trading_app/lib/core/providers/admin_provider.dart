@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/system_status_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
@@ -12,24 +13,60 @@ final systemStatusProvider = FutureProvider.autoDispose<SystemStatusModel>((
   return repo.getTradingState();
 });
 
-/// Live polling provider — syncs with backend trading cycle every 60 seconds
-final tradingCycleLiveProvider = StreamProvider.autoDispose<SystemStatusModel>((
-  ref,
-) async* {
-  final repo = ref.read(adminRepositoryProvider);
+/// Live trading cycle provider — FutureProvider with 60s auto-refresh
+/// Uses FutureProvider for stable state management (no flickering)
+final tradingCycleLiveProvider =
+    StateNotifierProvider<TradingCycleNotifier, AsyncValue<SystemStatusModel>>((
+      ref,
+    ) {
+      return TradingCycleNotifier(ref);
+    });
 
-  // Emit immediately
-  yield await repo.getTradingState();
+class TradingCycleNotifier
+    extends StateNotifier<AsyncValue<SystemStatusModel>> {
+  final Ref _ref;
+  Timer? _pollingTimer;
+  bool _disposed = false;
 
-  // Then poll every 60 seconds (reduced from 15s to prevent UI flicker)
-  await for (final _ in Stream.periodic(const Duration(seconds: 60))) {
+  TradingCycleNotifier(this._ref) : super(const AsyncValue.loading()) {
+    _load();
+    _startPolling();
+  }
+
+  Future<void> _load() async {
+    if (_disposed) return;
     try {
-      yield await repo.getTradingState();
-    } catch (_) {
-      // Keep last emitted value on transient error — no yield
+      final repo = _ref.read(adminRepositoryProvider);
+      final status = await repo.getTradingState();
+      if (!_disposed) {
+        state = AsyncValue.data(status);
+      }
+    } catch (e, st) {
+      if (!_disposed) {
+        state = AsyncValue.error(e, st);
+      }
     }
   }
-});
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _load();
+    });
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    await _load();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+}
 
 /// Admin users list
 final adminUsersProvider =

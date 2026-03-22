@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
+import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Admin Dashboard Screen — لوحة تحكم المدير
@@ -28,41 +31,56 @@ class AdminDashboardScreen extends ConsumerWidget {
               AppScreenHeader(title: 'لوحة الإدارة', showBack: true),
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: () async {},
+                  color: cs.primary,
+                  onRefresh: () async {
+                    ref.invalidate(systemStatusProvider);
+                    ref.read(tradingCycleLiveProvider.notifier).refresh();
+                    ref.invalidate(portfolioProvider);
+                    ref.invalidate(statsProvider);
+                    ref.invalidate(adminUsersProvider);
+                    await Future.delayed(const Duration(milliseconds: 500));
+                    if (context.mounted) {
+                      AppSnackbar.show(
+                        context,
+                        message: 'تم تحديث البيانات',
+                        type: SnackType.success,
+                      );
+                    }
+                  },
                   child: ListView(
                     padding: const EdgeInsets.all(SpacingTokens.base),
-                  children: [
-                    // ─── Quick Actions ─────────────────────
-                    const AppSectionLabel(text: 'إجراءات سريعة'),
-                    const SizedBox(height: SpacingTokens.sm),
+                    children: [
+                      // ─── Quick Actions ─────────────────────
+                      const AppSectionLabel(text: 'إجراءات سريعة'),
+                      const SizedBox(height: SpacingTokens.sm),
 
-                    _actionItem(
-                      context,
-                      cs,
-                      BrandIcons.chart,
-                      'التحكم في التداول',
-                      RouteNames.tradingControl,
-                    ),
+                      _actionItem(
+                        context,
+                        cs,
+                        BrandIcons.chart,
+                        'التحكم في التداول',
+                        RouteNames.tradingControl,
+                      ),
 
-                    _actionItem(
-                      context,
-                      cs,
-                      BrandIcons.history,
-                      'سجلات النظام',
-                      RouteNames.systemLogs,
-                    ),
+                      _actionItem(
+                        context,
+                        cs,
+                        BrandIcons.history,
+                        'سجلات النظام',
+                        RouteNames.systemLogs,
+                      ),
 
-                    _actionItem(
-                      context,
-                      cs,
-                      BrandIcons.user,
-                      'إدارة المستخدمين',
-                      RouteNames.userManagement,
-                    ),
+                      _actionItem(
+                        context,
+                        cs,
+                        BrandIcons.user,
+                        'إدارة المستخدمين',
+                        RouteNames.userManagement,
+                      ),
 
-                    const SizedBox(height: SpacingTokens.xl),
-                  ],
-                ),
+                      const SizedBox(height: SpacingTokens.xl),
+                    ],
+                  ),
                 ),
               ),
             ],
