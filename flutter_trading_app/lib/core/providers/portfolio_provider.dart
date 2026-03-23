@@ -4,6 +4,8 @@ import 'package:trading_app/core/models/stats_model.dart';
 import 'package:trading_app/core/models/trade_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/trades_provider.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 
 class AccountTradingState {
   final bool? enabled;
@@ -67,10 +69,12 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       return;
     }
 
-    _setStateSafely(state.copyWith(
-      enabled: state.enabled ?? user.tradingEnabled,
-      isLoading: true,
-    ));
+    _setStateSafely(
+      state.copyWith(
+        enabled: state.enabled ?? user.tradingEnabled,
+        isLoading: true,
+      ),
+    );
 
     try {
       final repo = _ref.read(settingsRepositoryProvider);
@@ -80,19 +84,23 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
           .read(adminRepositoryProvider)
           .getPublicTradingState();
       if (_disposed) return;
-      _setStateSafely(state.copyWith(
-        enabled: settings.tradingEnabled,
-        systemRunning: status.isEffectivelyRunning || status.isRunning,
-        systemState: status.state.toString().toUpperCase(),
-        isLoading: false,
-      ));
+      _setStateSafely(
+        state.copyWith(
+          enabled: settings.tradingEnabled,
+          systemRunning: status.isEffectivelyRunning || status.isRunning,
+          systemState: status.state.toString().toUpperCase(),
+          isLoading: false,
+        ),
+      );
       _syncAuthTrading(settings.tradingEnabled);
     } catch (_) {
       if (_disposed) return;
-      _setStateSafely(state.copyWith(
-        enabled: state.enabled ?? user.tradingEnabled,
-        isLoading: false,
-      ));
+      _setStateSafely(
+        state.copyWith(
+          enabled: state.enabled ?? user.tradingEnabled,
+          isLoading: false,
+        ),
+      );
     }
   }
 
@@ -102,42 +110,40 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     if (user == null) return false;
 
     final previous = state.enabled ?? user.tradingEnabled;
-    
+
     // Optimistic UI update - show change immediately
-    _setStateSafely(state.copyWith(
-      enabled: enabled, 
-      isLoading: true,
-    ));
+    _setStateSafely(state.copyWith(enabled: enabled, isLoading: true));
     _syncAuthTrading(enabled);
 
     try {
       final repo = _ref.read(settingsRepositoryProvider);
       final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
-      await repo.updateSettings(user.id, {'tradingEnabled': enabled}, mode: mode);
-      
+      await repo.updateSettings(user.id, {
+        'tradingEnabled': enabled,
+      }, mode: mode);
+
       // Reload settings from backend to confirm sync
       final settings = await repo.getSettings(user.id, mode: mode);
       final status = await _ref
           .read(adminRepositoryProvider)
           .getPublicTradingState()
           .timeout(const Duration(seconds: 3));
-      
+
       if (_disposed) return true;
-      _setStateSafely(state.copyWith(
-        enabled: settings.tradingEnabled,
-        systemRunning: status.isEffectivelyRunning || status.isRunning,
-        systemState: status.state.toString().toUpperCase(),
-        isLoading: false,
-      ));
+      _setStateSafely(
+        state.copyWith(
+          enabled: settings.tradingEnabled,
+          systemRunning: status.isEffectivelyRunning || status.isRunning,
+          systemState: status.state.toString().toUpperCase(),
+          isLoading: false,
+        ),
+      );
       _syncAuthTrading(settings.tradingEnabled);
       return true;
     } catch (_) {
       if (_disposed) return false;
       // Revert on failure
-      _setStateSafely(state.copyWith(
-        enabled: previous, 
-        isLoading: false,
-      ));
+      _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
       _syncAuthTrading(previous);
       return false;
     }
@@ -158,10 +164,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
 final adminPortfolioModeProvider = StateProvider<String>((ref) => 'real');
 
 final accountTradingProvider =
-    StateNotifierProvider<
-      AccountTradingNotifier,
-      AccountTradingState
-    >((ref) {
+    StateNotifierProvider<AccountTradingNotifier, AccountTradingState>((ref) {
       final auth = ref.watch(authProvider);
       if (auth.isAdmin) {
         ref.watch(adminPortfolioModeProvider);
@@ -225,3 +228,42 @@ final statsProvider = FutureProvider.autoDispose<StatsModel>((ref) async {
   final repo = ref.watch(portfolioRepositoryProvider);
   return repo.getStats(auth.user!.id, mode: mode);
 });
+
+/// Helper to toggle trading with biometric authentication
+/// Returns true if successful, false otherwise
+Future<bool> toggleTradingWithBiometric({
+  required WidgetRef ref,
+  required bool enabled,
+  required Future<bool> Function(String reason) biometricAuth,
+  required void Function(String message, SnackType type) showMessage,
+}) async {
+  final bio = ref.read(biometricServiceProvider);
+  if (await bio.isAvailable) {
+    final reason = enabled ? 'تأكيد تفعيل التداول' : 'تأكيد إيقاف التداول';
+    final ok = await biometricAuth(reason);
+    if (!ok) {
+      showMessage('فشل التحقق من البصمة', SnackType.error);
+      return false;
+    }
+  }
+
+  final success = await ref
+      .read(accountTradingProvider.notifier)
+      .setEnabled(enabled);
+
+  ref.invalidate(portfolioProvider);
+  ref.invalidate(statsProvider);
+  ref.invalidate(activePositionsProvider);
+  ref.invalidate(recentTradesProvider);
+  ref.invalidate(tradesListProvider);
+  ref.invalidate(dailyStatusProvider);
+
+  showMessage(
+    success
+        ? (enabled ? 'تم تفعيل التداول' : 'تم إيقاف التداول')
+        : 'تعذر إتمام العملية، حاول مرة أخرى',
+    success ? SnackType.success : SnackType.error,
+  );
+
+  return success;
+}

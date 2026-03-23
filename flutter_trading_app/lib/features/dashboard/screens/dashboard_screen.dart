@@ -567,36 +567,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     WidgetRef ref,
     bool enabled,
   ) async {
-    final bio = ref.read(biometricServiceProvider);
-    if (await bio.isAvailable) {
-      final label = enabled ? 'تأكيد تفعيل التداول' : 'تأكيد إيقاف التداول';
-      final ok = await bio.authenticate(reason: label);
-      if (!ok) {
-        if (!context.mounted) return;
-        AppSnackbar.show(
-          context,
-          message: 'فشل التحقق من البصمة',
-          type: SnackType.error,
-        );
-        return;
-      }
-    }
-
-    final success = await ref
-        .read(accountTradingProvider.notifier)
-        .setEnabled(enabled);
-    ref.invalidate(dailyStatusProvider);
-    ref.invalidate(portfolioProvider);
-    ref.invalidate(statsProvider);
-    ref.invalidate(activePositionsProvider);
-    ref.invalidate(recentTradesProvider);
-    if (!context.mounted) return;
-    AppSnackbar.show(
-      context,
-      message: success
-          ? (enabled ? 'تم تفعيل التداول' : 'تم إيقاف التداول')
-          : 'تعذر إتمام العملية، حاول مرة أخرى',
-      type: success ? SnackType.success : SnackType.error,
+    await toggleTradingWithBiometric(
+      ref: ref,
+      enabled: enabled,
+      biometricAuth: (reason) =>
+          ref.read(biometricServiceProvider).authenticate(reason: reason),
+      showMessage: (message, type) =>
+          AppSnackbar.show(context, message: message, type: type),
     );
   }
 

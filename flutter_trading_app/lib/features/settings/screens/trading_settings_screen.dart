@@ -108,43 +108,18 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   }
 
   Future<void> _onTradingToggle(bool v) async {
-    final bio = ref.read(biometricServiceProvider);
-    if (await bio.isAvailable) {
-      final label = v ? 'تأكيد تفعيل التداول' : 'تأكيد إيقاف التداول';
-      final ok = await bio.authenticate(reason: label);
-      if (!mounted) return;
-      if (!ok) {
-        AppSnackbar.show(
-          context,
-          message: 'فشل التحقق من البصمة',
-          type: SnackType.error,
-        );
-        return;
-      }
-    }
+    await toggleTradingWithBiometric(
+      ref: ref,
+      enabled: v,
+      biometricAuth: (reason) =>
+          ref.read(biometricServiceProvider).authenticate(reason: reason),
+      showMessage: (message, type) =>
+          AppSnackbar.show(context, message: message, type: type),
+    );
     if (!mounted) return;
-
-    // Use accountTradingProvider for consistent behavior with dashboard/profile
-    final success = await ref
-        .read(accountTradingProvider.notifier)
-        .setEnabled(v);
-
-    // Invalidate related providers
-    ref.invalidate(settingsDataProvider);
-    ref.invalidate(dailyStatusProvider);
-    ref.invalidate(portfolioProvider);
-    ref.invalidate(statsProvider);
-    ref.invalidate(activePositionsProvider);
-    ref.invalidate(successfulCoinsProvider);
-    ref.invalidate(recentTradesProvider);
-    ref.invalidate(tradesListProvider);
-
-    if (!mounted) return;
-    if (success) {
-      setState(() {
-        _tradingEnabled = v;
-      });
-    }
+    setState(() {
+      _tradingEnabled = v;
+    });
   }
 
   @override

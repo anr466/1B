@@ -5,7 +5,6 @@ import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -28,46 +27,14 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _toggleTrading(bool newValue) async {
-    final bio = ref.read(biometricServiceProvider);
-    if (await bio.isAvailable) {
-      final label = newValue ? 'تأكيد تفعيل التداول' : 'تأكيد إيقاف التداول';
-      final ok = await bio.authenticate(reason: label);
-      if (!ok) {
-        if (!mounted) return;
-        AppSnackbar.show(
-          context,
-          message: 'فشل التحقق من البصمة',
-          type: SnackType.error,
-        );
-        return;
-      }
-    }
-
-    final success = await ref
-        .read(accountTradingProvider.notifier)
-        .setEnabled(newValue);
-
-    ref.invalidate(portfolioProvider);
-    ref.invalidate(statsProvider);
-    ref.invalidate(activePositionsProvider);
-    ref.invalidate(recentTradesProvider);
-    ref.invalidate(tradesListProvider);
-    ref.invalidate(dailyStatusProvider);
-
-    if (!mounted) return;
-    if (success) {
-      AppSnackbar.show(
-        context,
-        message: newValue ? 'تم تفعيل التداول' : 'تم إيقاف التداول',
-        type: SnackType.success,
-      );
-    } else {
-      AppSnackbar.show(
-        context,
-        message: 'تعذر إتمام العملية، حاول مرة أخرى',
-        type: SnackType.error,
-      );
-    }
+    await toggleTradingWithBiometric(
+      ref: ref,
+      enabled: newValue,
+      biometricAuth: (reason) =>
+          ref.read(biometricServiceProvider).authenticate(reason: reason),
+      showMessage: (message, type) =>
+          AppSnackbar.show(context, message: message, type: type),
+    );
   }
 
   Future<void> _showEditProfileDialog(BuildContext context) async {
