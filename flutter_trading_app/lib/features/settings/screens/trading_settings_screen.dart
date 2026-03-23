@@ -71,7 +71,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
       } else {
         AppSnackbar.show(
           context,
-          message: UxMessages.error,
+          message: UxMessages.modeSwitchError,
           type: SnackType.error,
         );
       }
@@ -79,7 +79,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: UxMessages.error,
+        message: UxMessages.networkError,
         type: SnackType.error,
       );
     } finally {

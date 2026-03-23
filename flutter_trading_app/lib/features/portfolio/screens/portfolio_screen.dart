@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
@@ -16,6 +17,7 @@ import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
+import 'package:trading_app/navigation/route_names.dart';
 
 /// Portfolio Screen — عرض تفصيلي للمحفظة
 class PortfolioScreen extends ConsumerStatefulWidget {
@@ -491,7 +493,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
   ) {
     final isSelected = currentMode == mode;
     return GestureDetector(
-      onTap: () => ref.read(adminPortfolioModeProvider.notifier).state = mode,
+      onTap: () => context.push(RouteNames.tradingSettings),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(

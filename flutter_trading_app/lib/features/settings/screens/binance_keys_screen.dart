@@ -84,7 +84,7 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: UxMessages.error,
+        message: UxMessages.apiKeysValidateError,
         type: SnackType.error,
       );
     } finally {
@@ -141,7 +141,7 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
       } else {
         AppSnackbar.show(
           context,
-          message: UxMessages.error,
+          message: result['error'] ?? UxMessages.apiKeysSaveError,
           type: SnackType.error,
         );
       }
@@ -149,7 +149,7 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: UxMessages.error,
+        message: UxMessages.networkError,
         type: SnackType.error,
       );
     } finally {

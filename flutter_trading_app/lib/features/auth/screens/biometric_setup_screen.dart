@@ -113,8 +113,7 @@ class BiometricSetupScreen extends ConsumerWidget {
                           if (!context.mounted) return;
                           AppSnackbar.show(
                             context,
-                            message:
-                                'تم تفعيل البصمة — سجّل دخولًا يدويًا واحدًا لحفظ بياناتك',
+                            message: 'تم تفعيل البصمة بنجاح',
                             type: SnackType.success,
                           );
                           context.go(RouteNames.dashboard);

@@ -38,6 +38,7 @@ class AccountTradingState {
 class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   final Ref _ref;
   bool _disposed = false;
+  bool _busy = false;
 
   AccountTradingNotifier(this._ref)
     : super(
@@ -105,13 +106,18 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   }
 
   Future<bool> setEnabled(bool enabled) async {
+    if (_busy) return false;
+    _busy = true;
+
     final auth = _ref.read(authProvider);
     final user = auth.user;
-    if (user == null) return false;
+    if (user == null) {
+      _busy = false;
+      return false;
+    }
 
     final previous = state.enabled ?? user.tradingEnabled;
 
-    // Optimistic UI update - show change immediately
     _setStateSafely(state.copyWith(enabled: enabled, isLoading: true));
     _syncAuthTrading(enabled);
 
@@ -122,7 +128,6 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
         'tradingEnabled': enabled,
       }, mode: mode);
 
-      // Reload settings from backend to confirm sync
       final settings = await repo.getSettings(user.id, mode: mode);
       final status = await _ref
           .read(adminRepositoryProvider)
@@ -142,10 +147,11 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       return true;
     } catch (_) {
       if (_disposed) return false;
-      // Revert on failure
       _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
       _syncAuthTrading(previous);
       return false;
+    } finally {
+      _busy = false;
     }
   }
 

@@ -45,21 +45,28 @@ class NotificationsListState {
 
 class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
   final Ref _ref;
+  bool _busy = false;
 
   NotificationsListNotifier(this._ref) : super(const NotificationsListState());
 
   Future<void> loadFirstPage() async {
+    if (_busy) return;
+    _busy = true;
     state = const NotificationsListState(isLoading: true);
     await _loadPage(1);
+    _busy = false;
   }
 
   Future<void> loadNextPage() async {
-    if (state.isLoading || !state.hasMore) return;
+    if (_busy || state.isLoading || !state.hasMore) return;
+    _busy = true;
     state = state.copyWith(isLoading: true);
     await _loadPage(state.currentPage + 1);
+    _busy = false;
   }
 
   Future<void> markAllRead() async {
+    if (_busy) return;
     final auth = _ref.read(authProvider);
     if (!auth.isAuthenticated || auth.user == null) return;
     final repo = _ref.read(notificationsRepositoryProvider);
@@ -69,6 +76,7 @@ class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
   }
 
   Future<void> markAsRead(int notificationId) async {
+    if (_busy) return;
     final auth = _ref.read(authProvider);
     if (!auth.isAuthenticated || auth.user == null) return;
     final repo = _ref.read(notificationsRepositoryProvider);

@@ -140,8 +140,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
         reason: 'المصادقة مطلوبة للوصول للتطبيق',
       );
       if (!mounted || _navigated) return;
-      if (success) {
+
+      // Re-verify auth state after biometric to ensure tokens are still valid
+      final currentAuth = ref.read(authProvider);
+      if (success && currentAuth.isAuthenticated) {
         _navigate();
+      } else if (success && !currentAuth.isAuthenticated) {
+        // Biometric succeeded but tokens expired - need to re-authenticate
+        _navigateToLogin();
       } else {
         // Biometric failed - clear tokens and force logout
         await ref
