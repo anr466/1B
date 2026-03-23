@@ -43,37 +43,34 @@ class _MainShellState extends ConsumerState<MainShell> {
       _currentIndex = idx;
     }
 
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        key: const Key('main_shell'),
-        body: widget.child,
-        bottomNavigationBar: Container(
-          key: const Key('main_shell_nav'),
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
-            border: Border(
-              top: BorderSide(
-                color: cs.outline.withValues(alpha: 0.3),
-                width: 0.5,
-              ),
+    return Scaffold(
+      key: const Key('main_shell'),
+      body: widget.child,
+      bottomNavigationBar: Container(
+        key: const Key('main_shell_nav'),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          border: Border(
+            top: BorderSide(
+              color: cs.outline.withValues(alpha: 0.3),
+              width: 0.5,
             ),
           ),
-          child: SafeArea(
-            child: SizedBox(
-              height: barHeight,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: List.generate(5, (i) {
-                  final isActive = _currentIndex == i;
-                  return _buildTab(
-                    index: i,
-                    isActive: isActive,
-                    isAdmin: isAdmin,
-                    cs: cs,
-                  );
-                }),
-              ),
+        ),
+        child: SafeArea(
+          child: SizedBox(
+            height: barHeight,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(5, (i) {
+                final isActive = _currentIndex == i;
+                return _buildTab(
+                  index: i,
+                  isActive: isActive,
+                  isAdmin: isAdmin,
+                  cs: cs,
+                );
+              }),
             ),
           ),
         ),

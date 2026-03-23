@@ -87,7 +87,11 @@ class ApiService {
       _isRefreshing = false;
       // Token refresh failed — force session expiry
       await _storage.clearAuth();
-      onSessionExpired?.call();
+      try {
+        onSessionExpired?.call();
+      } catch (e) {
+        // Log error but don't crash
+      }
     }
     handler.next(err);
   }
