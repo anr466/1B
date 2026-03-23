@@ -145,17 +145,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _biometricLogin({bool autoTriggered = false}) async {
     if (_isBiometricLoginInProgress || ref.read(authProvider).isLoading) return;
+
     final storage = ref.read(storageServiceProvider);
     final (savedUser, savedPass) = storage.biometricCredentials;
+
     if (savedUser == null || savedPass == null) {
       if (!mounted) return;
-      if (!autoTriggered) {
-        AppSnackbar.show(
-          context,
-          message: 'سجّل الدخول أولاً لتفعيل البصمة',
-          type: SnackType.info,
-        );
-      }
+      AppSnackbar.show(
+        context,
+        message: 'بيانات الدخول غير محفوظة. سجّل الدخول أولاً.',
+        type: SnackType.warning,
+      );
       return;
     }
 
@@ -167,16 +167,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         _biometricAvailable = false;
         _isBiometricLoginInProgress = false;
       });
+      AppSnackbar.show(
+        context,
+        message: 'البصمة غير متاحة على هذا الجهاز',
+        type: SnackType.error,
+      );
       return;
     }
 
     setState(() => _isBiometricLoginInProgress = true);
+
     final authenticated = await bio.authenticate(
-      reason: 'سجّل دخولك باستخدام البصمة',
+      reason: 'المصادقة مطلوبة للوصول للحساب',
     );
+
     if (!mounted) return;
+
     if (!authenticated) {
       setState(() => _isBiometricLoginInProgress = false);
+      AppSnackbar.show(
+        context,
+        message: 'فشل التحقق من البصمة. حاول مرة أخرى.',
+        type: SnackType.error,
+      );
       return;
     }
 
