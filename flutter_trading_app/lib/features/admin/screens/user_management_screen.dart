@@ -39,6 +39,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       ref.invalidate(activePositionsProvider);
       ref.invalidate(recentTradesProvider);
       ref.invalidate(dailyStatusProvider);
+      ref.invalidate(tradingCycleLiveProvider);
+      ref.invalidate(systemStatusProvider);
     } catch (e) {
       if (mounted) {
         AppSnackbar.show(

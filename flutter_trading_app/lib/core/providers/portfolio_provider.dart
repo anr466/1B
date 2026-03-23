@@ -294,12 +294,16 @@ void refreshByType(WidgetRef ref, RefreshType type) {
   switch (type) {
     case RefreshType.tradingData:
       refreshTradingData(ref);
+      break;
     case RefreshType.notifications:
       ref.invalidate(unreadCountProvider);
       ref.invalidate(notificationsListProvider);
+      break;
     case RefreshType.full:
       refreshTradingData(ref);
-      refreshByType(ref, RefreshType.notifications);
+      ref.invalidate(unreadCountProvider);
+      ref.invalidate(notificationsListProvider);
+      break;
   }
 }
 

@@ -64,6 +64,8 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
         ref.invalidate(tradesListProvider);
         ref.invalidate(accountTradingProvider);
         ref.invalidate(mlStatusProvider);
+        ref.invalidate(tradingCycleLiveProvider);
+        ref.invalidate(systemStatusProvider);
         AppSnackbar.show(
           context,
           message: UxMessages.success,

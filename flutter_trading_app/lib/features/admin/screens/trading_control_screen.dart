@@ -673,6 +673,7 @@ class TradingControlScreen extends ConsumerWidget {
       ref.invalidate(statsProvider);
       ref.invalidate(activePositionsProvider);
       ref.invalidate(recentTradesProvider);
+      ref.invalidate(tradesListProvider);
       ref.invalidate(dailyStatusProvider);
       if (!context.mounted) return;
       final backendMessage =
