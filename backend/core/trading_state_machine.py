@@ -310,10 +310,18 @@ class TradingStateMachine:
             try:
                 pid = self._start_process()
 
-                # Verify process started
-                time.sleep(1.0)
-                if not self._is_process_alive(pid):
-                    raise Exception(f"Process {pid} died immediately after start")
+                # Verify process started with retry logic
+                max_retries = 5
+                for attempt in range(max_retries):
+                    time.sleep(
+                        1.0 * (2**attempt)
+                    )  # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                    if self._is_process_alive(pid):
+                        break
+                else:
+                    raise Exception(
+                        f"Process {pid} failed to start after {max_retries} attempts"
+                    )
 
                 # Transition to RUNNING
                 with self.db.get_write_connection() as conn:
@@ -623,13 +631,41 @@ class TradingStateMachine:
             try:
                 with self.db.get_connection() as conn:
                     row = conn.execute(
-                        "SELECT last_update FROM system_status WHERE id = 1"
+                        "SELECT last_update, started_at FROM system_status WHERE id = 1"
                     ).fetchone()
                     if row and row[0]:
                         last_update = datetime.fromisoformat(row[0])
-                        seconds_since = (datetime.now() - last_update).total_seconds()
+                        stopped_at = last_update
+                        seconds_since = (datetime.now() - stopped_at).total_seconds()
+
+                        # Check if process started AFTER the STOPPED was recorded
+                        # If so, it's a legitimate new process, not an orphan
+                        try:
+                            proc_start_time = self._get_process_start_time(pid)
+                            if proc_start_time and proc_start_time > stopped_at:
+                                # Process started after STOPPED was recorded = legitimate
+                                logger.info(
+                                    f"ℹ️ Process PID={pid} started after STOPPED (at {proc_start_time}) — promoting to RUNNING"
+                                )
+                                corrected = RUNNING
+                                corrected_msg = (
+                                    f"النظام يعمل (PID: {pid}) - تمت المزامنة"
+                                )
+                                self._do_reconcile_update(corrected, corrected_msg)
+                                self._record_reconcile_event("stopped_to_running")
+                                self._log_transition(
+                                    STOPPED,
+                                    RUNNING,
+                                    "reconcile",
+                                    None,
+                                    f"Found running process PID={pid}",
+                                )
+                                return corrected, corrected_msg
+                        except Exception:
+                            pass  # Can't determine process start time, fall through to grace period
+
                         if seconds_since < 15:
-                            # Recently stopped — kill the orphan instead of promoting
+                            # Recently stopped — kill the orphan
                             logger.warning(
                                 f"⚠️ Orphan process PID={pid} found {seconds_since:.0f}s after STOPPED — killing it"
                             )
@@ -795,6 +831,32 @@ class TradingStateMachine:
             return True
         except OSError:
             return False
+
+    def _get_process_start_time(self, pid: int) -> datetime | None:
+        """Get the start time of a process by parsing /proc/{pid}/stat."""
+        try:
+            stat_path = Path(f"/proc/{pid}/stat")
+            if not stat_path.exists():
+                return None
+            stat_content = stat_path.read_text(encoding="utf-8", errors="ignore")
+            # Format: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime ...
+            # The start time is field 19 (0-indexed from 22)
+            parts = stat_content.split()
+            if len(parts) < 22:
+                return None
+            # Field 22 (index 21) is starttime in clock ticks since boot
+            starttime_ticks = int(parts[21])
+            # Get system uptime to convert to datetime
+            uptime_path = Path("/proc/uptime")
+            if uptime_path.exists():
+                uptime_seconds = float(uptime_path.read_text().split()[0])
+                boot_time = datetime.now() - timedelta(seconds=uptime_seconds)
+                # Convert ticks to seconds (usually 100 clock ticks per second)
+                starttime_seconds = starttime_ticks / 100.0
+                return boot_time + timedelta(seconds=starttime_seconds)
+            return None
+        except Exception:
+            return None
 
     def _start_process(self) -> int:
         """Start the background_trading_manager process."""

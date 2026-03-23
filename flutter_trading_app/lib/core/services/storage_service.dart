@@ -186,12 +186,8 @@ class StorageService {
     String user,
     String pass,
   ) async {
-    final userToSave = CredentialEncryption.encrypt(
-      CredentialEncryption.decrypt(user),
-    );
-    final passToSave = CredentialEncryption.encrypt(
-      CredentialEncryption.decrypt(pass),
-    );
+    final userToSave = CredentialEncryption.encrypt(user);
+    final passToSave = CredentialEncryption.encrypt(pass);
     await _p.setString(userKey, userToSave);
     await _p.setString(passKey, passToSave);
   }
@@ -202,14 +198,6 @@ class StorageService {
     if (rawUser == null || rawPass == null) return (null, null);
     final user = CredentialEncryption.decrypt(rawUser);
     final pass = CredentialEncryption.decrypt(rawPass);
-
-    final normalizedUser = CredentialEncryption.encrypt(user);
-    final normalizedPass = CredentialEncryption.encrypt(pass);
-    if (rawUser != normalizedUser || rawPass != normalizedPass) {
-      _p.setString(userKey, normalizedUser);
-      _p.setString(passKey, normalizedPass);
-    }
-
     return (user, pass);
   }
 

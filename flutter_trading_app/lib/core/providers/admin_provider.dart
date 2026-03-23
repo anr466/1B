@@ -105,8 +105,10 @@ final adminUsersProvider =
       return repo.getAllUsers();
     });
 
-/// ML Status — cached to prevent card recreation
-final mlStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+/// ML Status — autoDispose to prevent memory leak
+final mlStatusProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
+  ref,
+) async {
   final auth = ref.watch(authProvider);
   final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
   final repo = ref.watch(adminRepositoryProvider);
