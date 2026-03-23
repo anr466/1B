@@ -5,8 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
-import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/main.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Deep black background — matching brand hero section
@@ -118,73 +116,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _checkAuth() async {
     if (_navigated) return;
 
-    // ─── Step 1: Check if we have biometric credentials saved ────
-    final storage = ref.read(storageServiceProvider);
-    final bio = ref.read(biometricServiceProvider);
-    final (savedUser, savedPass) = storage.biometricCredentials;
-    final hasBiometricCredentials =
-        storage.biometricEnabled && savedUser != null && savedPass != null;
-    final isBiometricAvailable = hasBiometricCredentials
-        ? await bio.isAvailable
-        : false;
-
-    // ─── Step 2: Token-Based Auth Check ────────────
-    await ref.read(authProvider.notifier).checkAuth();
-    final auth = ref.read(authProvider);
-
-    // ─── Step 3: If authenticated and biometric is available, require it ────
-    if (auth.isAuthenticated &&
-        hasBiometricCredentials &&
-        isBiometricAvailable) {
-      final success = await bio.authenticate(
-        reason: 'المصادقة مطلوبة للوصول للتطبيق',
-      );
-      if (!mounted || _navigated) return;
-
-      // Re-verify auth state after biometric to ensure tokens are still valid
-      final currentAuth = ref.read(authProvider);
-      if (success && currentAuth.isAuthenticated) {
-        _navigate();
-      } else if (success && !currentAuth.isAuthenticated) {
-        // Biometric succeeded but tokens expired - need to re-authenticate
-        _navigateToLogin();
-      } else {
-        // Biometric failed - clear tokens and force logout
-        await ref
-            .read(authProvider.notifier)
-            .forceUnauthenticated(clearTokens: true);
-        _navigateToLogin();
-      }
-    } else {
-      _navigate();
-    }
+    // Always go to login on app open - user must explicitly log in
+    // This ensures security: app restart requires re-authentication
+    _navigateToLogin();
   }
 
   void _forceNavigate() {
     if (_navigated) return;
     ref.read(authProvider.notifier).forceUnauthenticated();
-    _navigate();
-  }
-
-  void _navigate() {
-    if (_navigated || !mounted) return;
-    _navigated = true;
-    _timeoutTimer?.cancel();
-    final storage = ref.read(storageServiceProvider);
-    final onboardingDone = storage.onboardingDone;
-
-    // Schedule navigation after current frame to avoid race with GoRouter redirect
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final auth = ref.read(authProvider);
-      if (auth.isAuthenticated) {
-        context.go(RouteNames.dashboard);
-      } else if (!onboardingDone) {
-        context.go(RouteNames.onboarding);
-      } else {
-        context.go(RouteNames.login);
-      }
-    });
+    _navigateToLogin();
   }
 
   void _navigateToLogin() {
