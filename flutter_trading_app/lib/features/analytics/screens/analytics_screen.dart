@@ -12,6 +12,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/financial_metric_tile.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
@@ -325,14 +326,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         if (referenceBalance <= 0) return const SizedBox.shrink();
         final closed = list.where((t) => t.pnl != null).toList();
         if (closed.length < 2) {
-          return AppCard(
-            padding: const EdgeInsets.all(SpacingTokens.md),
-            child: Text(
-              'لا توجد بيانات كافية لرسم المنحنى بعد',
-              style: TypographyTokens.bodySmall(
-                cs.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
+          return EmptyState(
+            message: 'لا توجد بيانات كافية لرسم المنحنى',
+            subtitle: 'مطلوب صفقتان على الأقل',
+            icon: Icons.show_chart_rounded,
           );
         }
 

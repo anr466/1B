@@ -254,7 +254,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                           if (trade.entryTime != null) ...[
                             const SizedBox(height: SpacingTokens.xs),
                             Text(
-                              trade.entryTime!.split('T').first,
+                              _formatArabicDate(trade.entryTime!),
                               style: TypographyTokens.caption(
                                 cs.onSurface.withValues(alpha: 0.3),
                               ),
@@ -439,6 +439,15 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
         ],
       ),
     );
+  }
+
+  String _formatArabicDate(String isoDate) {
+    try {
+      final dt = DateTime.parse(isoDate);
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return isoDate.split('T').first;
+    }
   }
 
   Widget _legendRow(

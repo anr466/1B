@@ -265,7 +265,10 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                     portfolio.when(
                       loading: () =>
                           const LoadingShimmer(itemCount: 1, itemHeight: 220),
-                      error: (_, __) => const SizedBox.shrink(),
+                      error: (e, _) => ErrorState(
+                        message: e.toString(),
+                        onRetry: () => ref.invalidate(portfolioProvider),
+                      ),
                       data: (p) => _buildPortfolioBreakdownChart(
                         context,
                         p,

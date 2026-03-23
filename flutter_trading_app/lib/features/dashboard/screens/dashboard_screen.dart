@@ -618,14 +618,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final hybridItems = _buildHybridTradeItems(openList, closedList);
 
     if (hybridItems.isEmpty) {
-      return AppCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: SpacingTokens.xl),
-          child: EmptyState(
-            message: 'لا توجد صفقات حديثة',
-            icon: Icons.receipt_long_outlined,
-          ),
-        ),
+      return EmptyState(
+        message: 'لا توجد صفقات حديثة',
+        icon: Icons.receipt_long_outlined,
       );
     }
 
