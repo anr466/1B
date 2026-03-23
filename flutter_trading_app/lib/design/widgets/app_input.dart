@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 
-/// App Input — حقل إدخال موحد مع validation + RTL
+/// App Input — حقل إدخال موحد مع validation
 /// تصميم صافي — لا يعتمد على أي منطق أعمال
 class AppInput extends StatelessWidget {
   final TextEditingController? controller;
@@ -22,6 +22,7 @@ class AppInput extends StatelessWidget {
   final FocusNode? focusNode;
   final bool autofocus;
   final FloatingLabelBehavior floatingLabelBehavior;
+  final TextDirection? textDirection;
 
   const AppInput({
     super.key,
@@ -43,10 +44,15 @@ class AppInput extends StatelessWidget {
     this.focusNode,
     this.autofocus = false,
     this.floatingLabelBehavior = FloatingLabelBehavior.auto,
+    this.textDirection,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isRtl = Localizations.localeOf(context).languageCode == 'ar';
+    final effectiveDirection =
+        textDirection ?? (isRtl ? TextDirection.rtl : TextDirection.ltr);
+
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
@@ -60,8 +66,10 @@ class AppInput extends StatelessWidget {
       validator: validator,
       focusNode: focusNode,
       autofocus: autofocus,
-      textDirection: TextDirection.rtl,
-      textAlign: TextAlign.end,
+      textDirection: effectiveDirection,
+      textAlign: effectiveDirection == TextDirection.rtl
+          ? TextAlign.end
+          : TextAlign.start,
       textAlignVertical: TextAlignVertical.center,
       decoration: InputDecoration(
         labelText: label,
