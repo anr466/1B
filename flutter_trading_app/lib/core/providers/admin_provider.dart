@@ -83,7 +83,7 @@ class TradingCycleNotifier
         _initialLoadDone = true;
         state = AsyncValue.data(status);
       }
-    } catch (e, st) {
+    } catch (e) {
       if (!_disposed) {
         state = previousState;
       }
