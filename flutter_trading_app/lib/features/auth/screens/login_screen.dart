@@ -49,6 +49,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
     // Disabled auto-prompt - user must explicitly tap biometric button
     _initializeBiometricLogin(allowAutoPrompt: false);
+
+    // Check for session expiry from navigation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final uri = GoRouterState.of(context).uri;
+        if (uri.queryParameters['expired'] == 'true') {
+          if (mounted) {
+            AppSnackbar.show(
+              context,
+              message: 'انتهت جلستك، سجّل دخولك مرة أخرى',
+              type: SnackType.warning,
+            );
+          }
+        }
+      } catch (_) {
+        // GoRouter not available (e.g., in tests)
+      }
+    });
   }
 
   @override

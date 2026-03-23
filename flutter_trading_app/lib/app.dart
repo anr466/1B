@@ -6,6 +6,7 @@ import 'package:trading_app/core/providers/notifications_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
+import 'package:trading_app/core/services/connectivity_service.dart';
 import 'package:trading_app/core/services/push_notification_service.dart';
 import 'package:trading_app/design/skins/skin_manager.dart';
 import 'package:trading_app/navigation/app_router.dart';
@@ -67,6 +68,9 @@ class TradingApp extends ConsumerWidget {
           themeMode: themeMode,
 
           // ─── GoRouter ──────────────────────────────
+          builder: (context, child) {
+            return OfflineIndicator(child: child ?? const SizedBox.shrink());
+          },
           routerConfig: router,
         );
       },

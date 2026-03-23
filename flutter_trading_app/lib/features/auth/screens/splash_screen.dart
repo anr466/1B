@@ -116,9 +116,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _checkAuth() async {
     if (_navigated) return;
 
+    // Check if there's a session expiry error to pass to login
+    final authState = ref.read(authProvider);
+    final sessionExpired = authState.error?.contains('انتهت الجلسة') == true;
+
     // Always go to login on app open - user must explicitly log in
     // This ensures security: app restart requires re-authentication
-    _navigateToLogin();
+    _navigateToLogin(sessionExpired: sessionExpired);
   }
 
   void _forceNavigate() {
@@ -127,14 +131,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     _navigateToLogin();
   }
 
-  void _navigateToLogin() {
+  void _navigateToLogin({bool sessionExpired = false}) {
     if (_navigated || !mounted) return;
     _navigated = true;
     _timeoutTimer?.cancel();
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.go(RouteNames.login);
+      if (sessionExpired) {
+        context.go('${RouteNames.login}?expired=true');
+      } else {
+        context.go(RouteNames.login);
+      }
     });
   }
 

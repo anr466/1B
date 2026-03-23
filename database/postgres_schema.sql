@@ -425,8 +425,13 @@ CREATE INDEX IF NOT EXISTS idx_active_positions_user ON active_positions(user_id
 CREATE INDEX IF NOT EXISTS idx_active_positions_symbol ON active_positions(symbol);
 CREATE INDEX IF NOT EXISTS idx_active_positions_active ON active_positions(is_active);
 CREATE INDEX IF NOT EXISTS idx_active_positions_user_active ON active_positions(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_active_positions_user_demo_active ON active_positions(user_id, is_demo, is_active);
 CREATE INDEX IF NOT EXISTS idx_user_trades_user_date ON user_trades(user_id, entry_time DESC);
 CREATE INDEX IF NOT EXISTS idx_user_trades_status ON user_trades(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_user_trades_symbol ON user_trades(symbol);
+CREATE INDEX IF NOT EXISTS idx_user_trades_user_demo ON user_trades(user_id, is_demo);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_demo ON user_settings(user_id, is_demo);
 CREATE INDEX IF NOT EXISTS idx_successful_coins_symbol ON successful_coins(symbol, is_active);
 CREATE INDEX IF NOT EXISTS idx_successful_coins_score ON successful_coins(score DESC, is_active);
