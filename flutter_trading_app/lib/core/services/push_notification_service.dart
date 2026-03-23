@@ -7,6 +7,9 @@ import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/services/api_service.dart';
 import 'package:trading_app/core/services/storage_service.dart';
 
+/// Notification settings check callback type
+typedef NotificationSettingsChecker = Future<Map<String, dynamic>> Function();
+
 /// Push Notification Service — manages Firebase FCM + polling fallback
 class PushNotificationService {
   final ApiService _api;
@@ -20,10 +23,12 @@ class PushNotificationService {
   StreamSubscription<String>? _onTokenRefreshSub;
   void Function(Map<String, dynamic> notification)? onNotificationReceived;
   void Function(Map<String, dynamic> data)? onNotificationTapped;
+  NotificationSettingsChecker? getNotificationSettings;
   bool _fcmInitialized = false;
   int? _pollingUserId;
   bool _isCheckingNotifications = false;
   DateTime? _lastCheckAt;
+  Map<String, dynamic>? _cachedSettings;
 
   static const _keyLastNotifId = 'last_notif_id';
   static const _keyFcmToken = 'fcm_token';
@@ -38,6 +43,41 @@ class PushNotificationService {
     }
     await _initializeFcm();
     startPolling(userId);
+  }
+
+  /// Check if a notification type is enabled based on user settings
+  bool _isNotificationTypeEnabled(String? type) {
+    final settings = _cachedSettings;
+    if (settings == null) return true;
+
+    // If push is disabled globally, don't show any notifications
+    if (settings['pushEnabled'] == false) return false;
+
+    final typeStr = type?.toString().toLowerCase() ?? '';
+
+    // Check specific notification type settings
+    if (typeStr.contains('trade_opened') || typeStr.contains('new_trade')) {
+      return settings['tradeOpenedEnabled'] != false;
+    }
+    if (typeStr.contains('trade_closed') ||
+        typeStr.contains('closed_profit') ||
+        typeStr.contains('closed_loss')) {
+      return settings['tradeClosedEnabled'] != false;
+    }
+    if (typeStr.contains('daily') || typeStr.contains('report')) {
+      return settings['dailyReportEnabled'] != false;
+    }
+    if (typeStr.contains('system') || typeStr.contains('alert')) {
+      return settings['systemAlertsEnabled'] != false;
+    }
+
+    // Default: allow all if settings exist but type doesn't match known types
+    return true;
+  }
+
+  /// Update cached notification settings
+  Future<void> updateSettings(Map<String, dynamic> settings) async {
+    _cachedSettings = settings;
   }
 
   /// Start polling for new notifications (fallback + local list freshness)
@@ -178,6 +218,15 @@ class PushNotificationService {
             ? notif['id'] as int
             : int.tryParse('${notif['id']}') ?? 0;
         if (id > lastSeenId) {
+          final type =
+              notif['type']?.toString() ??
+              notif['notification_type']?.toString();
+
+          // Check user notification settings before showing
+          if (!_isNotificationTypeEnabled(type)) {
+            continue; // Skip this notification if disabled by user
+          }
+
           // Show system notification for new items
           final title = notif['title']?.toString() ?? 'إشعار جديد';
           final body = notif['body']?.toString() ?? '';

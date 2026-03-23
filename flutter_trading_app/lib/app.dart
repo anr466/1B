@@ -21,6 +21,12 @@ class TradingApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     final pushService = ref.read(pushNotificationServiceProvider);
 
+    // Load notification settings and pass to push service
+    final notificationSettingsAsync = ref.watch(notificationSettingsProvider);
+    notificationSettingsAsync.whenData((settings) {
+      pushService.updateSettings(settings.toJson());
+    });
+
     pushService.onNotificationTapped = (data) {
       final action = PushNotificationService.parseAction(data);
       router.goNamed(action.routeName, queryParameters: action.params);

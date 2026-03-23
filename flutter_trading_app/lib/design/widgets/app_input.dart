@@ -49,9 +49,7 @@ class AppInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isRtl = Localizations.localeOf(context).languageCode == 'ar';
-    final effectiveDirection =
-        textDirection ?? (isRtl ? TextDirection.rtl : TextDirection.ltr);
+    final effectiveDirection = textDirection;
 
     return TextFormField(
       controller: controller,
