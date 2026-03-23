@@ -34,26 +34,9 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  Timer? _refreshTimer;
-
   @override
   void initState() {
     super.initState();
-    // Auto-refresh every 30 seconds (after initial 3-second delay to avoid startup shake)
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted) return;
-      _refresh();
-    });
-    // Delay first refresh to allow initial build to settle
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) _refresh();
-    });
-  }
-
-  @override
-  void dispose() {
-    _refreshTimer?.cancel();
-    super.dispose();
   }
 
   void _refresh() {
@@ -734,7 +717,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         .toList();
     return [...limitedOpen, ...limitedClosed];
   }
-
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -805,122 +787,122 @@ class _HybridTradeTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
         child: IntrinsicHeight(
           child: Container(
-          padding: const EdgeInsets.symmetric(vertical: SpacingTokens.sm),
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-            border: Border.all(
-              color: cs.outline.withValues(alpha: 0.10),
-              width: 1,
+            padding: const EdgeInsets.symmetric(vertical: SpacingTokens.sm),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
+              border: Border.all(
+                color: cs.outline.withValues(alpha: 0.10),
+                width: 1,
+              ),
             ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                width: 4,
-                decoration: BoxDecoration(
-                  color: sideColor,
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(SpacingTokens.radiusMd),
-                    bottomRight: Radius.circular(SpacingTokens.radiusMd),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: sideColor,
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(SpacingTokens.radiusMd),
+                      bottomRight: Radius.circular(SpacingTokens.radiusMd),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: SpacingTokens.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            trade.symbol,
-                            style: TypographyTokens.body(
-                              cs.onSurface,
-                            ).copyWith(fontWeight: FontWeight.w700),
+                const SizedBox(width: SpacingTokens.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              trade.symbol,
+                              style: TypographyTokens.body(
+                                cs.onSurface,
+                              ).copyWith(fontWeight: FontWeight.w700),
+                            ),
                           ),
-                        ),
-                        StatusBadge(
-                          text: trade.isOpen ? 'مفتوحة' : 'مغلقة',
-                          type: trade.isOpen
-                              ? BadgeType.info
-                              : BadgeType.success,
-                          showDot: false,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        StatusBadge(
-                          text: trade.isBuy ? 'شراء' : 'بيع',
-                          type: trade.isBuy
-                              ? BadgeType.success
-                              : BadgeType.error,
-                          showDot: false,
-                        ),
-                        const SizedBox(width: SpacingTokens.xs),
-                        Expanded(
-                          child: Text(
-                            trade.isOpen
-                                ? (trade.currentPrice != null
-                                    ? 'الآن ${trade.currentPrice!.toStringAsFixed(4)}'
-                                    : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}')
-                                : (trade.exitTime != null
-                                    ? 'خروج: ${_shortDateLabel(trade.exitTime!)}'
-                                    : trade.exitPrice != null
+                          StatusBadge(
+                            text: trade.isOpen ? 'مفتوحة' : 'مغلقة',
+                            type: trade.isOpen
+                                ? BadgeType.info
+                                : BadgeType.success,
+                            showDot: false,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          StatusBadge(
+                            text: trade.isBuy ? 'شراء' : 'بيع',
+                            type: trade.isBuy
+                                ? BadgeType.success
+                                : BadgeType.error,
+                            showDot: false,
+                          ),
+                          const SizedBox(width: SpacingTokens.xs),
+                          Expanded(
+                            child: Text(
+                              trade.isOpen
+                                  ? (trade.currentPrice != null
+                                        ? 'الآن ${trade.currentPrice!.toStringAsFixed(4)}'
+                                        : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}')
+                                  : (trade.exitTime != null
+                                        ? 'خروج: ${_shortDateLabel(trade.exitTime!)}'
+                                        : trade.exitPrice != null
                                         ? 'خرج بـ ${trade.exitPrice!.toStringAsFixed(4)}'
                                         : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}'),
-                            style: TypographyTokens.caption(
-                              cs.onSurface.withValues(alpha: 0.45),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(
-                width: 90,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: SpacingTokens.xs,
-                  ),
-                  child: trade.isOpen
-                      ? _OpenTradeLiveIndicator(trade: trade)
-                      : trade.pnl != null
-                          ? FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.centerEnd,
-                              child: PnlIndicator(
-                                amount: trade.pnl!,
-                                percentage: trade.pnlPct,
-                                compact: true,
-                                fontSize: 12,
+                              style: TypographyTokens.caption(
+                                cs.onSurface.withValues(alpha: 0.45),
                               ),
-                            )
-                          : const SizedBox.shrink(),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsetsDirectional.only(
-                  end: SpacingTokens.sm,
+                SizedBox(
+                  width: 90,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: SpacingTokens.xs,
+                    ),
+                    child: trade.isOpen
+                        ? _OpenTradeLiveIndicator(trade: trade)
+                        : trade.pnl != null
+                        ? FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: PnlIndicator(
+                              amount: trade.pnl!,
+                              percentage: trade.pnlPct,
+                              compact: true,
+                              fontSize: 12,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                 ),
-                child: Icon(
-                  Icons.chevron_left_rounded,
-                  size: 18,
-                  color: cs.onSurface.withValues(alpha: 0.25),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(
+                    end: SpacingTokens.sm,
+                  ),
+                  child: Icon(
+                    Icons.chevron_left_rounded,
+                    size: 18,
+                    color: cs.onSurface.withValues(alpha: 0.25),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -984,7 +966,6 @@ class _OpenTradeLiveIndicator extends StatelessWidget {
     );
   }
 }
-
 
 class _BalanceSummaryMetric extends StatelessWidget {
   final String label;

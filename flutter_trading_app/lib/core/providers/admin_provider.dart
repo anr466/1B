@@ -5,10 +5,9 @@ import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 
-/// System status provider for dashboard & admin (single fetch)
-final systemStatusProvider = FutureProvider.autoDispose<SystemStatusModel>((
-  ref,
-) async {
+/// System status provider for dashboard & admin
+/// Uses regular FutureProvider (not autoDispose) to prevent shimmer on rebuild
+final systemStatusProvider = FutureProvider<SystemStatusModel>((ref) async {
   final repo = ref.watch(adminRepositoryProvider);
   return repo.getTradingState();
 });
@@ -27,6 +26,7 @@ class TradingCycleNotifier
   final Ref _ref;
   Timer? _pollingTimer;
   bool _disposed = false;
+  bool _initialLoadDone = false;
 
   TradingCycleNotifier(this._ref) : super(const AsyncValue.loading()) {
     _load();
@@ -39,11 +39,14 @@ class TradingCycleNotifier
       final repo = _ref.read(adminRepositoryProvider);
       final status = await repo.getTradingState();
       if (!_disposed) {
+        _initialLoadDone = true;
         state = AsyncValue.data(status);
       }
-    } catch (e, st) {
+    } catch (e, _) {
       if (!_disposed) {
-        state = AsyncValue.error(e, st);
+        if (!_initialLoadDone) {
+          state = AsyncValue.error(e, StackTrace.current);
+        }
       }
     }
   }
@@ -51,13 +54,40 @@ class TradingCycleNotifier
   void _startPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      _load();
+      if (!_disposed) {
+        _loadSilent();
+      }
     });
   }
 
+  Future<void> _loadSilent() async {
+    if (_disposed) return;
+    try {
+      final repo = _ref.read(adminRepositoryProvider);
+      final status = await repo.getTradingState();
+      if (!_disposed && _initialLoadDone) {
+        state = AsyncValue.data(status);
+      }
+    } catch (_) {
+      // Silent fail during polling - keep last known state
+    }
+  }
+
   Future<void> refresh() async {
-    state = const AsyncValue.loading();
-    await _load();
+    if (_disposed) return;
+    final previousState = state;
+    try {
+      final repo = _ref.read(adminRepositoryProvider);
+      final status = await repo.getTradingState();
+      if (!_disposed) {
+        _initialLoadDone = true;
+        state = AsyncValue.data(status);
+      }
+    } catch (e, st) {
+      if (!_disposed) {
+        state = previousState;
+      }
+    }
   }
 
   @override
