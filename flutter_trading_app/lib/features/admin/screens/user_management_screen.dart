@@ -34,6 +34,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       final repo = ref.read(adminRepositoryProvider);
       await repo.toggleUserTrading(userId, !currentEnabled);
       ref.invalidate(adminUsersProvider);
+      ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
       ref.invalidate(activePositionsProvider);

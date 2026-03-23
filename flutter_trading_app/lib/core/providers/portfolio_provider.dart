@@ -265,6 +265,7 @@ Future<bool> toggleTradingWithBiometric({
   ref.invalidate(recentTradesProvider);
   ref.invalidate(tradesListProvider);
   ref.invalidate(dailyStatusProvider);
+  ref.invalidate(systemStatusProvider);
 
   showMessage(
     success

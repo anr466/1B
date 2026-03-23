@@ -36,12 +36,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void _refresh() {
-    ref.invalidate(portfolioProvider);
-    ref.invalidate(statsProvider);
-    ref.invalidate(recentTradesProvider);
-    ref.invalidate(activePositionsProvider);
-    ref.invalidate(systemStatusProvider);
-    ref.invalidate(accountTradingProvider);
+    refreshTradingData(ref);
   }
 
   @override
