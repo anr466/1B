@@ -14,6 +14,7 @@ import 'package:trading_app/design/widgets/app_info_row.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
@@ -55,13 +56,12 @@ class TradingControlScreen extends ConsumerWidget {
                       statusAsync.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 1, itemHeight: 120),
-                        error: (e, _) => AppCard(
-                          child: Center(
-                            child: Text(
-                              'خطأ: $e',
-                              style: TypographyTokens.bodySmall(cs.error),
-                            ),
-                          ),
+                        error: (e, _) => ErrorState(
+                          message: e.toString(),
+                          onRetry: () {
+                            ref.invalidate(tradingCycleLiveProvider);
+                            ref.invalidate(systemStatusProvider);
+                          },
                         ),
                         data: (s) =>
                             _statusSection(context, ref, cs, s, isActionBusy),

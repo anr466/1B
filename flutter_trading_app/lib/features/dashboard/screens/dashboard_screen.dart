@@ -18,6 +18,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
@@ -599,14 +600,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
 
     if (recentTrades.hasError && activeTrades.hasError) {
-      return AppCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: SpacingTokens.xl),
-          child: EmptyState(
-            message: 'تعذر تحميل الصفقات',
-            icon: Icons.receipt_long_outlined,
-          ),
-        ),
+      return ErrorState(
+        message: 'تعذر تحميل الصفقات',
+        onRetry: () {
+          ref.invalidate(recentTradesProvider);
+          ref.invalidate(activePositionsProvider);
+        },
       );
     }
 

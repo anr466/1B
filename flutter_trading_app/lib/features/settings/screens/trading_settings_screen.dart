@@ -12,6 +12,7 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 
 /// Settings Provider
@@ -119,8 +120,9 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
             padding: EdgeInsets.all(SpacingTokens.base),
             child: LoadingShimmer(itemCount: 4, itemHeight: 80),
           ),
-          error: (e, _) => Center(
-            child: Text('خطأ: $e', style: TypographyTokens.body(cs.error)),
+          error: (e, _) => ErrorState(
+            message: e.toString(),
+            onRetry: () => ref.invalidate(settingsDataProvider),
           ),
           data: (s) {
             return ListView(

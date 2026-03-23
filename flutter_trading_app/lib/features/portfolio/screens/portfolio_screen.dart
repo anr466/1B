@@ -14,6 +14,7 @@ import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_info_row.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
@@ -86,13 +87,9 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                     portfolio.when(
                       loading: () =>
                           const LoadingShimmer(itemCount: 1, itemHeight: 200),
-                      error: (e, _) => AppCard(
-                        child: Center(
-                          child: Text(
-                            'خطأ: $e',
-                            style: TypographyTokens.bodySmall(cs.error),
-                          ),
-                        ),
+                      error: (e, _) => ErrorState(
+                        message: e.toString(),
+                        onRetry: () => ref.invalidate(portfolioProvider),
                       ),
                       data: (p) => AppCard(
                         level: 2,

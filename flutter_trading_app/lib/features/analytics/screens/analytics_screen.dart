@@ -13,6 +13,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/financial_metric_tile.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
@@ -81,11 +82,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     stats.when(
                       loading: () =>
                           const LoadingShimmer(itemCount: 4, itemHeight: 90),
-                      error: (e, _) => Center(
-                        child: Text(
-                          'خطأ: $e',
-                          style: TypographyTokens.bodySmall(cs.error),
-                        ),
+                      error: (e, _) => ErrorState(
+                        message: e.toString(),
+                        onRetry: () => ref.invalidate(statsProvider),
                       ),
                       data: (s) => Column(
                         children: [
