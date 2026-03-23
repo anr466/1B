@@ -216,21 +216,23 @@ class AuthService {
         await _saveAuthData(data);
         return data;
       }
-      // Session invalid - clear all auth data
+      // Session invalid - clear all auth data including biometric
       await _storage.clearAuth();
       await _storage.clearBiometricCredentials();
       return {
-        'success': false, 
-        'message': data['error'] ?? 'الجلسة منتهية الصلاحية'
+        'success': false,
+        'message': data['error'] ?? 'الجلسة منتهية الصلاحية',
       };
     } catch (e) {
-      // API error or network failure - clear auth to prevent bypass
+      // Network error - clear auth tokens but KEEP biometric credentials
+      // User may have network issues, don't lock them out of biometric
       await _storage.clearAuth();
-      await _storage.clearBiometricCredentials();
+      // DO NOT clear biometric credentials - network failures are transient
       return {
-        'success': false, 
-        'message': 'فشل التحقق من الجلسة',
+        'success': false,
+        'message': 'فشل الاتصال بالخادم',
         'error': e.toString(),
+        'isNetworkError': true,
       };
     }
   }

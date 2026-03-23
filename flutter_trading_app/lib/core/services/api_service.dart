@@ -6,10 +6,18 @@ import 'package:trading_app/core/services/storage_service.dart';
 
 /// API Service — Dio HTTP client + interceptors + auto-refresh
 /// منطق صافي — لا يستورد Flutter UI
+class _PendingRequest {
+  final RequestOptions request;
+  final ErrorInterceptorHandler handler;
+  _PendingRequest(this.request, this.handler);
+}
+
 class ApiService {
   late final Dio _dio;
   final StorageService _storage;
   bool _isRefreshing = false;
+  Completer<bool>? _refreshCompleter;
+  final List<_PendingRequest> _pendingRequests = [];
   bool _isRecoveringConnection = false;
 
   /// Callback invoked when session expires (refresh token fails).
@@ -69,23 +77,55 @@ class ApiService {
       }
     }
 
-    if (err.response?.statusCode == 401 && !_isRefreshing) {
+    if (err.response?.statusCode == 401) {
+      // If already refreshing, queue this request
+      if (_isRefreshing && _refreshCompleter != null) {
+        _pendingRequests.add(_PendingRequest(err.requestOptions, handler));
+        return;
+      }
+
+      // Start refresh and queue this request
       _isRefreshing = true;
+      _refreshCompleter = Completer<bool>();
+
       try {
         final refreshed = await _refreshToken();
+        _refreshCompleter!.complete(refreshed);
+
         if (refreshed) {
-          final retryOptions = err.requestOptions;
-          retryOptions.headers['Authorization'] =
+          // Retry all pending requests with new token
+          for (final pending in _pendingRequests) {
+            pending.request.headers['Authorization'] =
+                'Bearer ${_storage.accessToken}';
+            try {
+              final response = await _dio.fetch(pending.request);
+              pending.handler.resolve(response);
+            } catch (e) {
+              pending.handler.next(e as DioException);
+            }
+          }
+          _pendingRequests.clear();
+
+          // Retry the current request
+          err.requestOptions.headers['Authorization'] =
               'Bearer ${_storage.accessToken}';
-          final response = await _dio.fetch(retryOptions);
-          _isRefreshing = false;
+          final response = await _dio.fetch(err.requestOptions);
           return handler.resolve(response);
         }
       } catch (_) {
-        // refresh failed
+        _refreshCompleter!.complete(false);
       }
+
       _isRefreshing = false;
-      // Token refresh failed — force session expiry
+      _refreshCompleter = null;
+
+      // Token refresh failed — queue pending requests for session expiry
+      for (final pending in _pendingRequests) {
+        pending.handler.next(err);
+      }
+      _pendingRequests.clear();
+
+      // Force session expiry
       await _storage.clearAuth();
       try {
         onSessionExpired?.call();

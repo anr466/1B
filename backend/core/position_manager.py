@@ -11,6 +11,7 @@ Methods:
 from datetime import datetime
 from typing import Dict, List, Optional
 import pandas as pd
+import threading
 
 try:
     from backend.utils.error_logger import error_logger, ErrorLevel, ErrorSource
@@ -18,6 +19,33 @@ try:
     ERROR_LOGGER_AVAILABLE = True
 except Exception:
     ERROR_LOGGER_AVAILABLE = False
+
+# Global lock for atomic trade execution (prevents TOCTOU race conditions)
+_trade_execution_lock = threading.Lock()
+
+
+class TradeExecutionLock:
+    """Context manager for atomic trade execution with lock."""
+
+    def __init__(self, logger=None):
+        self.logger = logger
+        self._acquired = False
+
+    def __enter__(self):
+        acquired = _trade_execution_lock.acquire(blocking=True, timeout=10.0)
+        self._acquired = acquired
+        if not acquired:
+            if self.logger:
+                self.logger.warning("⚠️ Could not acquire trade lock")
+        return self._acquired
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._acquired:
+            try:
+                _trade_execution_lock.release()
+            except RuntimeError:
+                pass  # Lock not held
+        return False  # Don't suppress exceptions
 
 
 class PositionManagerMixin:
@@ -935,7 +963,24 @@ class PositionManagerMixin:
         }
 
     def _open_position(self, symbol: str, signal: Dict) -> Optional[Dict]:
-        """فتح صفقة جديدة (LONG أو SHORT)"""
+        """فتح صفقة جديدة (LONG أو SHORT) - Thread-safe with lock"""
+        # ✅ TOCTOU Prevention: Acquire lock before check-and-execute
+        with TradeExecutionLock(self.logger) as acquired:
+            if not acquired:
+                return None
+
+            # Re-verify risk gates while holding lock (atomic with execution)
+            open_positions = self._get_open_positions()
+            portfolio = self._load_user_portfolio()
+            risk_balance = portfolio.get("total_value", portfolio.get("balance", 0))
+
+            can_trade, reason = self._check_risk_gates(open_positions, risk_balance)
+            if not can_trade:
+                self.logger.warning(
+                    f"   🛡️ [{symbol}] Lock-time risk gate BLOCKED: {reason}"
+                )
+                return None
+
         balance = self.user_portfolio.get("balance", 0)
 
         # ✅ Phase 0: حساب حجم الصفقة عبر Kelly (بدلاً من النسبة الثابتة)

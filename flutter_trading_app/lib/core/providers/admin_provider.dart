@@ -6,29 +6,26 @@ import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 
 /// System status provider for dashboard & admin
-/// Uses regular FutureProvider (not autoDispose) to prevent shimmer on rebuild
-final systemStatusProvider = FutureProvider<SystemStatusModel>((ref) async {
-  final repo = ref.watch(adminRepositoryProvider);
-  return repo.getTradingState();
-});
-
-/// Live trading cycle provider — FutureProvider with 60s auto-refresh
-/// Uses FutureProvider for stable state management (no flickering)
-final tradingCycleLiveProvider =
-    StateNotifierProvider<TradingCycleNotifier, AsyncValue<SystemStatusModel>>((
+/// ✅ UNIFIED: Single provider with 60s polling for consistent state
+/// Uses StateNotifierProvider for stable state management (no flickering)
+final systemStatusProvider =
+    StateNotifierProvider<SystemStatusNotifier, AsyncValue<SystemStatusModel>>((
       ref,
     ) {
-      return TradingCycleNotifier(ref);
+      return SystemStatusNotifier(ref);
     });
 
-class TradingCycleNotifier
+/// Backward compatibility alias
+final tradingCycleLiveProvider = systemStatusProvider;
+
+class SystemStatusNotifier
     extends StateNotifier<AsyncValue<SystemStatusModel>> {
   final Ref _ref;
   Timer? _pollingTimer;
   bool _disposed = false;
   bool _initialLoadDone = false;
 
-  TradingCycleNotifier(this._ref) : super(const AsyncValue.loading()) {
+  SystemStatusNotifier(this._ref) : super(const AsyncValue.loading()) {
     _load();
     _startPolling();
   }
