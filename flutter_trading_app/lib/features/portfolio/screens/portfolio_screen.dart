@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,26 +26,9 @@ class PortfolioScreen extends ConsumerStatefulWidget {
 }
 
 class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
-  Timer? _refreshTimer;
-
   @override
   void initState() {
     super.initState();
-    // Auto-refresh every 30 seconds (after initial 3-second delay)
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted) return;
-      ref.invalidate(portfolioProvider);
-    });
-    // Delay first refresh to allow initial build to settle
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) ref.invalidate(portfolioProvider);
-    });
-  }
-
-  @override
-  void dispose() {
-    _refreshTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -308,7 +290,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     );
   }
 
-
   Widget _buildPortfolioBreakdownChart(
     BuildContext context,
     PortfolioModel p,
@@ -391,31 +372,31 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _legendItem(
-                  'متاح',
-                  p.availableBalance,
-                  semantic.positive,
-                  cs,
+                    'متاح',
+                    p.availableBalance,
+                    semantic.positive,
+                    cs,
                   ),
                   const SizedBox(height: SpacingTokens.sm),
                   _legendItem(
-                  'إجمالي الربح',
-                  p.totalPnl,
-                  p.totalPnl >= 0 ? semantic.positive : semantic.negative,
-                  cs,
+                    'إجمالي الربح',
+                    p.totalPnl,
+                    p.totalPnl >= 0 ? semantic.positive : semantic.negative,
+                    cs,
                   ),
                   const SizedBox(height: SpacingTokens.sm),
                   _legendItem(
-                  'غير محقق',
-                  p.unrealizedPnl,
-                  p.unrealizedPnl >= 0 ? semantic.info : semantic.negative,
-                  cs,
+                    'غير محقق',
+                    p.unrealizedPnl,
+                    p.unrealizedPnl >= 0 ? semantic.info : semantic.negative,
+                    cs,
                   ),
                   const SizedBox(height: SpacingTokens.sm),
                   _legendItem(
-                  'محجوز',
-                  p.reservedBalance,
-                  SemanticColors.of(context).info,
-                  cs,
+                    'محجوز',
+                    p.reservedBalance,
+                    SemanticColors.of(context).info,
+                    cs,
                   ),
                 ],
               ),
@@ -426,12 +407,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     );
   }
 
-  Widget _legendItem(
-    String label,
-    double value,
-    Color color,
-    ColorScheme cs,
-  ) {
+  Widget _legendItem(String label, double value, Color color, ColorScheme cs) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -454,10 +430,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                   cs.onSurface.withValues(alpha: 0.45),
                 ),
               ),
-              _PortfolioBalanceValue(
-                amount: value,
-                fontSize: 11,
-              ),
+              _PortfolioBalanceValue(amount: value, fontSize: 11),
             ],
           ),
         ),

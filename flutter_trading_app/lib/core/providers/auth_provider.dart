@@ -51,17 +51,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(status: AuthStatus.loading, error: null);
     try {
       final authService = _ref.read(authServiceProvider);
-      
+
       // First check if token exists
       if (!authService.hasToken) {
         state = const AuthState(status: AuthStatus.unauthenticated);
         return;
       }
-      
+
       final result = await authService.restoreSession();
-      
+
       // Strict validation: must have success AND valid user data
-      if (result['success'] == true && 
+      if (result['success'] == true &&
           result['user'] != null &&
           result['user'] is Map &&
           result['user']['id'] != null) {
@@ -73,7 +73,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         _startNotificationPolling(user.id);
         return;
       }
-      
+
       // Clear any stale data on failure
       await authService.logout();
       state = const AuthState(status: AuthStatus.unauthenticated);
@@ -221,11 +221,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
-    // Apply best-guess mode immediately from login response so providers
-    // don't start with the wrong default before the settings API responds.
-    final earlyMode = user.tradingMode == 'demo' ? 'demo' : 'real';
-    _ref.read(adminPortfolioModeProvider.notifier).state = earlyMode;
-
     try {
       final settings = await _ref
           .read(settingsRepositoryProvider)
@@ -234,7 +229,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _ref.read(adminPortfolioModeProvider.notifier).state = resolvedMode;
       updateCurrentUser(user.copyWith(tradingMode: resolvedMode));
     } catch (_) {
-      // Keep the early mode from the login response on settings API failure
+      // Fallback to login response mode on settings API failure
+      final fallbackMode = user.tradingMode == 'demo' ? 'demo' : 'real';
+      _ref.read(adminPortfolioModeProvider.notifier).state = fallbackMode;
     }
   }
 

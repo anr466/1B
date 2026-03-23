@@ -5,6 +5,7 @@ import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -45,6 +46,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final success = await ref
         .read(accountTradingProvider.notifier)
         .setEnabled(newValue);
+
+    ref.invalidate(portfolioProvider);
+    ref.invalidate(statsProvider);
+    ref.invalidate(activePositionsProvider);
+    ref.invalidate(recentTradesProvider);
+    ref.invalidate(tradesListProvider);
+    ref.invalidate(dailyStatusProvider);
+
     if (!mounted) return;
     if (success) {
       AppSnackbar.show(
@@ -424,7 +433,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
-
 
   Future<void> _showLogoutDialog(BuildContext context) async {
     final cs = Theme.of(context).colorScheme;

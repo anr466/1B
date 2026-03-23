@@ -27,7 +27,6 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   final _scrollController = ScrollController();
   String? _selectedFilter;
   int _touchedSection = -1;
-  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -35,13 +34,6 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
     _scrollController.addListener(_onScroll);
     Future.microtask(() {
       ref.read(tradesListProvider.notifier).loadFirstPage();
-    });
-    // Auto-refresh every 30 seconds (after initial 3-second delay)
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted) return;
-      ref.read(tradesListProvider.notifier).loadFirstPage(
-        statusFilter: _selectedFilter,
-      );
     });
   }
 
@@ -54,7 +46,6 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
