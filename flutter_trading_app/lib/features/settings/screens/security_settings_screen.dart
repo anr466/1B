@@ -238,7 +238,9 @@ class _SecuritySettingsScreenState
   Future<void> _toggleBiometric(bool value) async {
     final bio = ref.read(biometricServiceProvider);
     final auth = ref.read(authProvider);
+    final storage = ref.read(storageServiceProvider);
     final available = await bio.isAvailable;
+
     if (!available) {
       if (!mounted) return;
       AppSnackbar.show(
@@ -249,40 +251,68 @@ class _SecuritySettingsScreenState
       return;
     }
 
-    final reason = value ? 'تأكيد تفعيل البصمة' : 'تأكيد تعطيل البصمة';
-    final authenticated = await bio.authenticate(reason: reason);
-    if (!authenticated) {
-      if (!mounted) return;
-      AppSnackbar.show(
-        context,
-        message: 'فشل التحقق من البصمة',
-        type: SnackType.error,
-      );
-      return;
+    // When enabling biometric, we need credentials saved
+    if (value) {
+      final (savedUser, savedPass) = storage.biometricCredentials;
+
+      // If no credentials saved, prompt user to enter them
+      if (savedUser == null || savedPass == null) {
+        if (!mounted) return;
+        final credentials = await _showCredentialDialog(
+          'حفظ بيانات الدخول',
+          'أدخل بيانات الدخول لحفظها وتسجيل الدخول بالبصمة مستقبلاً',
+        );
+        if (credentials == null) return;
+
+        // Verify credentials
+        final verifyResult = await ref
+            .read(authServiceProvider)
+            .login(
+              emailOrUsername: credentials['email']!,
+              password: credentials['password']!,
+            );
+
+        if (verifyResult['success'] != true) {
+          if (!mounted) return;
+          AppSnackbar.show(
+            context,
+            message: 'بيانات الدخول غير صحيحة',
+            type: SnackType.error,
+          );
+          return;
+        }
+
+        // Save credentials for biometric
+        await storage.saveBiometricCredentials(
+          credentials['email']!,
+          credentials['password']!,
+        );
+      }
     }
 
     try {
       setState(() => _isBusy = true);
-      final storage = ref.read(storageServiceProvider);
       await storage.setBiometricEnabled(value);
+
       if (!value) {
         await storage.clearBiometricCredentials();
       }
+
       final currentUser = auth.user;
       if (currentUser != null) {
         ref
             .read(authProvider.notifier)
             .updateCurrentUser(currentUser.copyWith(biometricEnabled: value));
       }
+
       if (!mounted) return;
       setState(() {
         _biometricEnabled = value;
       });
+
       AppSnackbar.show(
         context,
-        message: value
-            ? 'تم تفعيل البصمة — سجّل الدخول مرة لحفظ بياناتك'
-            : 'تم تعطيل البصمة',
+        message: value ? 'تم تفعيل البصمة بنجاح' : 'تم تعطيل البصمة',
         type: SnackType.success,
       );
     } catch (e) {
@@ -295,6 +325,57 @@ class _SecuritySettingsScreenState
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
+  }
+
+  Future<Map<String, String>?> _showCredentialDialog(
+    String title,
+    String message,
+  ) async {
+    String email = '';
+    String password = '';
+
+    return showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(message),
+              const SizedBox(height: SpacingTokens.md),
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'البريد الإلكتروني أو المستخدم',
+                ),
+                onChanged: (v) => email = v.trim(),
+              ),
+              const SizedBox(height: SpacingTokens.sm),
+              TextField(
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'كلمة المرور'),
+                onChanged: (v) => password = v,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (email.isNotEmpty && password.isNotEmpty) {
+                  Navigator.pop(ctx, {'email': email, 'password': password});
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
