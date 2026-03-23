@@ -3,9 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
-import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -19,22 +18,6 @@ import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
 
-final _analyticsTradesProvider = FutureProvider.autoDispose((ref) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) {
-    throw Exception('غير مصادق');
-  }
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(tradesRepositoryProvider);
-  final result = await repo.getTrades(
-    auth.user!.id,
-    page: 1,
-    perPage: 100,
-    mode: mode,
-  );
-  return result.trades;
-});
-
 /// Analytics Screen — التحليلات والإحصائيات
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -46,7 +29,7 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   void _refresh() {
     ref.invalidate(statsProvider);
-    ref.invalidate(_analyticsTradesProvider);
+    ref.invalidate(analyticsTradesProvider);
   }
 
   @override
@@ -328,7 +311,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Widget _equityCurveCard(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final semantic = SemanticColors.of(context);
-    final trades = ref.watch(_analyticsTradesProvider);
+    final trades = ref.watch(analyticsTradesProvider);
     final portfolio = ref.watch(portfolioProvider);
     final referenceBalance = portfolio.maybeWhen(
       data: (p) => p.initialBalance > 0 ? p.initialBalance : p.currentBalance,

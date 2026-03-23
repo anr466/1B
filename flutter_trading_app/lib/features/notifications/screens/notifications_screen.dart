@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/models/notification_model.dart';
-import 'package:trading_app/core/models/trade_model.dart';
 import 'package:trading_app/core/providers/notifications_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -235,25 +233,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     final finalSymbol = symbol ?? extractedSymbol;
 
     if (tradeId != null) {
-      // جلب تفاصيل الصفقة من الخادم
       try {
-        final api = ref.read(apiServiceProvider);
-        final response = await api.get(ApiEndpoints.tradeDetail(tradeId));
-
-        if (response.statusCode == 200 && response.data['success'] == true) {
-          final tradeData = response.data['data'];
-          final trade = TradeModel.fromJson(tradeData);
-          if (mounted) {
-            context.push(RouteNames.tradeDetail, extra: trade);
-          }
-        } else {
-          // إذا لم تُعثر على الصفقة، انتقل لصفحة الصفقات
-          if (mounted) {
-            context.go(RouteNames.trades);
-          }
+        final repo = ref.read(tradesRepositoryProvider);
+        final trade = await repo.getTradeById(tradeId);
+        if (mounted) {
+          context.push(RouteNames.tradeDetail, extra: trade);
         }
       } catch (e) {
-        // في حالة الخطأ، انتقل لصفحة الصفقات
         if (mounted) {
           context.go(RouteNames.trades);
         }

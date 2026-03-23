@@ -114,3 +114,20 @@ final tradesListProvider =
     ) {
       return TradesListNotifier(ref);
     });
+
+/// Analytics trades — 100 trades for equity curve
+final analyticsTradesProvider = FutureProvider.autoDispose((ref) async {
+  final auth = ref.watch(authProvider);
+  if (!auth.isAuthenticated || auth.user == null) {
+    throw Exception('غير مصادق');
+  }
+  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
+  final repo = ref.watch(tradesRepositoryProvider);
+  final result = await repo.getTrades(
+    auth.user!.id,
+    page: 1,
+    perPage: 100,
+    mode: mode,
+  );
+  return result.trades;
+});
