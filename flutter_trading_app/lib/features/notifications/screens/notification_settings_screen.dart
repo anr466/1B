@@ -8,6 +8,8 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
+import 'package:trading_app/design/widgets/loading_shimmer.dart';
 
 /// Notification Settings Screen — إعدادات إشعارات المستخدم (Self-service)
 class NotificationSettingsScreen extends ConsumerStatefulWidget {
@@ -80,7 +82,7 @@ class _NotificationSettingsScreenState
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: e.toString().replaceFirst('Exception: ', ''),
+        message: UxMessages.networkError,
         type: SnackType.error,
       );
     } finally {
@@ -110,14 +112,9 @@ class _NotificationSettingsScreenState
           ),
         ),
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const LoadingShimmer(itemCount: 1, itemHeight: 400)
             : _settings == null
-            ? Center(
-                child: Text(
-                  'تعذر تحميل البيانات',
-                  style: TypographyTokens.body(cs.error),
-                ),
-              )
+            ? const ErrorState(message: 'تعذر تحميل البيانات')
             : ListView(
                 padding: const EdgeInsets.all(SpacingTokens.base),
                 children: [

@@ -8,6 +8,7 @@ import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_icon_button.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
@@ -46,66 +47,47 @@ class ErrorDetailsScreen extends ConsumerWidget {
               ),
               Expanded(
                 child: errorAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(SpacingTokens.base),
-            child: LoadingShimmer(itemCount: 6, itemHeight: 100),
-          ),
-          error: (e, _) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(SpacingTokens.base),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, size: 64, color: cs.error),
-                  const SizedBox(height: SpacingTokens.md),
-                  Text(
-                    'فشل تحميل التفاصيل',
-                    style: TypographyTokens.h3(cs.error),
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(SpacingTokens.base),
+                    child: LoadingShimmer(itemCount: 6, itemHeight: 100),
                   ),
-                  const SizedBox(height: SpacingTokens.sm),
-                  Text(
-                    e.toString(),
-                    style: TypographyTokens.body(
-                      cs.onSurface.withValues(alpha: 0.6),
+                  error: (e, _) => ErrorState(
+                    message: e.toString(),
+                    onRetry: () =>
+                        ref.invalidate(_errorDetailsProvider(errorId)),
+                  ),
+                  data: (error) => SingleChildScrollView(
+                    padding: const EdgeInsets.all(SpacingTokens.base),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeaderCard(context, cs, error),
+                        const SizedBox(height: SpacingTokens.md),
+                        _buildMessageCard(context, cs, error),
+                        const SizedBox(height: SpacingTokens.md),
+                        _buildMetadataCard(context, cs, error),
+                        if (error['details'] != null &&
+                            error['details'].toString().isNotEmpty) ...[
+                          const SizedBox(height: SpacingTokens.md),
+                          _buildDetailsCard(context, cs, error),
+                        ],
+                        if (error['traceback'] != null &&
+                            error['traceback'].toString().isNotEmpty) ...[
+                          const SizedBox(height: SpacingTokens.md),
+                          _buildTracebackCard(context, cs, error),
+                        ],
+                        if (error['similar_count'] != null &&
+                            error['similar_count'] > 0) ...[
+                          const SizedBox(height: SpacingTokens.md),
+                          _buildSimilarErrorsCard(context, cs, error),
+                        ],
+                        const SizedBox(height: SpacingTokens.md),
+                        _buildActionsCard(context, cs, error, ref),
+                        const SizedBox(height: SpacingTokens.xl),
+                      ],
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                ],
-              ),
-            ),
-          ),
-          data: (error) => SingleChildScrollView(
-            padding: const EdgeInsets.all(SpacingTokens.base),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeaderCard(context, cs, error),
-                const SizedBox(height: SpacingTokens.md),
-                _buildMessageCard(context, cs, error),
-                const SizedBox(height: SpacingTokens.md),
-                _buildMetadataCard(context, cs, error),
-                if (error['details'] != null &&
-                    error['details'].toString().isNotEmpty) ...[
-                  const SizedBox(height: SpacingTokens.md),
-                  _buildDetailsCard(context, cs, error),
-                ],
-                if (error['traceback'] != null &&
-                    error['traceback'].toString().isNotEmpty) ...[
-                  const SizedBox(height: SpacingTokens.md),
-                  _buildTracebackCard(context, cs, error),
-                ],
-                if (error['similar_count'] != null &&
-                    error['similar_count'] > 0) ...[
-                  const SizedBox(height: SpacingTokens.md),
-                  _buildSimilarErrorsCard(context, cs, error),
-                ],
-                const SizedBox(height: SpacingTokens.md),
-                _buildActionsCard(context, cs, error, ref),
-                const SizedBox(height: SpacingTokens.xl),
-              ],
-            ),
-          ),
-        ),
+                ),
               ),
             ],
           ),

@@ -8,6 +8,7 @@ import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
@@ -51,28 +52,30 @@ class SystemLogsScreen extends ConsumerWidget {
               ),
               Expanded(
                 child: RefreshIndicator(
-          color: cs.primary,
-          onRefresh: () async => ref.invalidate(_activeErrorsProvider),
-          child: errorsAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(SpacingTokens.base),
-              child: LoadingShimmer(itemCount: 5, itemHeight: 80),
-            ),
-            error: (e, _) => Center(
-              child: Text(e.toString(), style: TypographyTokens.body(cs.error)),
-            ),
-            data: (errors) {
-              if (errors.isEmpty) {
-                return const EmptyState(message: 'لا توجد أخطاء نشطة');
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.all(SpacingTokens.base),
-                itemCount: errors.length,
-                itemBuilder: (_, i) => _ErrorCard(error: errors[i], ref: ref),
-              );
-            },
-          ),
-        ),
+                  color: cs.primary,
+                  onRefresh: () async => ref.invalidate(_activeErrorsProvider),
+                  child: errorsAsync.when(
+                    loading: () => const Padding(
+                      padding: EdgeInsets.all(SpacingTokens.base),
+                      child: LoadingShimmer(itemCount: 5, itemHeight: 80),
+                    ),
+                    error: (e, _) => ErrorState(
+                      message: e.toString(),
+                      onRetry: () => ref.invalidate(_activeErrorsProvider),
+                    ),
+                    data: (errors) {
+                      if (errors.isEmpty) {
+                        return const EmptyState(message: 'لا توجد أخطاء نشطة');
+                      }
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(SpacingTokens.base),
+                        itemCount: errors.length,
+                        itemBuilder: (_, i) =>
+                            _ErrorCard(error: errors[i], ref: ref),
+                      );
+                    },
+                  ),
+                ),
               ),
             ],
           ),

@@ -6,6 +6,8 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
+import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
@@ -335,24 +337,10 @@ class _TradeDetailLoader extends ConsumerWidget {
         backgroundColor: cs.surface,
         body: SafeArea(
           child: tradeAsync.when(
-            loading: () => Column(
-              children: const [
-                AppScreenHeader(title: 'تفاصيل الصفقة', showBack: true),
-                Expanded(child: Center(child: CircularProgressIndicator())),
-              ],
-            ),
-            error: (e, _) => Column(
-              children: [
-                const AppScreenHeader(title: 'تفاصيل الصفقة', showBack: true),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      'تعذر تحميل الصفقة: $e',
-                      style: TypographyTokens.body(cs.error),
-                    ),
-                  ),
-                ),
-              ],
+            loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 400),
+            error: (e, _) => ErrorState(
+              message: e.toString(),
+              onRetry: () => ref.invalidate(_tradeDetailProvider(tradeId)),
             ),
             data: (loadedTrade) => TradeDetailScreen(trade: loadedTrade),
           ),
