@@ -58,32 +58,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               'تعديل الملف الشخصي',
               style: TypographyTokens.h3(cs.onSurface),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'الاسم الكامل',
-                    labelStyle: TypographyTokens.bodySmall(
-                      cs.onSurface.withValues(alpha: 0.6),
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    textDirection: TextDirection.rtl,
+                    decoration: InputDecoration(
+                      labelText: 'الاسم الكامل',
+                      labelStyle: TypographyTokens.bodySmall(
+                        cs.onSurface.withValues(alpha: 0.6),
+                      ),
                     ),
+                    style: TypographyTokens.body(cs.onSurface),
                   ),
-                  style: TypographyTokens.body(cs.onSurface),
-                ),
-                const SizedBox(height: SpacingTokens.md),
-                TextField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'رقم الهاتف (اختياري)',
-                    labelStyle: TypographyTokens.bodySmall(
-                      cs.onSurface.withValues(alpha: 0.6),
+                  const SizedBox(height: SpacingTokens.md),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    textDirection: TextDirection.rtl,
+                    decoration: InputDecoration(
+                      labelText: 'رقم الهاتف (اختياري)',
+                      labelStyle: TypographyTokens.bodySmall(
+                        cs.onSurface.withValues(alpha: 0.6),
+                      ),
                     ),
+                    style: TypographyTokens.body(cs.onSurface),
                   ),
-                  style: TypographyTokens.body(cs.onSurface),
-                ),
-              ],
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -128,7 +133,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           if (context.mounted) {
                             AppSnackbar.show(
                               context,
-                              message: 'خطأ: $e',
+                              message: 'تعذر تحديث الملف الشخصي',
                               type: SnackType.error,
                             );
                           }

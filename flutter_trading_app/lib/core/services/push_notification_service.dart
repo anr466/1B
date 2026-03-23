@@ -94,8 +94,12 @@ class PushNotificationService {
 
       _onMessageSub = FirebaseMessaging.onMessage.listen((message) {
         final data = Map<String, dynamic>.from(message.data);
-        final title = message.notification?.title ?? data['title'] as String? ?? '1B Trading';
-        final body = message.notification?.body ?? data['body'] as String? ?? '';
+        final title =
+            message.notification?.title ??
+            data['title'] as String? ??
+            '1B Trading';
+        final body =
+            message.notification?.body ?? data['body'] as String? ?? '';
         data['title'] = title;
         data['body'] = body;
 
@@ -123,7 +127,8 @@ class PushNotificationService {
     } catch (e) {
       if (kDebugMode) {
         final message = '$e';
-        final recoverable = message.contains('SERVICE_NOT_AVAILABLE') ||
+        final recoverable =
+            message.contains('SERVICE_NOT_AVAILABLE') ||
             message.contains('firebase_messaging/unknown') ||
             message.contains('MissingPluginException');
         print(
@@ -137,14 +142,18 @@ class PushNotificationService {
 
   /// Check for new notifications from backend
   Future<void> _checkNewNotifications(int userId) async {
-    if (_isCheckingNotifications) return;
     final now = DateTime.now();
     final lastCheckAt = _lastCheckAt;
+
+    // Use atomic check-and-set pattern
+    if (_isCheckingNotifications) return;
     if (lastCheckAt != null && now.difference(lastCheckAt) < _minimumCheckGap) {
       return;
     }
+
     _isCheckingNotifications = true;
     _lastCheckAt = now;
+
     try {
       final response = await _api.get(
         ApiEndpoints.notifications(userId),
@@ -169,7 +178,17 @@ class PushNotificationService {
             ? notif['id'] as int
             : int.tryParse('${notif['id']}') ?? 0;
         if (id > lastSeenId) {
-          onNotificationReceived?.call(Map<String, dynamic>.from(notif));
+          // Show system notification for new items
+          final title = notif['title']?.toString() ?? 'إشعار جديد';
+          final body = notif['body']?.toString() ?? '';
+          final notifData = Map<String, dynamic>.from(notif);
+
+          // Show local notification
+          _showLocalNotification(title, body, notifData);
+
+          // Notify app (invalidate providers)
+          onNotificationReceived?.call(notifData);
+
           if (id > newestId) newestId = id;
         }
       }
@@ -191,23 +210,42 @@ class PushNotificationService {
     Map<String, dynamic> data,
   ) async {
     try {
+      // Determine notification type for better display
+      final type =
+          data['type']?.toString() ??
+          data['notification_type']?.toString() ??
+          '';
+
+      String channelId = 'trading_alerts';
+      String channelName = '1B Trading Alerts';
+      Color color = const Color(0xFF1565C0);
+
+      // Customize based on notification type
+      if (type.contains('profit') || type.contains('win')) {
+        color = const Color(0xFF4CAF50); // Green for profit
+      } else if (type.contains('loss') || type.contains('error')) {
+        color = const Color(0xFFF44336); // Red for loss
+      } else if (type.contains('trade')) {
+        color = const Color(0xFF2196F3); // Blue for trades
+      }
+
       final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       await _localNotifs.show(
         id,
         title,
         body,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
-            'trading_alerts',
-            '1B Trading Alerts',
+            channelId,
+            channelName,
             channelDescription: 'إشعارات الصفقات والتنبيهات',
             importance: Importance.high,
             priority: Priority.high,
-            icon: '@drawable/ic_notification',
-            color: Color(0xFF1565C0),
+            icon: '@mipmap/ic_launcher',
+            color: color,
             playSound: true,
             enableVibration: true,
-            styleInformation: BigTextStyleInformation(''),
+            styleInformation: BigTextStyleInformation(body),
           ),
         ),
       );
