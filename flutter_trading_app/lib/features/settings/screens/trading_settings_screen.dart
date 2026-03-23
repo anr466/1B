@@ -123,53 +123,27 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
       }
     }
     if (!mounted) return;
-    setState(() {
-      _tradingEnabled = v;
-    });
-    await _save();
-  }
 
-  Future<void> _save() async {
-    final auth = ref.read(authProvider);
-    if (auth.user == null) return;
+    // Use accountTradingProvider for consistent behavior with dashboard/profile
+    final success = await ref
+        .read(accountTradingProvider.notifier)
+        .setEnabled(v);
 
-    try {
-      final repo = ref.read(settingsRepositoryProvider);
-      final mode = auth.isAdmin ? ref.read(adminPortfolioModeProvider) : null;
-      final result = await repo.updateSettings(auth.user!.id, {
-        'tradingEnabled': _tradingEnabled,
-      }, mode: mode);
+    // Invalidate related providers
+    ref.invalidate(settingsDataProvider);
+    ref.invalidate(dailyStatusProvider);
+    ref.invalidate(portfolioProvider);
+    ref.invalidate(statsProvider);
+    ref.invalidate(activePositionsProvider);
+    ref.invalidate(successfulCoinsProvider);
+    ref.invalidate(recentTradesProvider);
+    ref.invalidate(tradesListProvider);
 
-      if (!mounted) return;
-      if (result['success'] == true) {
-        ref.read(accountTradingProvider.notifier).load();
-        AppSnackbar.show(
-          context,
-          message: UxMessages.success,
-          type: SnackType.success,
-        );
-        ref.invalidate(settingsDataProvider);
-        ref.invalidate(dailyStatusProvider);
-        ref.invalidate(portfolioProvider);
-        ref.invalidate(statsProvider);
-        ref.invalidate(activePositionsProvider);
-        ref.invalidate(successfulCoinsProvider);
-        ref.invalidate(recentTradesProvider);
-        ref.invalidate(tradesListProvider);
-      } else {
-        AppSnackbar.show(
-          context,
-          message: UxMessages.error,
-          type: SnackType.error,
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      AppSnackbar.show(
-        context,
-        message: UxMessages.error,
-        type: SnackType.error,
-      );
+    if (!mounted) return;
+    if (success) {
+      setState(() {
+        _tradingEnabled = v;
+      });
     }
   }
 
