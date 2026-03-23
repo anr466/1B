@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
+import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/main.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
@@ -117,9 +118,38 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _checkAuth() async {
     if (_navigated) return;
 
-    // ─── Normal Token-Based Auth Check ────────────
+    // ─── Step 1: Check if we have biometric credentials saved ────
+    final storage = ref.read(storageServiceProvider);
+    final bio = ref.read(biometricServiceProvider);
+    final (savedUser, savedPass) = storage.biometricCredentials;
+    final hasBiometricCredentials =
+        storage.biometricEnabled && savedUser != null && savedPass != null;
+    final isBiometricAvailable = hasBiometricCredentials
+        ? await bio.isAvailable
+        : false;
+
+    // ─── Step 2: Token-Based Auth Check ────────────
     await ref.read(authProvider.notifier).checkAuth();
-    _navigate();
+    final auth = ref.read(authProvider);
+
+    // ─── Step 3: If authenticated and biometric is available, require it ────
+    if (auth.isAuthenticated &&
+        hasBiometricCredentials &&
+        isBiometricAvailable) {
+      final success = await bio.authenticate(
+        reason: 'المصادقة مطلوبة للوصول للتطبيق',
+      );
+      if (!mounted || _navigated) return;
+      if (success) {
+        _navigate();
+      } else {
+        // Biometric failed - force logout and go to login
+        ref.read(authProvider.notifier).forceUnauthenticated();
+        _navigateToLogin();
+      }
+    } else {
+      _navigate();
+    }
   }
 
   void _forceNavigate() {
@@ -146,6 +176,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       } else {
         context.go(RouteNames.login);
       }
+    });
+  }
+
+  void _navigateToLogin() {
+    if (_navigated || !mounted) return;
+    _navigated = true;
+    _timeoutTimer?.cancel();
+
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.go(RouteNames.login);
     });
   }
 
