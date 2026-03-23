@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/refs/heads/dev/.opencode/oh-my-opencode.schema.json",
+  "context_injection": {
+    "files": [
+      "AGENTS.md",
+      ".windsurfrules",
+      ".TRADING_BOT_SYSTEM_DESIGN_v1.2.md"
+    ],
+    "auto_inject_conditions": {
+      "pattern": "**/*.dart",
+      "contexts": [
+        "AGENTS.md",
+        ".windsurfrules"
+      ]
+    },
+    "backend_context": {
+      "pattern": "**/*.py",
+      "contexts": [
+        "AGENTS.md",
+        ".windsurfrules"
+      ]
+    },
+    "rules": {
+      "auto_inject": true,
+      "show_source": true
+    }
+  },
+  "hooks": {
+    "disabled_hooks": []
+  },
+  "agents": {
+    "sisyphus": {
+      "system_prompt_additions": [
+        "You are working on a TRADING BOT SYSTEM with Flutter frontend and Python FastAPI backend.",
+        "MANDATORY RULES from AGENTS.md:",
+        "1. Single Source of Truth - Database is ONLY source for trading data",
+        "2. User Isolation - Each user has isolated data (user_id + is_demo)",
+        "3. State Management - ONE source for each data, stored in ONE place",
+        "4. Error Handling - All API calls MUST have try-catch",
+        "5. Auditor Rules - MINIMUM 3 issues per review, edge cases MANDATORY",
+        "",
+        "AUDITOR MINDSET (NEVER skip):",
+        "- 'All good' = FORBIDDEN",
+        "- Find MINIMUM 3 issues per review",
+        "- Coverage checkpoint BEFORE planning",
+        "- Re-audit MANDATORY after fixes",
+        "",
+        "Workflow: ANALYZE → PLAN → EXECUTE → TEST → COMMIT",
+        "Testing: flutter analyze (0 errors), flutter test (all pass)"
+      ]
+    },
+    "hephaestus": {
+      "system_prompt_additions": [
+        "Deep code execution for TRADING BOT SYSTEM.",
+        "Flutter: lib/features/*/screens/*.dart, lib/core/providers/*.dart",
+        "Backend: backend/core/*.py, backend/api/*.py",
+        "ALWAYS run flutter analyze after code changes",
+        "Verify: flutter test passes before commit"
+      ]
+    },
+    "prometheus": {
+      "system_prompt_additions": [
+        "Strategic planning for TRADING BOT SYSTEM.",
+        "Key files: AGENTS.md, .windsurfrules, .TRADING_BOT_SYSTEM_DESIGN_v1.2.md",
+        "Coverage checkpoint REQUIRED before planning:",
+        "- Layers analyzed? (Backend? DB? Mobile? API?)",
+        "- Features tested? (Auth? Orders? Risk?)",
+        "- Scenarios considered? (Success? Failure? Edge?)",
+        "- States verified? (Initial? Loading? Error?)"
+      ]
+    }
+  },
+  "sisyphus": {
+    "work_directory": "/Users/anr/Desktop/trading_ai_bot-1",
+    "git": {
+      "auto_commit": true,
+      "commit_message_template": "fix: {description}"
+    }
+  },
+  "explore": {
+    "search_paths": [
+      "flutter_trading_app/lib",
+      "backend"
+    ]
+  }
+}
