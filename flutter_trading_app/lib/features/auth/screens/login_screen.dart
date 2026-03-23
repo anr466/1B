@@ -127,13 +127,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         await storage.clearRememberedCredentials();
       }
 
-      if (storage.biometricEnabled) {
-        await ref
-            .read(authServiceProvider)
-            .saveCredentialsForBiometric(email, password);
-      } else {
-        await storage.clearBiometricCredentials();
-      }
+      // Always save credentials for biometric (user may enable it later)
+      await ref
+          .read(authServiceProvider)
+          .saveCredentialsForBiometric(email, password);
+
       if (!mounted) return;
       context.go(RouteNames.dashboard);
       return;
@@ -291,7 +289,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () => setState(() => _rememberMe = !_rememberMe),
-                      borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
+                      borderRadius: BorderRadius.circular(
+                        SpacingTokens.radiusMd,
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: SpacingTokens.xs,

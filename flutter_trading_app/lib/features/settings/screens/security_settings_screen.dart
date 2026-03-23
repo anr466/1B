@@ -251,25 +251,30 @@ class _SecuritySettingsScreenState
       return;
     }
 
-    // When enabling biometric, we need credentials saved
-    if (value) {
-      final (savedUser, savedPass) = storage.biometricCredentials;
+    // التحقق من البصمة أولاً
+    final authenticated = await bio.authenticate(
+      reason: value ? 'تأكيد تفعيل البصمة' : 'تأكيد تعطيل البصمة',
+    );
+    if (!authenticated) {
+      if (!mounted) return;
+      AppSnackbar.show(
+        context,
+        message: 'فشل التحقق من البصمة',
+        type: SnackType.error,
+      );
+      return;
+    }
 
-      // If no credentials saved, prompt user to enter them
-      if (savedUser == null || savedPass == null) {
-        if (!mounted) return;
-        final credentials = await _showCredentialDialog(
-          'حفظ بيانات الدخول',
-          'أدخل بيانات الدخول لحفظها وتسجيل الدخول بالبصمة مستقبلاً',
-        );
-        if (credentials == null) return;
-
-        // Save credentials for biometric (user is already logged in, no need to verify)
-        await storage.saveBiometricCredentials(
-          credentials['email']!,
-          credentials['password']!,
-        );
-      }
+    // بيانات الدخول محفوظة بالفعل من شاشة الدخول
+    final (savedUser, savedPass) = storage.biometricCredentials;
+    if (value && (savedUser == null || savedPass == null)) {
+      if (!mounted) return;
+      AppSnackbar.show(
+        context,
+        message: 'بيانات الدخول غير محفوظة. سجّل الدخول مرة أخرى.',
+        type: SnackType.warning,
+      );
+      return;
     }
 
     try {
@@ -307,57 +312,6 @@ class _SecuritySettingsScreenState
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
-  }
-
-  Future<Map<String, String>?> _showCredentialDialog(
-    String title,
-    String message,
-  ) async {
-    String email = '';
-    String password = '';
-
-    return showDialog<Map<String, String>>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text(title),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message),
-              const SizedBox(height: SpacingTokens.md),
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: 'البريد الإلكتروني أو المستخدم',
-                ),
-                onChanged: (v) => email = v.trim(),
-              ),
-              const SizedBox(height: SpacingTokens.sm),
-              TextField(
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'كلمة المرور'),
-                onChanged: (v) => password = v,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (email.isNotEmpty && password.isNotEmpty) {
-                  Navigator.pop(ctx, {'email': email, 'password': password});
-                }
-              },
-              child: const Text('حفظ'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
