@@ -378,12 +378,14 @@ class TradingControlScreen extends ConsumerWidget {
       if (!context.mounted) return;
       ref.read(tradingCycleLiveProvider.notifier).refresh();
       ref.invalidate(systemStatusProvider);
+      ref.invalidate(mlStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
       ref.invalidate(activePositionsProvider);
       ref.invalidate(recentTradesProvider);
       ref.invalidate(dailyStatusProvider);
+      if (!context.mounted) return;
 
       final backendMessage =
           (result['message'] ?? result['data']?['message'] ?? '').toString();
@@ -610,6 +612,7 @@ class TradingControlScreen extends ConsumerWidget {
     try {
       final repo = ref.read(adminRepositoryProvider);
       final result = await repo.resetDemo();
+      ref.invalidate(mlStatusProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);
       ref.invalidate(activePositionsProvider);
@@ -664,6 +667,7 @@ class TradingControlScreen extends ConsumerWidget {
 
       ref.read(tradingCycleLiveProvider.notifier).refresh();
       ref.invalidate(systemStatusProvider);
+      ref.invalidate(mlStatusProvider);
       ref.invalidate(accountTradingProvider);
       ref.invalidate(portfolioProvider);
       ref.invalidate(statsProvider);

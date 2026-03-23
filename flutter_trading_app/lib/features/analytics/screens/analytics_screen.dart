@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -44,29 +43,18 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
-  Timer? _refreshTimer;
-
   @override
   void initState() {
     super.initState();
-    // Auto-refresh every 60 seconds (after initial 3-second delay)
-    _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      if (!mounted) return;
-      ref.invalidate(statsProvider);
-      ref.invalidate(_analyticsTradesProvider);
-    });
-    // Delay first refresh to allow initial build to settle
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        ref.invalidate(statsProvider);
-        ref.invalidate(_analyticsTradesProvider);
-      }
-    });
+  }
+
+  void _refresh() {
+    ref.invalidate(statsProvider);
+    ref.invalidate(_analyticsTradesProvider);
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -85,8 +73,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           child: RefreshIndicator(
             color: cs.primary,
             onRefresh: () async {
-              ref.invalidate(statsProvider);
-              ref.invalidate(_analyticsTradesProvider);
+              _refresh();
             },
             child: Center(
               child: ConstrainedBox(
@@ -647,4 +634,3 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return step * pow10;
   }
 }
-

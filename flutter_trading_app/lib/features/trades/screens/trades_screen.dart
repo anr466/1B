@@ -27,6 +27,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   final _scrollController = ScrollController();
   String? _selectedFilter;
   int _touchedSection = -1;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -38,14 +39,18 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   }
 
   void _onScroll() {
+    _debounceTimer?.cancel();
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      ref.read(tradesListProvider.notifier).loadNextPage();
+      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+        ref.read(tradesListProvider.notifier).loadNextPage();
+      });
     }
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }

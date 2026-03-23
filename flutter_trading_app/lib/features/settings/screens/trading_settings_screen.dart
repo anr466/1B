@@ -35,29 +35,10 @@ class TradingSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
-  SettingsModel? _settings;
-  String _tradingMode = 'demo';
-  bool _tradingEnabled = false;
   bool _isSwitchingMode = false;
 
-  // التحقق من اكتمال إعدادات التداول - النظام يديرها تلقائياً الآن
   bool get _isTradingSettingsValid {
-    // النظام يحدد القيم تلقائياً، التحقق يكون فقط من الرصيد
     return true;
-  }
-
-  void _initFromSettings(SettingsModel s) {
-    final shouldSync =
-        _settings == null ||
-        _settings!.activePortfolio != s.activePortfolio ||
-        _settings!.tradingEnabled != s.tradingEnabled;
-
-    if (!shouldSync) return;
-
-    _settings = s;
-    _tradingMode = s.activePortfolio;
-    _tradingEnabled = s.tradingEnabled;
-    ref.read(adminPortfolioModeProvider.notifier).state = s.activePortfolio;
   }
 
   Future<void> _changeTradingMode(String mode) async {
@@ -71,7 +52,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
       if (!mounted) return;
 
       if (result['success'] == true) {
-        setState(() => _tradingMode = mode);
         ref.read(adminPortfolioModeProvider.notifier).state = mode;
         ref.invalidate(settingsDataProvider);
         ref.invalidate(dailyStatusProvider);
@@ -116,10 +96,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
       showMessage: (message, type) =>
           AppSnackbar.show(context, message: message, type: type),
     );
-    if (!mounted) return;
-    setState(() {
-      _tradingEnabled = v;
-    });
   }
 
   @override
@@ -147,13 +123,12 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
             child: Text('خطأ: $e', style: TypographyTokens.body(cs.error)),
           ),
           data: (s) {
-            _initFromSettings(s);
             return ListView(
               padding: const EdgeInsets.all(SpacingTokens.base),
               children: [
                 if (auth.isAdmin) ...[
                   _PortfolioModeSwitcher(
-                    currentMode: _tradingMode,
+                    currentMode: s.activePortfolio,
                     hasBinanceKeys: s.hasBinanceKeys,
                     hasConfiguredDbKeys: s.hasConfiguredDbKeys,
                     keysRequiredForCurrentMode: s.keysRequiredForCurrentMode,
@@ -181,7 +156,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                                 ),
                                 const SizedBox(height: SpacingTokens.xxs),
                                 Text(
-                                  _tradingEnabled
+                                  s.tradingEnabled
                                       ? 'النظام يفتح صفقات جديدة تلقائياً'
                                       : 'التداول متوقف حالياً',
                                   style: TypographyTokens.caption(
@@ -192,7 +167,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                             ),
                           ),
                           Switch.adaptive(
-                            value: _tradingEnabled,
+                            value: s.tradingEnabled,
                             onChanged: _isTradingSettingsValid
                                 ? _onTradingToggle
                                 : null,

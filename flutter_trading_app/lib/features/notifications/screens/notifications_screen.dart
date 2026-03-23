@@ -42,6 +42,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     }
   }
 
+  void _refresh() {
+    ref.read(notificationsListProvider.notifier).loadFirstPage();
+    ref.invalidate(unreadCountProvider);
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -76,7 +81,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       )
                     : null,
               ),
-              Expanded(child: _buildBody(cs, state)),
+              Expanded(
+                child: RefreshIndicator(
+                  color: cs.primary,
+                  onRefresh: () async {
+                    _refresh();
+                  },
+                  child: _buildBody(cs, state),
+                ),
+              ),
             ],
           ),
         ),
