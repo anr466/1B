@@ -143,8 +143,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       if (success) {
         _navigate();
       } else {
-        // Biometric failed - force logout and go to login
-        ref.read(authProvider.notifier).forceUnauthenticated();
+        // Biometric failed - clear tokens and force logout
+        await ref
+            .read(authProvider.notifier)
+            .forceUnauthenticated(clearTokens: true);
         _navigateToLogin();
       }
     } else {

@@ -137,12 +137,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(user: user);
   }
 
-  /// Force unauthenticated (timeout, token expired)
-  void forceUnauthenticated() {
+  /// Force unauthenticated (timeout, token expired, biometric failed)
+  Future<void> forceUnauthenticated({bool clearTokens = true}) async {
     try {
       _ref.read(pushNotificationServiceProvider).stopPolling();
     } catch (_) {}
     _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
+
+    if (clearTokens) {
+      try {
+        await _ref.read(authServiceProvider).logout();
+      } catch (_) {}
+    }
+
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 

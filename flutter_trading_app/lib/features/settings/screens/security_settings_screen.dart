@@ -264,25 +264,7 @@ class _SecuritySettingsScreenState
         );
         if (credentials == null) return;
 
-        // Verify credentials
-        final verifyResult = await ref
-            .read(authServiceProvider)
-            .login(
-              emailOrUsername: credentials['email']!,
-              password: credentials['password']!,
-            );
-
-        if (verifyResult['success'] != true) {
-          if (!mounted) return;
-          AppSnackbar.show(
-            context,
-            message: 'بيانات الدخول غير صحيحة',
-            type: SnackType.error,
-          );
-          return;
-        }
-
-        // Save credentials for biometric
+        // Save credentials for biometric (user is already logged in, no need to verify)
         await storage.saveBiometricCredentials(
           credentials['email']!,
           credentials['password']!,
