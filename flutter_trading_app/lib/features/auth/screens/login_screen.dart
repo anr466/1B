@@ -298,34 +298,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     },
                   ),
 
-                  const SizedBox(height: SpacingTokens.base),
-
-                  // ─── Password ────────────────────────
-                  AppInput(
-                    controller: _passwordCtrl,
-                    label: 'كلمة المرور',
-                    obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _login(),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: cs.onSurface.withValues(alpha: 0.4),
-                        size: 20,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) {
-                        return 'مطلوب';
-                      }
-                      return null;
-                    },
-                  ),
-
                   const SizedBox(height: SpacingTokens.sm),
 
                   Material(

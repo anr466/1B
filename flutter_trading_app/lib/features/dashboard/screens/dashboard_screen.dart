@@ -34,11 +34,6 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  @override
-  void initState() {
-    super.initState();
-  }
-
   void _refresh() {
     ref.invalidate(portfolioProvider);
     ref.invalidate(statsProvider);

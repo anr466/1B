@@ -43,19 +43,9 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
-  @override
-  void initState() {
-    super.initState();
-  }
-
   void _refresh() {
     ref.invalidate(statsProvider);
     ref.invalidate(_analyticsTradesProvider);
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   @override

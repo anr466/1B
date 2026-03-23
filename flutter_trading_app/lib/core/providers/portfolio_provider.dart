@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
 import 'package:trading_app/core/models/trade_model.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
+import 'package:trading_app/core/providers/notifications_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
@@ -273,3 +275,32 @@ Future<bool> toggleTradingWithBiometric({
 
   return success;
 }
+
+/// Unified refresh helper — invalidates all trading-related providers
+/// Use this instead of manually invalidating multiple providers
+void refreshTradingData(WidgetRef ref) {
+  ref.invalidate(portfolioProvider);
+  ref.invalidate(statsProvider);
+  ref.invalidate(activePositionsProvider);
+  ref.invalidate(recentTradesProvider);
+  ref.invalidate(tradesListProvider);
+  ref.invalidate(dailyStatusProvider);
+  ref.invalidate(systemStatusProvider);
+  ref.invalidate(accountTradingProvider);
+}
+
+/// Refresh specific providers based on type
+void refreshByType(WidgetRef ref, RefreshType type) {
+  switch (type) {
+    case RefreshType.tradingData:
+      refreshTradingData(ref);
+    case RefreshType.notifications:
+      ref.invalidate(unreadCountProvider);
+      ref.invalidate(notificationsListProvider);
+    case RefreshType.full:
+      refreshTradingData(ref);
+      refreshByType(ref, RefreshType.notifications);
+  }
+}
+
+enum RefreshType { tradingData, notifications, full }

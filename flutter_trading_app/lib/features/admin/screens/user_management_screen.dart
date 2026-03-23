@@ -10,6 +10,8 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/empty_state.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
@@ -72,22 +74,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       padding: EdgeInsets.all(SpacingTokens.base),
                       child: LoadingShimmer(itemCount: 5, itemHeight: 72),
                     ),
-                    error: (e, _) => Center(
-                      child: Text(
-                        'خطأ: $e',
-                        style: TypographyTokens.body(cs.error),
-                      ),
+                    error: (e, _) => ErrorState(
+                      message: e.toString(),
+                      onRetry: () => ref.invalidate(adminUsersProvider),
                     ),
                     data: (users) {
                       if (users.isEmpty) {
-                        return Center(
-                          child: Text(
-                            'لا يوجد مستخدمون',
-                            style: TypographyTokens.body(
-                              cs.onSurface.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        );
+                        return const EmptyState(message: 'لا يوجد مستخدمون');
                       }
 
                       return ListView.builder(
