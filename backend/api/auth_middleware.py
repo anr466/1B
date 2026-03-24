@@ -80,6 +80,22 @@ def _verify_jwt_and_set_g():
     return None  # success
 
 
+def require_auth(f):
+    """
+    Simple authentication decorator.
+    Use require_auth_atomic for critical operations.
+    """
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        error_response = _verify_jwt()
+        if error_response is not None:
+            return error_response
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 def _verify_jwt_atomic():
     """
     Atomic JWT verification using advisory locks.
