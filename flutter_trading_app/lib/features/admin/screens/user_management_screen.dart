@@ -29,6 +29,58 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   Future<void> _toggleTrading(int userId, bool currentEnabled) async {
     if (_toggling.contains(userId)) return;
+
+    // ✅ تأكيد قبل الإجراء
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(
+            currentEnabled ? 'إيقاف تداول المستخدم' : 'تفعيل تداول المستخدم',
+          ),
+          content: Text(
+            currentEnabled
+                ? 'سيتم إيقاف التداول لهذا المستخدم. الصفقات المفتوحة ستستمر.'
+                : 'سيتم تفعيل التداول لهذا المستخدم.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(currentEnabled ? 'إيقاف' : 'تفعيل'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+
+    // ✅ تحقق بالبصمة
+    final bio = ref.read(biometricServiceProvider);
+    final trustNotifier = ref.read(biometricTrustProvider.notifier);
+
+    if (await bio.isAvailable && !trustNotifier.isTrusted) {
+      final reason = currentEnabled
+          ? 'تأكيد إيقاف تداول المستخدم'
+          : 'تأكيد تفعيل تداول المستخدم';
+      final ok = await bio.authenticate(reason: reason);
+      if (!ok) {
+        if (mounted) {
+          AppSnackbar.show(
+            context,
+            message: 'فشل التحقق من البصمة',
+            type: SnackType.error,
+          );
+        }
+        return;
+      }
+      trustNotifier.markTrusted();
+    }
+
     setState(() => _toggling.add(userId));
     try {
       final repo = ref.read(adminRepositoryProvider);
@@ -43,12 +95,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       ref.invalidate(tradingCycleLiveProvider);
       ref.invalidate(systemStatusProvider);
     } catch (e) {
+      // ✅ تراجع عن الحالة عند الفشل
       if (mounted) {
         AppSnackbar.show(
           context,
           message: 'تعذر إتمام العملية، حاول مرة أخرى',
           type: SnackType.error,
         );
+        // إعادة تحديث القائمة لإظهار الحالة الصحيحة
+        ref.invalidate(adminUsersProvider);
       }
     } finally {
       if (mounted) setState(() => _toggling.remove(userId));

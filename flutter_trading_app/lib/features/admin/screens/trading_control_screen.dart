@@ -469,29 +469,9 @@ class TradingControlScreen extends ConsumerWidget {
 
   Future<void> _emergencyStop(BuildContext context, WidgetRef ref) async {
     if (ref.read(_tradingControlActionBusyProvider)) return;
-    ref.read(_tradingControlActionBusyProvider.notifier).state = true;
 
-    final bio = ref.read(biometricServiceProvider);
-    final trustNotifier = ref.read(biometricTrustProvider.notifier);
-
-    if (await bio.isAvailable && !trustNotifier.isTrusted) {
-      final ok = await bio.authenticate(reason: 'تأكيد إيقاف الطوارئ');
-      if (!ok) {
-        if (!context.mounted) return;
-        AppSnackbar.show(
-          context,
-          message: 'فشل التحقق من البصمة',
-          type: SnackType.error,
-        );
-        ref.read(_tradingControlActionBusyProvider.notifier).state = false;
-        return;
-      }
-      trustNotifier.markTrusted();
-    }
-    if (!context.mounted) {
-      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
-      return;
-    }
+    // ✅ تأكيد أولاً، ثم بصمة
+    if (!context.mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => Directionality(
@@ -520,10 +500,26 @@ class TradingControlScreen extends ConsumerWidget {
         ),
       ),
     );
+    if (confirmed != true) return;
 
-    if (confirmed != true || !context.mounted) {
-      ref.read(_tradingControlActionBusyProvider.notifier).state = false;
-      return;
+    ref.read(_tradingControlActionBusyProvider.notifier).state = true;
+
+    final bio = ref.read(biometricServiceProvider);
+    final trustNotifier = ref.read(biometricTrustProvider.notifier);
+
+    if (await bio.isAvailable && !trustNotifier.isTrusted) {
+      final ok = await bio.authenticate(reason: 'تأكيد إيقاف الطوارئ');
+      if (!ok) {
+        if (!context.mounted) return;
+        AppSnackbar.show(
+          context,
+          message: 'فشل التحقق من البصمة',
+          type: SnackType.error,
+        );
+        ref.read(_tradingControlActionBusyProvider.notifier).state = false;
+        return;
+      }
+      trustNotifier.markTrusted();
     }
 
     try {
@@ -679,13 +675,39 @@ class TradingControlScreen extends ConsumerWidget {
 
   Future<void> _resetError(BuildContext context, WidgetRef ref) async {
     if (ref.read(_tradingControlActionBusyProvider)) return;
+
+    // ✅ تأكيد قبل الإجراء
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('إعادة تعيين الخطأ'),
+          content: const Text(
+            'سيتم إعادة تعيين حالة النظام ومسح الخطأ. هل تريد المتابعة؟',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('إعادة تعيين'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+
     ref.read(_tradingControlActionBusyProvider.notifier).state = true;
 
     try {
       final repo = ref.read(adminRepositoryProvider);
       final result = await repo.resetError();
 
-      // ✅ FIX: More flexible success check
       final success = result['success'] == true;
       final state =
           (result['trading_state'] ??
@@ -694,11 +716,12 @@ class TradingControlScreen extends ConsumerWidget {
                   '')
               .toString()
               .toUpperCase();
+      // ✅ تصحيح: لا نقبل ERROR كحالة نجاح
       final applied =
           success ||
           state == 'STOPPED' ||
           state == 'RUNNING' ||
-          state == 'ERROR';
+          state == 'STARTING';
 
       ref.read(tradingCycleLiveProvider.notifier).refresh();
       ref.invalidate(systemStatusProvider);
@@ -727,7 +750,6 @@ class TradingControlScreen extends ConsumerWidget {
         type: applied ? SnackType.success : SnackType.error,
       );
     } catch (e) {
-      // Even if API call failed, verify actual state
       final mounted = context.mounted;
       if (!mounted) return;
       try {
