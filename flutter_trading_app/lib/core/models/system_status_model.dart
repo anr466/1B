@@ -96,10 +96,10 @@ class SystemStatusModel {
 
   String get runtimeVerificationLabel {
     if (isEffectivelyRunning) return 'مؤكد';
-    if (isRunning && !hasHeartbeat) return 'غير مؤكد (نبض غير متاح)';
-    if (isRunning && !isHeartbeatFresh) return 'غير مؤكد (نبض قديم)';
-    if (isRunning && !isHeartbeatAlive) return 'غير مؤكد (نبض غير سليم)';
-    return 'غير عامل';
+    if (isRunning && !hasHeartbeat) return 'جارٍ التفعيل';
+    if (isRunning && !isHeartbeatFresh) return 'تأخر';
+    if (isRunning && !isHeartbeatAlive) return 'فحص...';
+    return 'متوقف';
   }
 
   String get uptimeLabel {

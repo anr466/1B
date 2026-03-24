@@ -37,8 +37,8 @@ class PushNotificationService {
 
   static const _keyLastNotifId = 'last_notif_id';
   static const _keyFcmToken = 'fcm_token';
-  static const Duration _pollInterval = Duration(seconds: 30);
-  static const Duration _minimumCheckGap = Duration(seconds: 20);
+  static const Duration _pollInterval = Duration(seconds: 10);
+  static const Duration _minimumCheckGap = Duration(seconds: 5);
 
   PushNotificationService(this._api, this._storage);
 

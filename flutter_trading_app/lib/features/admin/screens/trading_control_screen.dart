@@ -131,9 +131,9 @@ class TradingControlScreen extends ConsumerWidget {
         : BadgeType.warning;
 
     final stateLabel = effectivelyRunning
-        ? 'يعمل فعلياً'
+        ? 'يعمل'
         : isRunning
-        ? 'تشغيل غير مؤكد'
+        ? 'جارٍ التفعيل...'
         : isError
         ? 'خطأ'
         : 'متوقف';

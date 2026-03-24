@@ -406,9 +406,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ? BadgeType.error
             : BadgeType.warning;
         final label = s.isEffectivelyRunning
-            ? 'يعمل فعلياً'
-            : s.isRunning
             ? 'يعمل'
+            : s.isRunning
+            ? 'جارٍ التفعيل...'
             : s.isError
             ? 'خطأ'
             : 'متوقف';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
@@ -229,7 +230,8 @@ final successfulCoinsProvider =
     });
 
 /// Stats data provider — passes mode for admin users
-final statsProvider = FutureProvider.autoDispose<StatsModel>((ref) async {
+/// ✅ NOT autoDispose for auto-refresh support
+final statsProvider = FutureProvider<StatsModel>((ref) async {
   final auth = ref.watch(authProvider);
   if (!auth.isAuthenticated || auth.user == null) {
     throw Exception('غير مصادق');
@@ -238,6 +240,43 @@ final statsProvider = FutureProvider.autoDispose<StatsModel>((ref) async {
   final repo = ref.watch(portfolioRepositoryProvider);
   return repo.getStats(auth.user!.id, mode: mode);
 });
+
+/// Portfolio refresh coordinator — polls and invalidates all trading data
+/// ✅ Ensures portfolio data stays fresh without manual refresh
+final portfolioRefreshCoordinatorProvider = StateNotifierProvider((ref) {
+  return PortfolioRefreshCoordinator(ref);
+});
+
+class PortfolioRefreshCoordinator extends StateNotifier<int> {
+  final Ref _ref;
+  Timer? _pollingTimer;
+  static const _pollInterval = Duration(seconds: 10);
+
+  PortfolioRefreshCoordinator(this._ref) : super(0) {
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(_pollInterval, (_) {
+      _invalidateAll();
+    });
+  }
+
+  void _invalidateAll() {
+    _ref.invalidate(portfolioProvider);
+    _ref.invalidate(statsProvider);
+    _ref.invalidate(activePositionsProvider);
+  }
+
+  void refresh() => _invalidateAll();
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+}
 
 /// Helper to toggle trading with biometric authentication
 /// Returns true if successful, false otherwise
