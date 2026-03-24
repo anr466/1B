@@ -71,7 +71,7 @@ class OfflineIndicator extends ConsumerWidget {
               top: 0,
               left: 0,
               right: 0,
-              child: _OfflineBanner(),
+              child: SafeArea(bottom: false, child: _OfflineBanner()),
             );
           },
           loading: () => const SizedBox.shrink(),

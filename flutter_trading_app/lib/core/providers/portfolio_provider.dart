@@ -120,8 +120,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
 
     final previous = state.enabled ?? user.tradingEnabled;
 
+    // Optimistic update - only update UI, not auth state yet
     _setStateSafely(state.copyWith(enabled: enabled, isLoading: true));
-    _syncAuthTrading(enabled);
 
     try {
       final repo = _ref.read(settingsRepositoryProvider);
@@ -137,6 +137,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
           .timeout(const Duration(seconds: 3));
 
       if (_disposed) return true;
+
+      // ✅ Update both UI and Auth state AFTER API success
       _setStateSafely(
         state.copyWith(
           enabled: settings.tradingEnabled,
@@ -149,8 +151,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       return true;
     } catch (_) {
       if (_disposed) return false;
+      // ✅ Revert UI but NOT auth state (auth wasn't updated optimistically)
       _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
-      _syncAuthTrading(previous);
       return false;
     } finally {
       _busy = false;

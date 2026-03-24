@@ -50,7 +50,7 @@ class SystemStatusNotifier
 
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!_disposed) {
         _loadSilent();
       }

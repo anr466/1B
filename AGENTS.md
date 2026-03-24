@@ -13,6 +13,7 @@ Users CAN ONLY:
 - ✅ activate/deactivate trading
 - ✅ connect API keys
 - ✅ monitor system status
+- UI = Reflection of System State
 
 Users CANNOT:
 - ❌ modify trading strategies

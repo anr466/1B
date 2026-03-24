@@ -198,6 +198,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       data: (p) {
         final modeLabel = portfolioMode == 'real' ? 'حقيقي' : 'تجريبي';
+        final isReal = portfolioMode == 'real';
 
         return AppCard(
           level: 2,
@@ -230,12 +231,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           ),
                         ),
                       ),
-                      if (portfolioMode == 'real')
-                        StatusBadge(
-                          text: 'وضع $modeLabel',
-                          type: BadgeType.error,
-                          showDot: false,
-                        ),
+                      StatusBadge(
+                        text: 'وضع $modeLabel',
+                        type: isReal ? BadgeType.info : BadgeType.success,
+                        showDot: false,
+                      ),
                     ],
                   ),
                   const SizedBox(height: SpacingTokens.xs),
