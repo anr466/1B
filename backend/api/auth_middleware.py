@@ -88,7 +88,7 @@ def require_auth(f):
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        error_response = _verify_jwt()
+        error_response = _verify_jwt_and_set_g()
         if error_response is not None:
             return error_response
         return f(*args, **kwargs)
