@@ -367,7 +367,9 @@ class TradingControlScreen extends ConsumerWidget {
     ref.read(_tradingControlActionBusyProvider.notifier).state = true;
 
     final bio = ref.read(biometricServiceProvider);
-    if (await bio.isAvailable) {
+    final trustNotifier = ref.read(biometricTrustProvider.notifier);
+
+    if (await bio.isAvailable && !trustNotifier.isTrusted) {
       final label = isRunning ? 'تأكيد إيقاف التداول' : 'تأكيد تشغيل التداول';
       final ok = await bio.authenticate(reason: label);
       if (!ok) {
@@ -380,6 +382,7 @@ class TradingControlScreen extends ConsumerWidget {
         ref.read(_tradingControlActionBusyProvider.notifier).state = false;
         return;
       }
+      trustNotifier.markTrusted();
     }
     try {
       final repo = ref.read(adminRepositoryProvider);
@@ -469,7 +472,9 @@ class TradingControlScreen extends ConsumerWidget {
     ref.read(_tradingControlActionBusyProvider.notifier).state = true;
 
     final bio = ref.read(biometricServiceProvider);
-    if (await bio.isAvailable) {
+    final trustNotifier = ref.read(biometricTrustProvider.notifier);
+
+    if (await bio.isAvailable && !trustNotifier.isTrusted) {
       final ok = await bio.authenticate(reason: 'تأكيد إيقاف الطوارئ');
       if (!ok) {
         if (!context.mounted) return;
@@ -481,6 +486,7 @@ class TradingControlScreen extends ConsumerWidget {
         ref.read(_tradingControlActionBusyProvider.notifier).state = false;
         return;
       }
+      trustNotifier.markTrusted();
     }
     if (!context.mounted) {
       ref.read(_tradingControlActionBusyProvider.notifier).state = false;

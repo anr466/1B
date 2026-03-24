@@ -64,6 +64,30 @@ final adminRepositoryProvider = Provider<AdminRepository>((ref) {
   return AdminRepository(ref.watch(apiServiceProvider));
 });
 
+const _biometricTrustDuration = Duration(minutes: 5);
+
+final biometricTrustProvider =
+    StateNotifierProvider<BiometricTrustNotifier, DateTime?>((ref) {
+      return BiometricTrustNotifier();
+    });
+
+class BiometricTrustNotifier extends StateNotifier<DateTime?> {
+  BiometricTrustNotifier() : super(null);
+
+  bool get isTrusted {
+    if (state == null) return false;
+    return DateTime.now().difference(state!) < _biometricTrustDuration;
+  }
+
+  void markTrusted() {
+    state = DateTime.now();
+  }
+
+  void clear() {
+    state = null;
+  }
+}
+
 /// Notification settings provider - caches user notification preferences
 /// ✅ NOT autoDispose to ensure settings persist and sync with push service
 final notificationSettingsProvider = FutureProvider<NotificationSettingsModel>((

@@ -116,19 +116,41 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _checkAuth() async {
     if (_navigated) return;
 
-    // Check if there's a session expiry error to pass to login
-    final authState = ref.read(authProvider);
-    final sessionExpired = authState.error?.contains('انتهت الجلسة') == true;
+    // Validate stored token with server - restore session if valid
+    await ref.read(authProvider.notifier).checkAuth();
+    if (!mounted || _navigated) return;
 
-    // Always go to login on app open - user must explicitly log in
-    // This ensures security: app restart requires re-authentication
-    _navigateToLogin(sessionExpired: sessionExpired);
+    final authState = ref.read(authProvider);
+    if (authState.isAuthenticated) {
+      // Valid session found - go directly to dashboard
+      _navigateToDashboard();
+    } else {
+      // No valid session - go to login
+      _navigateToLogin();
+    }
+  }
+
+  void _navigateToDashboard() {
+    if (_navigated || !mounted) return;
+    _navigated = true;
+    _timeoutTimer?.cancel();
+
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.go(RouteNames.dashboard);
+    });
   }
 
   void _forceNavigate() {
     if (_navigated) return;
-    ref.read(authProvider.notifier).forceUnauthenticated();
-    _navigateToLogin();
+    _navigated = true;
+    _timeoutTimer?.cancel();
+    // Force timeout - go to login but don't clear tokens (allow retry)
+    ref.read(authProvider.notifier).forceUnauthenticated(clearTokens: false);
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.go(RouteNames.login);
+    });
   }
 
   void _navigateToLogin({bool sessionExpired = false}) {

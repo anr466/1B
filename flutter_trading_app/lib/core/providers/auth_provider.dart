@@ -178,6 +178,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final authService = _ref.read(authServiceProvider);
     await authService.logout();
     _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
+    _ref.read(biometricTrustProvider.notifier).clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 

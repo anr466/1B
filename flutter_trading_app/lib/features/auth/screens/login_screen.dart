@@ -47,8 +47,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (savedUser != null) _emailCtrl.text = savedUser;
       if (savedPass != null) _passwordCtrl.text = savedPass;
     }
-    // Disabled auto-prompt - user must explicitly tap biometric button
-    _initializeBiometricLogin(allowAutoPrompt: false);
+    // Auto-prompt biometric if credentials are saved (restored from previous session)
+    _initializeBiometricLogin(allowAutoPrompt: true);
 
     // Check for session expiry from navigation
     WidgetsBinding.instance.addPostFrameCallback((_) {
