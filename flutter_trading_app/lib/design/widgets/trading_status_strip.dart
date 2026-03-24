@@ -22,12 +22,11 @@ class TradingStatusStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
+    final isLoadingState = isLoading || enabled == null;
     final active = enabled ?? false;
     final statusTone = active ? cs.primary : cs.tertiary;
     final badgeType = active ? BadgeType.success : BadgeType.warning;
-    final subtitle = enabled == null
-        ? 'جارٍ التحميل...'
-        : active
+    final subtitle = active
         ? 'النظام ينفذ صفقات جديدة'
         : 'النظام يراقب الصفقات المفتوحة فقط';
 
@@ -56,7 +55,16 @@ class TradingStatusStrip extends StatelessWidget {
             const SizedBox(width: SpacingTokens.sm),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: SpacingTokens.md),
-              child: BrandIcon(BrandIcons.shield, size: 16, color: statusTone),
+              child: isLoadingState
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: cs.onSurface.withValues(alpha: 0.4),
+                      ),
+                    )
+                  : BrandIcon(BrandIcons.shield, size: 16, color: statusTone),
             ),
             const SizedBox(width: SpacingTokens.xs),
             Expanded(
@@ -76,7 +84,7 @@ class TradingStatusStrip extends StatelessWidget {
                             cs.onSurface.withValues(alpha: 0.8),
                           ).copyWith(fontWeight: FontWeight.w600),
                         ),
-                        if (enabled != null)
+                        if (!isLoadingState)
                           StatusBadge(
                             text: active ? 'مفعل' : 'متوقف',
                             type: badgeType,
@@ -85,7 +93,7 @@ class TradingStatusStrip extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      subtitle,
+                      isLoadingState ? 'جارٍ التحديث...' : subtitle,
                       style: TypographyTokens.caption(
                         cs.onSurface.withValues(alpha: 0.45),
                       ),
@@ -97,20 +105,16 @@ class TradingStatusStrip extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: SpacingTokens.sm),
-              child: isLoading
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: statusTone,
+              child: SizedBox(
+                width: 50,
+                child: isLoadingState
+                    ? const SizedBox.shrink()
+                    : Switch(
+                        value: active,
+                        onChanged: onChanged,
+                        activeThumbColor: cs.primary,
                       ),
-                    )
-                  : Switch(
-                      value: active,
-                      onChanged: onChanged,
-                      activeThumbColor: cs.primary,
-                    ),
+              ),
             ),
           ],
         ),
