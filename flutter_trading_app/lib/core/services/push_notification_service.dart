@@ -30,6 +30,11 @@ class PushNotificationService {
   DateTime? _lastCheckAt;
   Map<String, dynamic>? _cachedSettings;
 
+  /// ✅ Deduplication set to prevent showing same notification twice
+  /// (from both FCM and polling)
+  final Set<String> _seenNotificationIds = {};
+  static const int _maxSeenIds = 100; // Limit memory usage
+
   static const _keyLastNotifId = 'last_notif_id';
   static const _keyFcmToken = 'fcm_token';
   static const Duration _pollInterval = Duration(seconds: 30);
@@ -78,6 +83,28 @@ class PushNotificationService {
   /// Update cached notification settings
   Future<void> updateSettings(Map<String, dynamic> settings) async {
     _cachedSettings = settings;
+  }
+
+  /// Invalidate cached settings - call this when user changes notification settings
+  /// to ensure next notification check fetches fresh settings
+  void invalidateSettingsCache() {
+    _cachedSettings = null;
+  }
+
+  /// Force refresh settings from provider - call this to sync with latest settings
+  Future<void> refreshSettings() async {
+    if (getNotificationSettings != null) {
+      _cachedSettings = await getNotificationSettings!();
+    }
+  }
+
+  /// ✅ Add notification ID to seen set with memory limit
+  void _addToSeenIds(String id) {
+    _seenNotificationIds.add(id);
+    // Limit memory usage by removing oldest entries when exceeding limit
+    while (_seenNotificationIds.length > _maxSeenIds) {
+      _seenNotificationIds.remove(_seenNotificationIds.first);
+    }
   }
 
   /// Start polling for new notifications (fallback + local list freshness)
@@ -142,6 +169,15 @@ class PushNotificationService {
             message.notification?.body ?? data['body'] as String? ?? '';
         data['title'] = title;
         data['body'] = body;
+
+        // ✅ Deduplication: Check if notification was already shown
+        final notifId =
+            data['id']?.toString() ??
+            '${data['trade_id']}_${data['timestamp']}';
+        if (_seenNotificationIds.contains(notifId)) {
+          return; // Already shown via polling
+        }
+        _addToSeenIds(notifId);
 
         // Show heads-up local notification while app is in foreground
         _showLocalNotification(title, body, data);
@@ -218,6 +254,13 @@ class PushNotificationService {
             ? notif['id'] as int
             : int.tryParse('${notif['id']}') ?? 0;
         if (id > lastSeenId) {
+          // ✅ Deduplication: Check if notification was already shown via FCM
+          final notifId = '${notif['id'] ?? id}';
+          if (_seenNotificationIds.contains(notifId)) {
+            continue; // Already shown via FCM
+          }
+          _addToSeenIds(notifId);
+
           final type =
               notif['type']?.toString() ??
               notif['notification_type']?.toString();

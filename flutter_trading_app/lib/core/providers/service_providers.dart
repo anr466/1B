@@ -65,12 +65,14 @@ final adminRepositoryProvider = Provider<AdminRepository>((ref) {
 });
 
 /// Notification settings provider - caches user notification preferences
-final notificationSettingsProvider =
-    FutureProvider.autoDispose<NotificationSettingsModel>((ref) async {
-      final auth = ref.watch(authProvider);
-      if (!auth.isAuthenticated || auth.user == null) {
-        throw Exception('غير مصادق');
-      }
-      final repo = ref.watch(notificationsRepositoryProvider);
-      return repo.getNotificationSettings();
-    });
+/// ✅ NOT autoDispose to ensure settings persist and sync with push service
+final notificationSettingsProvider = FutureProvider<NotificationSettingsModel>((
+  ref,
+) async {
+  final auth = ref.watch(authProvider);
+  if (!auth.isAuthenticated || auth.user == null) {
+    throw Exception('غير مصادق');
+  }
+  final repo = ref.watch(notificationsRepositoryProvider);
+  return repo.getNotificationSettings();
+});

@@ -590,11 +590,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final activeTrades = ref.watch(activePositionsProvider);
     final recentTrades = ref.watch(recentTradesProvider);
 
-    if (recentTrades.isLoading && activeTrades.isLoading) {
+    // Only show loading when primary source (recentTrades) is loading
+    if (recentTrades.isLoading) {
       return const LoadingShimmer(itemCount: 3, itemHeight: 60);
     }
 
-    if (recentTrades.hasError && activeTrades.hasError) {
+    // Show error only for primary source
+    if (recentTrades.hasError) {
       return ErrorState(
         message: 'تعذر تحميل الصفقات',
         onRetry: () {
@@ -604,16 +606,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
     }
 
-    // recentTradesProvider is the unified source — returns ALL trades (open+closed)
-    // respecting admin demo/real mode via adminPortfolioModeProvider
+    // ✅ Single source of truth: recentTradesProvider
+    // RecentTrades is the primary source - contains ALL trades (open+closed)
+    // ActivePositions provides live PnL updates for open positions only
     final allTrades = recentTrades.valueOrNull ?? const <TradeModel>[];
-    // Prefer live PnL from activePositionsProvider for open trades when available
-    final livePositions = activeTrades.valueOrNull ?? const <TradeModel>[];
-    final liveMap = {for (final t in livePositions) t.id: t};
-    final openList = allTrades
-        .where((t) => t.isOpen)
-        .map((t) => liveMap[t.id] ?? t)
-        .toList();
+
+    // Only overlay live PnL if activePositions has data (not loading/error)
+    final livePositions = activeTrades.valueOrNull;
+    final hasLiveData =
+        livePositions != null &&
+        !activeTrades.isLoading &&
+        !activeTrades.hasError;
+
+    List<TradeModel> openList;
+    if (hasLiveData) {
+      // Merge: use recentTrades for structure, activeTrades for live PnL
+      final liveMap = {for (final t in livePositions) t.id: t};
+      openList = allTrades
+          .where((t) => t.isOpen)
+          .map((t) => liveMap[t.id] ?? t)
+          .toList();
+    } else {
+      // Use recentTrades data as-is (no live PnL available)
+      openList = allTrades.where((t) => t.isOpen).toList();
+    }
+
     final closedList = allTrades.where((t) => !t.isOpen).toList();
     final hybridItems = _buildHybridTradeItems(openList, closedList);
 

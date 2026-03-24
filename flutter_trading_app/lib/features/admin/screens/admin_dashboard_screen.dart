@@ -33,17 +33,28 @@ class AdminDashboardScreen extends ConsumerWidget {
                 child: RefreshIndicator(
                   color: cs.primary,
                   onRefresh: () async {
-                    ref.invalidate(systemStatusProvider);
-                    ref.read(tradingCycleLiveProvider.notifier).refresh();
-                    ref.invalidate(portfolioProvider);
-                    ref.invalidate(statsProvider);
-                    ref.invalidate(adminUsersProvider);
-                    await Future.delayed(const Duration(milliseconds: 500));
+                    bool hasError = false;
+                    try {
+                      // Invalidate all data providers
+                      ref.invalidate(systemStatusProvider);
+                      ref.read(tradingCycleLiveProvider.notifier).refresh();
+                      ref.invalidate(portfolioProvider);
+                      ref.invalidate(statsProvider);
+                      ref.invalidate(adminUsersProvider);
+
+                      // Wait for data to load
+                      await Future.delayed(const Duration(milliseconds: 500));
+                    } catch (e) {
+                      hasError = true;
+                    }
+
                     if (context.mounted) {
                       AppSnackbar.show(
                         context,
-                        message: 'تم تحديث البيانات',
-                        type: SnackType.success,
+                        message: hasError
+                            ? 'فشل تحديث البيانات'
+                            : 'تم تحديث البيانات',
+                        type: hasError ? SnackType.error : SnackType.success,
                       );
                     }
                   },
