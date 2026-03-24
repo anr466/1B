@@ -335,6 +335,35 @@ class TradingControlScreen extends ConsumerWidget {
     bool isRunning,
   ) async {
     if (ref.read(_tradingControlActionBusyProvider)) return;
+
+    // ✅ Confirmation dialog for Start/Stop trading
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(isRunning ? 'إيقاف التداول' : 'تشغيل التداول'),
+          content: Text(
+            isRunning
+                ? 'سيتوقف النظام عن فتح صفقات جديدة. الصفقات المفتوحة ستستمر.'
+                : 'سيبدأ النظام في فتح صفقات جديدة تلقائياً.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(isRunning ? 'إيقاف' : 'تشغيل'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+
     ref.read(_tradingControlActionBusyProvider.notifier).state = true;
 
     final bio = ref.read(biometricServiceProvider);

@@ -8,6 +8,7 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/navigation/route_names.dart';
@@ -67,15 +68,33 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               AppScreenHeader(
                 title: 'الإشعارات',
                 showBack: true,
-                trailing: state.notifications.isNotEmpty
+                trailing:
+                    state.notifications.isNotEmpty && !state.isMarkingAllRead
                     ? TextButton(
-                        onPressed: () => ref
-                            .read(notificationsListProvider.notifier)
-                            .markAllRead(),
-                        child: Text(
-                          'قراءة الكل',
-                          style: TypographyTokens.bodySmall(cs.primary),
-                        ),
+                        onPressed: () async {
+                          await ref
+                              .read(notificationsListProvider.notifier)
+                              .markAllRead();
+                          if (mounted) {
+                            AppSnackbar.show(
+                              context,
+                              message: 'تم تحديد الكل كمقروء',
+                              type: SnackType.success,
+                            );
+                          }
+                        },
+                        child: state.isMarkingAllRead
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                'قراءة الكل',
+                                style: TypographyTokens.bodySmall(cs.primary),
+                              ),
                       )
                     : null,
               ),

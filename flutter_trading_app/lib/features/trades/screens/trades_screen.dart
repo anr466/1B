@@ -25,7 +25,9 @@ class TradesScreen extends ConsumerStatefulWidget {
 
 class _TradesScreenState extends ConsumerState<TradesScreen> {
   final _scrollController = ScrollController();
+  final _searchCtrl = TextEditingController();
   String? _selectedFilter;
+  String _searchQuery = '';
   int _touchedSection = -1;
   Timer? _debounceTimer;
 
@@ -52,6 +54,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   void dispose() {
     _debounceTimer?.cancel();
     _scrollController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -84,6 +87,55 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                 child: AppScreenHeader(
                   title: 'الصفقات',
                   padding: EdgeInsets.zero,
+                ),
+              ),
+              const SizedBox(height: SpacingTokens.md),
+
+              // ─── Search Bar ───────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: SpacingTokens.base,
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  textDirection: TextDirection.ltr,
+                  decoration: InputDecoration(
+                    hintText: 'BTCUSDT, ETH...',
+                    hintStyle: TypographyTokens.body(
+                      cs.onSurface.withValues(alpha: 0.4),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: cs.onSurface.withValues(alpha: 0.4),
+                    ),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(
+                              Icons.clear,
+                              color: cs.onSurface.withValues(alpha: 0.4),
+                            ),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: cs.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        SpacingTokens.radiusMd,
+                      ),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: SpacingTokens.md,
+                      vertical: SpacingTokens.sm,
+                    ),
+                  ),
+                  onChanged: (value) {
+                    setState(() => _searchQuery = value.trim().toUpperCase());
+                  },
                 ),
               ),
               const SizedBox(height: SpacingTokens.md),
@@ -167,23 +219,34 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
       );
     }
 
-    if (state.trades.isEmpty) {
-      return const EmptyState(message: 'لا توجد صفقات');
+    // Filter trades by search query
+    final filteredTrades = _searchQuery.isEmpty
+        ? state.trades
+        : state.trades.where((t) => t.symbol.contains(_searchQuery)).toList();
+
+    if (filteredTrades.isEmpty) {
+      return EmptyState(
+        message: _searchQuery.isEmpty
+            ? 'لا توجد صفقات'
+            : 'لا توجد صفقات تطابق "$_searchQuery"',
+      );
     }
 
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: SpacingTokens.base),
-      itemCount: state.trades.length + (state.hasMore ? 1 : 0),
+      itemCount:
+          filteredTrades.length +
+          (state.hasMore && _searchQuery.isEmpty ? 1 : 0),
       itemBuilder: (_, i) {
-        if (i >= state.trades.length) {
+        if (i >= filteredTrades.length) {
           return const Padding(
             padding: EdgeInsets.all(SpacingTokens.base),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           );
         }
 
-        final trade = state.trades[i];
+        final trade = filteredTrades[i];
         final semantic = SemanticColors.of(context);
         final accentColor = trade.pnl == null
             ? null

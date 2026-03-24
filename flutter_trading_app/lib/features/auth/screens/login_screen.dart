@@ -72,7 +72,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _initializeBiometricLogin(allowAutoPrompt: false);
+      // ✅ Auto-prompt biometric on app resume for better UX
+      _initializeBiometricLogin(allowAutoPrompt: true);
     }
   }
 

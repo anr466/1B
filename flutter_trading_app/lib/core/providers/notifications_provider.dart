@@ -19,6 +19,7 @@ class NotificationsListState {
   final bool isLoading;
   final bool hasMore;
   final String? error;
+  final bool isMarkingAllRead;
 
   const NotificationsListState({
     this.notifications = const [],
@@ -26,6 +27,7 @@ class NotificationsListState {
     this.isLoading = false,
     this.hasMore = true,
     this.error,
+    this.isMarkingAllRead = false,
   });
 
   NotificationsListState copyWith({
@@ -34,12 +36,14 @@ class NotificationsListState {
     bool? isLoading,
     bool? hasMore,
     String? error,
+    bool? isMarkingAllRead,
   }) => NotificationsListState(
     notifications: notifications ?? this.notifications,
     currentPage: currentPage ?? this.currentPage,
     isLoading: isLoading ?? this.isLoading,
     hasMore: hasMore ?? this.hasMore,
     error: error,
+    isMarkingAllRead: isMarkingAllRead ?? this.isMarkingAllRead,
   );
 }
 
@@ -67,12 +71,18 @@ class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
 
   Future<void> markAllRead() async {
     if (_busy) return;
-    final auth = _ref.read(authProvider);
-    if (!auth.isAuthenticated || auth.user == null) return;
-    final repo = _ref.read(notificationsRepositoryProvider);
-    await repo.markAllRead(auth.user!.id);
-    _ref.invalidate(unreadCountProvider);
-    await loadFirstPage();
+    state = state.copyWith(isMarkingAllRead: true);
+
+    try {
+      final auth = _ref.read(authProvider);
+      if (!auth.isAuthenticated || auth.user == null) return;
+      final repo = _ref.read(notificationsRepositoryProvider);
+      await repo.markAllRead(auth.user!.id);
+      _ref.invalidate(unreadCountProvider);
+      await loadFirstPage();
+    } finally {
+      state = state.copyWith(isMarkingAllRead: false);
+    }
   }
 
   Future<void> markAsRead(int notificationId) async {
