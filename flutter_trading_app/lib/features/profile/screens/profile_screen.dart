@@ -301,34 +301,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ],
                   ),
 
-                  // ─── Admin Section ─────────────────────
-                  if (auth.isAdmin) ...[
-                    const SizedBox(height: SpacingTokens.lg),
-                    _ProfileSectionTitle(
-                      title: 'الإدارة',
-                      color: cs.primary.withValues(alpha: 0.7),
-                      icon: BrandIcons.shield,
-                    ),
-                    const SizedBox(height: SpacingTokens.sm),
-                    AppSettingGroup(
-                      margin: const EdgeInsets.only(bottom: SpacingTokens.lg),
-                      children: [
-                        AppSettingTile(
-                          icon: BrandIcons.chart,
-                          label: 'لوحة الإدارة',
-                          iconColor: cs.primary,
-                          onTap: () => context.push(RouteNames.adminDashboard),
-                        ),
-                        AppSettingTile(
-                          icon: BrandIcons.history,
-                          label: 'سجلات النظام',
-                          iconColor: cs.primary,
-                          onTap: () => context.push(RouteNames.systemLogs),
-                        ),
-                      ],
-                    ),
-                  ],
-
                   const SizedBox(height: SpacingTokens.xl),
 
                   // ─── App Info ──────────────────────────
@@ -572,23 +544,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
 class _ProfileSectionTitle extends StatelessWidget {
   final String title;
-  final Color? color;
-  final BrandIconData? icon;
 
-  const _ProfileSectionTitle({required this.title, this.color, this.icon});
+  const _ProfileSectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final resolvedColor = color ?? cs.onSurface.withValues(alpha: 0.5);
 
     return Row(
       children: [
-        if (icon != null) ...[
-          BrandIcon(icon!, size: 14, color: resolvedColor),
-          const SizedBox(width: SpacingTokens.xs),
-        ],
-        Text(title, style: TypographyTokens.label(resolvedColor)),
+        Text(
+          title,
+          style: TypographyTokens.label(cs.onSurface.withValues(alpha: 0.5)),
+        ),
       ],
     );
   }

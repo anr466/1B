@@ -76,14 +76,6 @@ class AdminDashboardScreen extends ConsumerWidget {
                       _actionItem(
                         context,
                         cs,
-                        BrandIcons.history,
-                        'سجلات النظام',
-                        RouteNames.systemLogs,
-                      ),
-
-                      _actionItem(
-                        context,
-                        cs,
                         BrandIcons.user,
                         'إدارة المستخدمين',
                         RouteNames.userManagement,
