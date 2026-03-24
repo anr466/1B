@@ -273,6 +273,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     margin: const EdgeInsets.only(bottom: SpacingTokens.lg),
                     children: [
                       AppSettingTile(
+                        icon: BrandIcons.chart,
+                        label: 'إعدادات التداول',
+                        onTap: () => context.push(RouteNames.tradingSettings),
+                      ),
+                      AppSettingTile(
                         icon: BrandIcons.key,
                         label: 'مفاتيح Binance',
                         onTap: () => context.push(RouteNames.binanceKeys),
