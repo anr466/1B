@@ -38,10 +38,6 @@ class TradingSettingsScreen extends ConsumerStatefulWidget {
 class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   bool _isSwitchingMode = false;
 
-  bool get _isTradingSettingsValid {
-    return true;
-  }
-
   Future<void> _changeTradingMode(String mode) async {
     final auth = ref.read(authProvider);
     if (auth.user == null || !auth.isAdmin) return;
@@ -172,7 +168,9 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                           ),
                           Switch.adaptive(
                             value: s.tradingEnabled,
-                            onChanged: _isTradingSettingsValid
+                            onChanged:
+                                (!settingsAsync.isLoading &&
+                                    !settingsAsync.hasError)
                                 ? _onTradingToggle
                                 : null,
                           ),
@@ -564,7 +562,11 @@ class _DailyRiskCard extends StatelessWidget {
 
     return dailyStatus.when(
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (e, _) => _buildRiskWarning(
+        context: context,
+        message: 'تعذر تحميل حالة المخاطرة',
+        isWarning: true,
+      ),
       data: (d) {
         if (d.isEmpty) return const SizedBox.shrink();
 
@@ -646,6 +648,33 @@ class _DailyRiskCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  static Widget _buildRiskWarning({
+    required BuildContext context,
+    required String message,
+    bool isWarning = false,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return AppCard(
+      padding: const EdgeInsets.all(SpacingTokens.md),
+      child: Row(
+        children: [
+          Icon(
+            isWarning ? Icons.warning_amber_rounded : Icons.shield_outlined,
+            color: isWarning ? cs.error : cs.primary,
+            size: 20,
+          ),
+          const SizedBox(width: SpacingTokens.sm),
+          Text(
+            message,
+            style: TypographyTokens.caption(
+              isWarning ? cs.error : cs.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
