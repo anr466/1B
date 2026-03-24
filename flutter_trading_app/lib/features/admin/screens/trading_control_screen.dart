@@ -431,18 +431,16 @@ class TradingControlScreen extends ConsumerWidget {
         type: (success || applied) ? SnackType.success : SnackType.error,
       );
     } catch (e) {
-      // Even if API call failed, verify actual state
-      final mounted = context.mounted;
-      if (!mounted) return;
+      if (!context.mounted) return;
       try {
         final repo = ref.read(adminRepositoryProvider);
         final actualState = await repo.getTradingState();
+        if (!context.mounted) return;
         final actualRunning =
             actualState.isEffectivelyRunning || actualState.isRunning;
 
-        // Check if operation actually succeeded despite exception
         final operationSucceeded = isRunning ? !actualRunning : actualRunning;
-        if (mounted && operationSucceeded) {
+        if (operationSucceeded) {
           ref.read(tradingCycleLiveProvider.notifier).refresh();
           ref.invalidate(systemStatusProvider);
           AppSnackbar.show(
@@ -454,8 +452,7 @@ class TradingControlScreen extends ConsumerWidget {
         }
       } catch (_) {}
 
-      // Show detailed error message from repository
-      if (mounted) {
+      if (context.mounted) {
         AppSnackbar.show(
           context,
           message: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالإنترنت.',
@@ -566,15 +563,12 @@ class TradingControlScreen extends ConsumerWidget {
         type: applied ? SnackType.warning : SnackType.error,
       );
     } catch (e) {
-      // Even if API call failed, verify actual state
-      final mounted = context.mounted;
-      if (!mounted) return;
+      if (!context.mounted) return;
       try {
         final repo = ref.read(adminRepositoryProvider);
         final actualState = await repo.getTradingState();
-        if (mounted &&
-            !actualState.isEffectivelyRunning &&
-            !actualState.isRunning) {
+        if (!context.mounted) return;
+        if (!actualState.isEffectivelyRunning && !actualState.isRunning) {
           ref.read(tradingCycleLiveProvider.notifier).refresh();
           ref.invalidate(systemStatusProvider);
           AppSnackbar.show(
@@ -586,7 +580,7 @@ class TradingControlScreen extends ConsumerWidget {
         }
       } catch (_) {}
 
-      if (mounted) {
+      if (context.mounted) {
         AppSnackbar.show(
           context,
           message: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالإنترنت.',
@@ -750,12 +744,12 @@ class TradingControlScreen extends ConsumerWidget {
         type: applied ? SnackType.success : SnackType.error,
       );
     } catch (e) {
-      final mounted = context.mounted;
-      if (!mounted) return;
+      if (!context.mounted) return;
       try {
         final repo = ref.read(adminRepositoryProvider);
         final actualState = await repo.getTradingState();
-        if (mounted && !actualState.isError) {
+        if (!context.mounted) return;
+        if (!actualState.isError) {
           ref.read(tradingCycleLiveProvider.notifier).refresh();
           ref.invalidate(systemStatusProvider);
           AppSnackbar.show(
@@ -767,7 +761,7 @@ class TradingControlScreen extends ConsumerWidget {
         }
       } catch (_) {}
 
-      if (mounted) {
+      if (context.mounted) {
         AppSnackbar.show(
           context,
           message: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالإنترنت.',

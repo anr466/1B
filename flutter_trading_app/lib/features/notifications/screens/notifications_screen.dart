@@ -75,13 +75,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                           await ref
                               .read(notificationsListProvider.notifier)
                               .markAllRead();
-                          if (mounted) {
-                            AppSnackbar.show(
-                              context,
-                              message: 'تم تحديد الكل كمقروء',
-                              type: SnackType.success,
-                            );
-                          }
+                          if (!context.mounted) return;
+                          AppSnackbar.show(
+                            context,
+                            message: 'تم تحديد الكل كمقروء',
+                            type: SnackType.success,
+                          );
                         },
                         child: state.isMarkingAllRead
                             ? const SizedBox(
