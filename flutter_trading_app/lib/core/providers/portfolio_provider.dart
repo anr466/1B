@@ -148,8 +148,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       final settings = await repo.getSettings(user.id, mode: mode);
 
       // Get system status separately - don't fail if it's slow
-      bool systemRunning = state.systemRunning ?? false;
-      String systemState = state.systemState ?? 'UNKNOWN';
+      bool systemRunning = state.systemRunning;
+      String systemState = state.systemState;
       try {
         final status = await _ref
             .read(adminRepositoryProvider)

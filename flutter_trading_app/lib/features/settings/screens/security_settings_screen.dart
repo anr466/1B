@@ -267,14 +267,13 @@ class _SecuritySettingsScreenState
       return;
     }
 
-    // بيانات الدخول محفوظة بالفعل من شاشة الدخول
     final (savedUser, savedPass) = storage.biometricCredentials;
     if (value && (savedUser == null || savedPass == null)) {
       if (!mounted) return;
       AppSnackbar.show(
         context,
         message:
-            'لتفعيل البصمة: سجّل دخولك أولاً مع تفعيل "تذكرني"، ثم حاول مرة أخرى',
+            'بيانات الدخول غير محفوظة. سجّل دخولك بحسابك ثم حاول مرة أخرى.',
         type: SnackType.warning,
         duration: const Duration(seconds: 4),
       );
