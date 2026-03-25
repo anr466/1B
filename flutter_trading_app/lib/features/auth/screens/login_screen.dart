@@ -80,15 +80,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Future<void> _initializeBiometricLogin({bool allowAutoPrompt = true}) async {
     final storage = ref.read(storageServiceProvider);
     final bio = ref.read(biometricServiceProvider);
+
+    // Get saved credentials
     final (savedUser, savedPass) = storage.biometricCredentials;
-    final isConfigured =
-        storage.biometricEnabled && savedUser != null && savedPass != null;
-    final isAvailable = isConfigured ? await bio.isAvailable : false;
+
+    // Check if biometric is enabled in settings AND credentials are saved
+    final isBiometricEnabled = storage.biometricEnabled;
+    final hasCredentials = savedUser != null && savedPass != null;
+    final isConfigured = isBiometricEnabled && hasCredentials;
+
+    // Check if device supports biometric
+    final isAvailable = await bio.isAvailable;
 
     if (!mounted) return;
     setState(() {
       _biometricConfigured = isConfigured;
-      _biometricAvailable = isAvailable;
+      _biometricAvailable = isConfigured && isAvailable;
       _isBiometricLoading = false;
     });
 
@@ -147,6 +154,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         await storage.clearRememberedCredentials();
       }
 
+      // Always save biometric credentials for biometric login
+      // This is separate from "remember me" - user can use biometric without remembering credentials
       if (!mounted) return;
       await ref
           .read(authServiceProvider)
@@ -168,15 +177,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     final storage = ref.read(storageServiceProvider);
     final (savedUser, savedPass) = storage.biometricCredentials;
+    final isBiometricEnabled = storage.biometricEnabled;
 
+    // Check if biometric is enabled in settings
+    if (!isBiometricEnabled) {
+      if (!mounted) return;
+      AppSnackbar.show(
+        context,
+        message:
+            'البصمة غير مُفعّلة. فعّلها من: الإعدادات > الأمان > تسجيل الدخول بالبصمة',
+        type: SnackType.warning,
+        duration: const Duration(seconds: 4),
+      );
+      return;
+    }
+
+    // Check if credentials are saved
     if (savedUser == null || savedPass == null) {
       if (!mounted) return;
       AppSnackbar.show(
         context,
         message:
-            'لاستخدام البصمة: سجّل دخولك أولاً مع تفعيل "تذكرني"، ثم فعّل البصمة من الإعدادات > الأمان',
+            'بيانات الدخول غير محفوظة. سجّل دخولك مرة واحدة لحفظ البيانات.',
         type: SnackType.warning,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 4),
       );
       return;
     }
