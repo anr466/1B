@@ -173,8 +173,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: 'بيانات الدخول غير محفوظة. سجّل الدخول أولاً.',
+        message:
+            'لاستخدام البصمة: سجّل دخولك أولاً مع تفعيل "تذكرني"، ثم فعّل البصمة من الإعدادات > الأمان',
         type: SnackType.warning,
+        duration: const Duration(seconds: 5),
       );
       return;
     }

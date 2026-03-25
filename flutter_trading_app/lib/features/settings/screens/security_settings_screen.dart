@@ -245,8 +245,10 @@ class _SecuritySettingsScreenState
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: 'الجهاز لا يدعم البصمة',
+        message:
+            'البصمة غير متاحة. تأكد من:\n1. دعم الجهاز للبصمة\n2. تسجيل بصمة في إعدادات الجهاز\n3. تسجيل الدخول مرة واحدة بحفظ البيانات',
         type: SnackType.error,
+        duration: const Duration(seconds: 4),
       );
       return;
     }
@@ -271,8 +273,10 @@ class _SecuritySettingsScreenState
       if (!mounted) return;
       AppSnackbar.show(
         context,
-        message: 'بيانات الدخول غير محفوظة. سجّل الدخول مرة أخرى.',
+        message:
+            'لتفعيل البصمة: سجّل دخولك أولاً مع تفعيل "تذكرني"، ثم حاول مرة أخرى',
         type: SnackType.warning,
+        duration: const Duration(seconds: 4),
       );
       return;
     }
