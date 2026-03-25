@@ -25,6 +25,7 @@ class RiskManagerMixin:
         3. لا نقل عن $10 (Binance minimum).
         4. لا نتجاوز 15% من الرصيد.
         """
+        self.logger.info(f"💰 Position calc: balance=${balance:.2f}")
         # الحد الأقصى لحجم الصفقة (نسبة من الرصيد)
         max_pct = self.config.get("max_position_pct", 0.10)
 
