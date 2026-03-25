@@ -84,15 +84,29 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       final repo = _ref.read(settingsRepositoryProvider);
       final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
       final settings = await repo.getSettings(user.id, mode: mode);
-      final status = await _ref
-          .read(adminRepositoryProvider)
-          .getPublicTradingState();
+
+      // Get system status - don't fail if slow
+      bool systemRunning = false;
+      String systemState = 'UNKNOWN';
+      try {
+        final status = await _ref
+            .read(adminRepositoryProvider)
+            .getPublicTradingState()
+            .timeout(const Duration(seconds: 5));
+        if (!_disposed) {
+          systemRunning = status.isEffectivelyRunning || status.isRunning;
+          systemState = status.state.toString().toUpperCase();
+        }
+      } catch (_) {
+        // Keep default system status
+      }
+
       if (_disposed) return;
       _setStateSafely(
         state.copyWith(
           enabled: settings.tradingEnabled,
-          systemRunning: status.isEffectivelyRunning || status.isRunning,
-          systemState: status.state.toString().toUpperCase(),
+          systemRunning: systemRunning,
+          systemState: systemState,
           isLoading: false,
         ),
       );
@@ -132,10 +146,22 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       }, mode: mode);
 
       final settings = await repo.getSettings(user.id, mode: mode);
-      final status = await _ref
-          .read(adminRepositoryProvider)
-          .getPublicTradingState()
-          .timeout(const Duration(seconds: 3));
+
+      // Get system status separately - don't fail if it's slow
+      bool systemRunning = state.systemRunning ?? false;
+      String systemState = state.systemState ?? 'UNKNOWN';
+      try {
+        final status = await _ref
+            .read(adminRepositoryProvider)
+            .getPublicTradingState()
+            .timeout(const Duration(seconds: 5));
+        if (!_disposed) {
+          systemRunning = status.isEffectivelyRunning || status.isRunning;
+          systemState = status.state.toString().toUpperCase();
+        }
+      } catch (_) {
+        // Keep previous system status if timeout
+      }
 
       if (_disposed) return true;
 
@@ -143,8 +169,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       _setStateSafely(
         state.copyWith(
           enabled: settings.tradingEnabled,
-          systemRunning: status.isEffectivelyRunning || status.isRunning,
-          systemState: status.state.toString().toUpperCase(),
+          systemRunning: systemRunning,
+          systemState: systemState,
           isLoading: false,
         ),
       );
