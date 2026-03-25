@@ -766,7 +766,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         try:
             # 0. إعادة تحميل إعدادات المستخدم وحالة التداول من DB في كل دورة
             self.user_settings = self._load_user_settings()
-            self.can_trade = self.user_settings.get("trading_enabled", False)
+            # Explicit boolean conversion
+            self.can_trade = bool(self.user_settings.get("trading_enabled", False))
+            self.logger.warning(
+                f"🔍 READ SETTINGS: user_settings.trading_enabled={self.user_settings.get('trading_enabled')}, can_trade={self.can_trade}"
+            )
             self.is_demo_trading = self._determine_trading_mode()
 
             # 1. تحديث المحفظة
