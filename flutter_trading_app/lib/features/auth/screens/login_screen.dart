@@ -138,6 +138,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (!mounted) return;
     final auth = ref.read(authProvider);
     if (auth.isAuthenticated) {
+      if (!mounted) return;
       final storage = ref.read(storageServiceProvider);
       await storage.setRememberMeEnabled(_rememberMe);
       if (_rememberMe) {
@@ -146,7 +147,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         await storage.clearRememberedCredentials();
       }
 
-      // Always save credentials for biometric (user may enable it later)
+      if (!mounted) return;
       await ref
           .read(authServiceProvider)
           .saveCredentialsForBiometric(email, password);
