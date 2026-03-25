@@ -683,6 +683,11 @@ class BackgroundTradingManager:
                             trading_enabled and eligible_for_execution
                         ) or has_open_positions
 
+                        if trading_enabled and eligible_for_execution:
+                            logger.warning(
+                                f"🚨 ADDING USER TO ACTIVE LIST: {username} mode={requested_mode} trading_enabled={trading_enabled} eligible={eligible_for_execution}"
+                            )
+
                         if not include_user:
                             continue
 
