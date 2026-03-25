@@ -99,22 +99,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                         RouteNames.userManagement,
                       ),
 
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.wallet,
-                        'المحفظة',
-                        RouteNames.portfolio,
-                      ),
-
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.history,
-                        'الصفقات',
-                        RouteNames.trades,
-                      ),
-
+                      // المحفظة والصفقات متاحتان من التنقل السفلي (Bottom Nav)
+                      // لا نكررهم هنا لتجنب الازدواجية
                       _actionItem(
                         context,
                         cs,
