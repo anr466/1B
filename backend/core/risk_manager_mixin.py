@@ -17,49 +17,56 @@ class RiskManagerMixin:
     """Mixin for risk management, position sizing, and daily state tracking"""
 
     def _calculate_position_size(self, balance: float, signal: Dict = None) -> float:
-        """حساب حجم الصفقة — مع دعم Kelly + معامل الفلتر المعرفي/السيولة.
+        """حساب حجم الصفقة الذكي — يجمع Kelly + قوة الإشارة + إعدادات المستخدم.
 
         المنطق:
-        1. Kelly Criterion يحدد النسبة المثلى (أو fallback إلى نسبة ثابتة من إعدادات المستخدم).
-        2. تطبيق معامل `_size_factor` (0–1) إن تم تمريره من فلتر السيولة.
-        3. لا نقل عن $10 (Binance minimum).
-        4. لا نتجاوز 15% من الرصيد.
+        1. استخراج قوة الإشارة (confidence/score) من الإشارة.
+        2. حساب حجم الصفقة بناءً على قوة الإشارة:
+           - إشارة قوية (>= 70%): Kelly كامل + مضاعف من الإعدادات
+           - إشارة متوسطة (50-70%): Kelly متوسط + نسبة من الإعدادات
+           - إشارة ضعيفة (< 50%): إعدادات المستخدم فقط
+        3. تطبيق معامل السيولة والحذر.
+        4. لا نقل عن $10 (Binance minimum).
+        5. لا نتجاوز 15% من الرصيد.
         """
         self.logger.info(f"💰 Position calc: balance=${balance:.2f}")
+
+        # استخراج قوة الإشارة
+        confidence = self._get_signal_confidence(signal)
+        self.logger.info(f"📊 Signal confidence: {confidence:.0%}")
+
         # الحد الأقصى لحجم الصفقة (نسبة من الرصيد)
         max_pct = self.config.get("max_position_pct", 0.10)
 
-        # ✅ Phase 0: Kelly Criterion
-        kelly_pct = max_pct  # fallback
-        if self.kelly_sizer:
-            try:
-                kelly_result = self.kelly_sizer.calculate_position_size(
-                    balance=balance,
-                    max_position_pct=max_pct,
-                    symbol=signal.get("symbol") if signal else None,
-                )
-                kelly_pct = kelly_result.get("kelly_pct", max_pct)
-                self.logger.info(
-                    f"📊 Kelly: {kelly_pct * 100:.1f}% "
-                    f"(WR={kelly_result.get('win_rate', 0):.0%}, "
-                    f"RR={kelly_result.get('avg_rr', 0):.2f})"
-                )
-            except Exception as e:
-                self.logger.warning(f"⚠️ Kelly calculation failed: {e}")
+        # نسبة إعدادات المستخدم
+        user_pct = self.user_settings.get("position_size_percentage", 10.0) / 100.0
 
-        # الحجم النهائي الأساسي (قبل معامل الفلتر)
-        if kelly_pct != max_pct:
-            position_pct = min(kelly_pct, max_pct)
-            position_size = balance * position_pct
-        else:
-            # Fallback: نسبة ثابتة من الإعدادات
-            position_pct = (
-                self.user_settings.get("position_size_percentage", 12.0) / 100.0
-            )
-            position_size = balance * position_pct
+        # حساب Kelly Criterion
+        kelly_pct = self._calculate_kelly_pct(balance, max_pct, signal)
+
+        # تحديد الحجم بناءً على قوة الإشارة
+        if confidence >= 0.70:
+            # إشارة قوية: Kelly كامل + نسبة محسنة
+            position_pct = max(kelly_pct, user_pct * 1.2)
             self.logger.info(
-                f"📊 Fixed Position: ${position_size:.2f} (balance=${balance:.2f}, pct={position_pct * 100:.1f}%)"
+                f"📊 Strong signal - using Kelly + boost: {position_pct * 100:.1f}%"
             )
+        elif confidence >= 0.50:
+            # إشارة متوسطة: مزيج من Kelly والإعدادات
+            position_pct = (kelly_pct + user_pct) / 2
+            self.logger.info(
+                f"📊 Medium signal - using Kelly+User blend: {position_pct * 100:.1f}%"
+            )
+        else:
+            # إشارة ضعيفة: إعدادات المستخدم فقط (مخفضة)
+            position_pct = user_pct * 0.7
+            self.logger.info(
+                f"📊 Weak signal - using reduced user settings: {position_pct * 100:.1f}%"
+            )
+
+        # تطبيق الحد الأقصى
+        position_pct = min(position_pct, max_pct)
+        position_size = balance * position_pct
 
         # تطبيق معامل حجم إضافي من فلتر السيولة/المعرفة (إن وجد)
         size_factor = 1.0
@@ -109,6 +116,63 @@ class RiskManagerMixin:
             return 0  # لا يكفي للتداول
 
         self.logger.info(f"📊 Final Position size: ${position_size:.2f}")
+
+        return position_size
+
+    def _get_signal_confidence(self, signal: Dict = None) -> float:
+        """استخراج قوة الإشارة (confidence) من الإشارة."""
+        if signal is None:
+            return 0.0
+
+        confidence = 0.0
+
+        if signal.get("confidence") is not None:
+            conf = signal.get("confidence")
+            if isinstance(conf, (int, float)):
+                confidence = float(conf)
+                if confidence > 1:
+                    confidence = confidence / 100.0
+
+        if confidence == 0.0 and signal.get("score") is not None:
+            score = signal.get("score")
+            if isinstance(score, (int, float)):
+                confidence = float(score)
+                if confidence > 1:
+                    confidence = confidence / 100.0
+
+        if signal.get("win_rate") is not None:
+            wr = signal.get("win_rate")
+            if isinstance(wr, (int, float)):
+                confidence = max(confidence, float(wr))
+                if confidence > 1:
+                    confidence = confidence / 100.0
+
+        return max(0.0, min(1.0, confidence))
+
+    def _calculate_kelly_pct(
+        self, balance: float, max_pct: float, signal: Dict = None
+    ) -> float:
+        """حساب Kelly Criterion مع معلومات الأداء التاريخية."""
+        if self.kelly_sizer:
+            try:
+                kelly_result = self.kelly_sizer.calculate_position_size(
+                    balance=balance,
+                    max_position_pct=max_pct,
+                    symbol=signal.get("symbol") if signal else None,
+                )
+                kelly_pct = kelly_result.get("kelly_pct", max_pct)
+                self.logger.info(
+                    f"📊 Kelly: {kelly_pct * 100:.1f}% "
+                    f"(WR={kelly_result.get('win_rate', 0):.0%}, "
+                    f"RR={kelly_result.get('avg_rr', 0):.2f})"
+                )
+                return kelly_pct
+            except Exception as e:
+                self.logger.warning(f"⚠️ Kelly calculation failed: {e}")
+
+        user_pct = self.user_settings.get("position_size_percentage", 10.0) / 100.0
+        self.logger.info(f"📊 Kelly fallback to user settings: {user_pct * 100:.1f}%")
+        return user_pct
 
         return position_size
 
