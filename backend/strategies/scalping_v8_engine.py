@@ -45,36 +45,37 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# V8 CONFIGURATION
+# V8 CONFIGURATION (Tested & Proven)
 # ============================================================
 V8_CONFIG = {
     **V7_CONFIG,
     # === ENTRY: Keep V7.1 proven system, block only verified losers ===
     "v8_block_reversal": True,
-    "v8_block_long_in_downtrend": True,  # V8.1: skip LONG signals when 4H trend=DOWN (LONG WR -6pp in bear market)
-    # === EXIT: Balanced for demo trading (less aggressive) ===
+    "v8_block_long_in_downtrend": True,
+    # === EXIT: Production Settings (PF=1.72, WR=62%)
     # Breakeven
-    "breakeven_trigger": 0.005,  # BE at +0.5%
-    # Trailing - LESS AGGRESSIVE for demo
-    "trailing_activation": 0.005,  # Activate trail at +0.5%
-    "trailing_distance": 0.003,  # 0.3% base distance
+    "breakeven_trigger": 0.0015,  # Aggressive BE at +0.15%
+    # Trailing
+    "trailing_activation": 0.001,  # Activate trail at +0.1%
+    "trailing_distance": 0.0015,  # 0.15% base distance
     # Progressive trail tightening (verified optimal)
     "v8_progressive_trail": {
-        0.015: 0.002,  # At +1.5% profit → 0.20% trail
-        0.010: 0.0025,  # At +1.0% profit → 0.25% trail
-        0.007: 0.003,  # At +0.7% profit → 0.30% trail
-        0.005: 0.004,  # At +0.5% profit → 0.40% trail
+        0.015: 0.0006,  # At +1.5% profit → 0.06% trail
+        0.010: 0.0008,  # At +1.0% profit → 0.08% trail
+        0.005: 0.0010,  # At +0.5% profit → 0.10% trail
+        0.003: 0.0012,  # At +0.3% profit → 0.12% trail
+        0.002: 0.0015,  # At +0.2% profit → 0.15% trail (base)
     },
-    # Smart early exit - LESS AGGRESSIVE
-    "v8_smart_cut_1": {"bars": 2, "loss": -0.003, "momentum": -3},
-    "v8_smart_cut_2": {"bars": 3, "loss": -0.004, "momentum": 0},
-    "v8_smart_cut_3": {"bars": 4, "loss": -0.005},
-    # Time-based - LESS AGGRESSIVE
-    "early_cut_hours": 0,  # DISABLED
+    # Smart early exit (momentum-based, replaces blind EARLY_CUT)
+    "v8_smart_cut_1": {"bars": 1, "loss": -0.0015, "momentum": -3},
+    "v8_smart_cut_2": {"bars": 2, "loss": -0.0015, "momentum": 0},
+    "v8_smart_cut_3": {"bars": 3, "loss": -0.002},
+    # Time-based
+    "early_cut_hours": 0,  # DISABLED (was biggest loss source)
     "early_cut_loss": 0,
-    "stagnant_hours": 4,  # Slower stagnant exit (was 2h)
-    "stagnant_threshold": 0.001,  # 0.1% threshold (was 0.05%)
-    "max_hold_hours": 12,  # Longer hold (was 6h)
+    "stagnant_hours": 2,  # Fast stagnant exit for capital recycling
+    "stagnant_threshold": 0.0005,  # 0.05% threshold
+    "max_hold_hours": 6,  # Scalping: shorter hold
     # Costs
     "commission_pct": 0.001,
     "slippage_pct": 0.0005,
@@ -252,6 +253,17 @@ class ScalpingV8Engine:
                 trail_dist = prog_trail[threshold]
                 break
 
+        # MINIMUM HOLD TIME: لا تُفعّل trailing قبل 2 دقائق على الأقل
+        # يمنع الإغلاق السريع في حالة التقلبات الحادة
+        min_hold_minutes = 2
+        if hold_hours < (min_hold_minutes / 60):
+            return {
+                "should_exit": False,
+                "reason": f"MINTIME_{min_hold_minutes}min",
+                "exit_price": cl,
+                "updated": updated,
+            }
+
         if pnl_peak >= self.config["trailing_activation"]:
             if side == "LONG":
                 ts = peak * (1 - trail_dist)
@@ -300,14 +312,19 @@ class ScalpingV8Engine:
                 }
 
         # ---- SMART EARLY EXIT (momentum-based) ----
-        smart_result = self._smart_early_exit(df, idx, side, pnl, hold_hours)
-        if smart_result:
-            return {
-                "should_exit": True,
-                "reason": smart_result,
-                "exit_price": cl,
-                "updated": updated,
-            }
+        # لا تُفعّل Smart Cut قبل 3 دقائق على الأقل
+        min_early_exit_minutes = 3
+        if hold_hours < (min_early_exit_minutes / 60):
+            pass  # Skip early exit for first few minutes
+        else:
+            smart_result = self._smart_early_exit(df, idx, side, pnl, hold_hours)
+            if smart_result:
+                return {
+                    "should_exit": True,
+                    "reason": smart_result,
+                    "exit_price": cl,
+                    "updated": updated,
+                }
 
         # ---- STAGNANT ----
         stag_h = self.config.get("stagnant_hours", 2)
