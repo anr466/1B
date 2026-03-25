@@ -683,10 +683,6 @@ class BackgroundTradingManager:
                             trading_enabled and eligible_for_execution
                         ) or has_open_positions
 
-                        logger.info(
-                            f"🔍 DEBUG: user={username} mode={requested_mode} trading_enabled={trading_enabled} eligible={eligible_for_execution} has_open={has_open_positions} include={include_user}"
-                        )
-
                         if not include_user:
                             continue
 
