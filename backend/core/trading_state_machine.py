@@ -45,14 +45,18 @@ STOPPED = "STOPPED"
 STARTING = "STARTING"
 RUNNING = "RUNNING"
 STOPPING = "STOPPING"
+HALTING = "HALTING"  # حالة التصفية: تمنع الصفقات الجديدة وتستمر في إدارة المفتوحة
 ERROR = "ERROR"
 
-VALID_STATES = [STOPPED, STARTING, RUNNING, STOPPING, ERROR]
+VALID_STATES = [STOPPED, STARTING, RUNNING, STOPPING, HALTING, ERROR]
 
+# خوارزمية العزل: ACTIVE → HALTING → OFF
+# المستخدم يضغط إيقاف → يتحول لـ HALTING → يُغلق المحرك الصفقات → يتحول لـ STOPPED
 VALID_TRANSITIONS = {
     STOPPED: [STARTING],
     STARTING: [RUNNING, ERROR, STOPPED],
-    RUNNING: [STOPPING, ERROR],
+    RUNNING: [HALTING, ERROR],  # بدلاً من STOPPING - للسماح بتصفية الصفقات
+    HALTING: [RUNNING, STOPPED, ERROR],  # يمكن العودة للتشغيل أو الإيقاف الكامل
     STOPPING: [STOPPED, ERROR],
     ERROR: [STOPPED, STARTING],
 }
@@ -63,6 +67,7 @@ STATE_LABELS = {
     STARTING: "جاري التشغيل...",
     RUNNING: "يعمل",
     STOPPING: "جاري الإيقاف...",
+    HALTING: "جاري التصفية...",  # جديد: يمنع الصفقات الجديدة ويراقب المفتوحة
     ERROR: "خطأ",
 }
 
@@ -215,26 +220,33 @@ class TradingStateMachine:
 
         except Exception as e:
             logger.error(f"❌ get_state error: {e}")
-            return {
-                "success": False,
-                "trading_state": ERROR,
-                "state": ERROR,
-                "trading_state_label": STATE_LABELS[ERROR],
-                "trading_active": False,
-                "message": str(e),
-                "open_positions": 0,
-                "pid": None,
-                "uptime": 0,
-                "session_id": None,
-                "mode": "PAPER",
-                "trading_mode": "demo",
-                "error_count": 0,
-                "last_error": str(e),
-                "last_update": datetime.now().isoformat(),
-                "last_updated": datetime.now().isoformat(),
-                "subsystems": {},
-                "reconcile_stats": self.reconcile_stats,
-            }
+            # Fallback to a safe default state instead of failing hard
+            return self._get_default_state(str(e))
+
+    def _get_default_state(self, last_error: str = "") -> dict:
+        import datetime
+
+        now = datetime.datetime.now().isoformat()
+        return {
+            "success": False,
+            "trading_state": "ERROR",
+            "state": "ERROR",
+            "trading_state_label": "ERROR",
+            "trading_active": False,
+            "message": last_error,
+            "open_positions": 0,
+            "pid": None,
+            "uptime": 0,
+            "session_id": None,
+            "mode": "PAPER",
+            "trading_mode": "demo",
+            "error_count": 0,
+            "last_error": last_error,
+            "last_update": now,
+            "last_updated": now,
+            "subsystems": {},
+            "reconcile_stats": getattr(self, "reconcile_stats", None),
+        }
 
     def start(self, initiated_by: str = "admin", mode: str = "PAPER") -> Dict[str, Any]:
         """
@@ -400,11 +412,12 @@ class TradingStateMachine:
 
     def stop(self, initiated_by: str = "admin") -> Dict[str, Any]:
         """
-        Attempt to stop trading system.
+        Attempt to stop trading system using HALTING state for graceful shutdown.
 
         NEVER throws for normal states.
-        If already STOPPED/STOPPING → returns current state silently.
-        If RUNNING → transitions to STOPPING → stops process → STOPPED.
+        If already STOPPED/HALTING → returns current state silently.
+        If RUNNING → transitions to HALTING → system continues managing open trades.
+        When all trades are closed → auto-transition to STOPPED.
         """
         try:
             session_id = None
@@ -415,8 +428,8 @@ class TradingStateMachine:
                 current_state = self._normalize_state(row[0] if row else STOPPED)
                 session_id = row[1] if row else None
 
-                # Already stopped or stopping — return current state
-                if current_state in (STOPPED, STOPPING):
+                # Already stopped or halting — return current state
+                if current_state in (STOPPED, HALTING):
                     logger.info(f"ℹ️ Stop requested but state is {current_state}")
                     return self.get_state()
 
@@ -424,54 +437,59 @@ class TradingStateMachine:
                 if current_state not in (RUNNING, ERROR, STARTING):
                     return self.get_state()
 
-                # Transition to STOPPING
-                self._transition(conn, STOPPING, message="جاري إيقاف النظام...")
+                # Transition to HALTING (instead of STOPPING) - allows graceful shutdown
+                self._transition(conn, HALTING, message="جاري التصفية...")
                 conn.commit()
 
             self._log_transition(
-                current_state, STOPPING, initiated_by, session_id, "طلب إيقاف النظام"
+                current_state,
+                HALTING,
+                initiated_by,
+                session_id,
+                "طلب إيقاف النظام - بدء التصفية",
             )
 
-            # Count open positions before stopping
+            # Count open positions
             open_positions = self._count_open_positions()
 
-            # Stop the process
-            try:
-                self._stop_all_processes()
-
-                # Transition to STOPPED
-                with self.db.get_write_connection() as conn:
-                    self._transition(
-                        conn, STOPPED, pid=None, started_at=None, message="النظام متوقف"
-                    )
-                    conn.commit()
-
-                self._log_transition(
-                    STOPPING,
-                    STOPPED,
-                    "system",
-                    session_id,
-                    f"تم الإيقاف. صفقات مفتوحة: {open_positions}",
+            # Log current status
+            if open_positions > 0:
+                logger.info(
+                    f"ℹ️ System entering HALTING state with {open_positions} open positions"
                 )
+            else:
+                # No open positions - can transition to STOPPED immediately
+                logger.info("ℹ️ No open positions - transitioning to STOPPED")
+                return self._complete_halt(session_id)
 
-                # State is written via _transition() - single write path
-                # No additional StateManager sync needed
+            return self.get_state()
 
-                logger.info(f"✅ Trading system stopped (session: {session_id})")
+        except Exception as e:
+            logger.error(f"❌ stop() error: {e}")
+            return self.get_state()
 
-            except Exception as stop_error:
-                logger.error(f"❌ Failed to stop process: {stop_error}")
-
-                with self.db.get_write_connection() as conn:
-                    self._transition(
-                        conn, ERROR, message=f"فشل الإيقاف: {str(stop_error)[:100]}"
-                    )
-                    conn.commit()
-
-                self._log_transition(
-                    STOPPING, ERROR, "system", session_id, f"فشل الإيقاف: {stop_error}"
+    def _complete_halt(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Complete the halt process - transition from HALTING to STOPPED."""
+        try:
+            with self.db.get_write_connection() as conn:
+                self._transition(
+                    conn, STOPPED, pid=None, started_at=None, message="النظام متوقف"
                 )
+                conn.commit()
 
+            self._log_transition(
+                HALTING,
+                STOPPED,
+                "system",
+                session_id,
+                "تم التصفية والإيقاف بنجاح",
+            )
+
+            logger.info(f"✅ Trading system halted completely (session: {session_id})")
+            return self.get_state()
+
+        except Exception as e:
+            logger.error(f"❌ _complete_halt error: {e}")
             return self.get_state()
 
         except Exception as e:
@@ -623,6 +641,29 @@ class TradingStateMachine:
                 corrected_msg = "تم الإيقاف"
                 self._do_reconcile_update(corrected, corrected_msg)
                 self._record_reconcile_event("stopping_to_stopped")
+
+        elif db_state == HALTING:
+            # في حالة التصفية: تحقق من وجود صفقات مفتوحة
+            open_positions = self._count_open_positions()
+            if open_positions == 0:
+                # لا توجد صفقات مفتوحة - يمكن الإيقاف الكامل
+                corrected = STOPPED
+                corrected_msg = "تم التصفية والإيقاف"
+                self._do_reconcile_update(corrected, corrected_msg)
+                self._record_reconcile_event("halting_to_stopped")
+                self._log_transition(
+                    HALTING,
+                    STOPPED,
+                    "reconcile",
+                    None,
+                    f"All trades closed - auto transition to STOPPED",
+                )
+            else:
+                # لا تزال هناك صفقات مفتوحة - استمر في التصفية
+                corrected_msg = f"جاري التصفية... ({open_positions} صفقة مفتوحة)"
+                logger.info(
+                    f"ℹ️ HALTING state: {open_positions} open positions remaining"
+                )
 
         elif db_state == STOPPED and process_alive:
             # Process running but DB says stopped

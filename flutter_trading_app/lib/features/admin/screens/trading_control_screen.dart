@@ -114,7 +114,8 @@ class TradingControlScreen extends ConsumerWidget {
     final rawState = s.state.toString().toUpperCase();
     final isStarting = rawState == 'STARTING';
     final isStopping = rawState == 'STOPPING';
-    final isTransitioning = isStarting || isStopping;
+    final isHalting = rawState == 'HALTING';
+    final isTransitioning = isStarting || isStopping || isHalting;
     final isBusy = isActionBusy || isTransitioning;
 
     final isRunning = rawState == 'RUNNING';
@@ -126,6 +127,8 @@ class TradingControlScreen extends ConsumerWidget {
         ? BadgeType.success
         : isRunning
         ? BadgeType.warning
+        : isHalting
+        ? BadgeType.info
         : isError
         ? BadgeType.error
         : BadgeType.warning;
@@ -134,6 +137,8 @@ class TradingControlScreen extends ConsumerWidget {
         ? 'يعمل'
         : isRunning
         ? 'جارٍ التفعيل...'
+        : isHalting
+        ? 'جارٍ التصفية...'
         : isError
         ? 'خطأ'
         : 'متوقف';
@@ -189,14 +194,20 @@ class TradingControlScreen extends ConsumerWidget {
                 child: AppButton(
                   label: isTransitioning
                       ? 'جارٍ التنفيذ...'
-                      : (isRunning ? 'إيقاف' : 'تشغيل'),
-                  variant: isRunning
+                      : (isRunning
+                            ? 'إيقاف'
+                            : (isHalting ? 'استئناف' : 'تشغيل')),
+                  variant: isRunning || isHalting
                       ? AppButtonVariant.outline
                       : AppButtonVariant.primary,
                   height: 44,
                   onPressed: isBusy
                       ? null
-                      : () => _toggleTrading(context, ref, isRunning),
+                      : () => _toggleTrading(
+                          context,
+                          ref,
+                          isRunning || isHalting,
+                        ),
                 ),
               ),
               const SizedBox(width: SpacingTokens.sm),
@@ -332,9 +343,21 @@ class TradingControlScreen extends ConsumerWidget {
   Future<void> _toggleTrading(
     BuildContext context,
     WidgetRef ref,
-    bool isRunning,
+    bool isRunningOrHalting,
   ) async {
     if (ref.read(_tradingControlActionBusyProvider)) return;
+
+    // Determine the action based on current state
+    final isHaltingMode =
+        ref
+            .read(tradingCycleLiveProvider)
+            .valueOrNull
+            ?.state
+            .toString()
+            .toUpperCase() ==
+        'HALTING';
+    final isStopping = isRunningOrHalting && !isHaltingMode;
+    final isResuming = isHaltingMode;
 
     // ✅ Confirmation dialog for Start/Stop trading
     if (!context.mounted) return;
@@ -343,11 +366,17 @@ class TradingControlScreen extends ConsumerWidget {
       builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: Text(isRunning ? 'إيقاف التداول' : 'تشغيل التداول'),
+          title: Text(
+            isStopping
+                ? 'إيقاف التداول'
+                : (isResuming ? 'استئناف التداول' : 'تشغيل التداول'),
+          ),
           content: Text(
-            isRunning
-                ? 'سيتوقف النظام عن فتح صفقات جديدة. الصفقات المفتوحة ستستمر.'
-                : 'سيبدأ النظام في فتح صفقات جديدة تلقائياً.',
+            isStopping
+                ? 'سيتحول النظام لحالة التصفية. سيتمكن من فتح صفقات جديدة. الصفقات المفتوحة ستستمر في الإدارة حتى الإغلاق.'
+                : (isResuming
+                      ? 'سيستأنف النظام فتح الصفقات الجديدة.'
+                      : 'سيبدأ النظام في فتح صفقات جديدة تلقائياً.'),
           ),
           actions: [
             TextButton(
@@ -356,7 +385,9 @@ class TradingControlScreen extends ConsumerWidget {
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: Text(isRunning ? 'إيقاف' : 'تشغيل'),
+              child: Text(
+                isStopping ? 'إيقاف' : (isResuming ? 'استئناف' : 'تشغيل'),
+              ),
             ),
           ],
         ),
@@ -370,7 +401,9 @@ class TradingControlScreen extends ConsumerWidget {
     final trustNotifier = ref.read(biometricTrustProvider.notifier);
 
     if (await bio.isAvailable && !trustNotifier.isTrusted) {
-      final label = isRunning ? 'تأكيد إيقاف التداول' : 'تأكيد تشغيل التداول';
+      final label = isStopping
+          ? 'تأكيد إيقاف التداول'
+          : (isResuming ? 'تأكيد استئناف التداول' : 'تأكيد تشغيل التداول');
       final ok = await bio.authenticate(reason: label);
       if (!ok) {
         if (!context.mounted) return;
@@ -386,7 +419,7 @@ class TradingControlScreen extends ConsumerWidget {
     }
     try {
       final repo = ref.read(adminRepositoryProvider);
-      final result = isRunning
+      final result = isStopping
           ? await repo.stopTrading()
           : await repo.startTrading();
 
@@ -401,10 +434,13 @@ class TradingControlScreen extends ConsumerWidget {
               .toString()
               .toUpperCase();
 
-      // ✅ For stop: accept STOPPED, STOPPING, or success flag
+      // ✅ For stop: accept STOPPED, HALTING, STOPPING, or success flag
       // ✅ For start: accept RUNNING, STARTING, or success flag
-      final applied = isRunning
-          ? (state == 'STOPPED' || state == 'STOPPING' || success)
+      final applied = isStopping
+          ? (state == 'STOPPED' ||
+                state == 'HALTING' ||
+                state == 'STOPPING' ||
+                success)
           : (state == 'RUNNING' || state == 'STARTING' || success);
 
       if (!context.mounted) return;
@@ -439,13 +475,13 @@ class TradingControlScreen extends ConsumerWidget {
         final actualRunning =
             actualState.isEffectivelyRunning || actualState.isRunning;
 
-        final operationSucceeded = isRunning ? !actualRunning : actualRunning;
+        final operationSucceeded = isStopping ? !actualRunning : actualRunning;
         if (operationSucceeded) {
           ref.read(tradingCycleLiveProvider.notifier).refresh();
           ref.invalidate(systemStatusProvider);
           AppSnackbar.show(
             context,
-            message: isRunning ? 'تم إيقاف التداول' : 'تم تشغيل التداول',
+            message: isStopping ? 'تم إيقاف التداول' : 'تم تشغيل التداول',
             type: SnackType.success,
           );
           return;

@@ -396,7 +396,37 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     return status.when(
       loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 56),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (e, _) => GestureDetector(
+        onTap: () => ref.invalidate(tradingCycleLiveProvider),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: cs.errorContainer.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
+            border: Border.all(color: cs.error.withValues(alpha: 0.3)),
+          ),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.sync_problem, color: cs.error, size: 18),
+                const SizedBox(width: SpacingTokens.sm),
+                Text(
+                  'فشل تحميل الحالة',
+                  style: TypographyTokens.bodySmall(cs.error),
+                ),
+                const SizedBox(width: SpacingTokens.sm),
+                Text(
+                  'اضغط لإعادة المحاولة',
+                  style: TypographyTokens.caption(
+                    cs.error.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       data: (s) {
         final badgeType = s.isEffectivelyRunning
             ? BadgeType.success
@@ -688,12 +718,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     List<TradeModel> closedTrades,
   ) {
     const maxItems = 5;
-    final limitedOpen = openTrades.take(3).toList();
-    final remainingSlots = (maxItems - limitedOpen.length).clamp(0, maxItems);
-    final limitedClosed = closedTrades
-        .take(remainingSlots == 0 ? 2 : remainingSlots)
-        .toList();
-    return [...limitedOpen, ...limitedClosed];
+
+    // Sort all trades by time (newest first)
+    final allTrades = [...openTrades, ...closedTrades];
+    allTrades.sort((a, b) {
+      final aTime = a.exitTime ?? a.entryTime;
+      final bTime = b.exitTime ?? b.entryTime;
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return bTime.compareTo(aTime);
+    });
+
+    return allTrades.take(maxItems).toList();
   }
 }
 

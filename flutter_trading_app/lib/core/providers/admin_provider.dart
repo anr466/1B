@@ -50,7 +50,7 @@ class SystemStatusNotifier
 
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!_disposed) {
         _loadSilent();
       }
@@ -102,10 +102,8 @@ final adminUsersProvider =
       return repo.getAllUsers();
     });
 
-/// ML Status — autoDispose to prevent memory leak
-final mlStatusProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
-  ref,
-) async {
+/// ML Status — uses keepAlive to prevent flickering from autoDispose
+final mlStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final auth = ref.watch(authProvider);
   final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
   final repo = ref.watch(adminRepositoryProvider);
