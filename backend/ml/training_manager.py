@@ -76,11 +76,8 @@ class MLTrainingManager:
                 logger.warning(f"❌ رفض صفقة من Backtesting: {symbol}")
                 return False
 
-            if source not in ("real_trading", "live_trading"):
-                logger.info(
-                    f"⏭️ تخطي صفقة غير حقيقية من التعلم: {symbol} ({source})"
-                )
-                return False
+            # ✅ قبول الصفقات التجريبية والتعليمية أيضاً
+            # (صفقات demo_trading و real_trading كلاهما يستخدم بيانات سوق حقيقية)
 
             # ✅ التحقق من جودة البيانات
             if not all([symbol, strategy, timeframe]):
@@ -142,9 +139,7 @@ class MLTrainingManager:
             hybrid_system = get_hybrid_system()
 
             # فحص إذا كان يجب استخدام Backtesting
-            if not hybrid_system.should_use_backtest_data(
-                symbol, strategy, timeframe
-            ):
+            if not hybrid_system.should_use_backtest_data(symbol, strategy, timeframe):
                 logger.debug(f"⏭️ تجاوز Backtesting - النظام في مرحلة النضج")
                 return False
 
@@ -176,8 +171,9 @@ class MLTrainingManager:
             self.current_cycle_data.append(result)
             hybrid_system.backtest_count += 1
 
-            logger.debug(f"✅ تمت إضافة Backtest معدل: {symbol} (وزن: {
-                adjusted['weight']:.2f})")
+            logger.debug(
+                f"✅ تمت إضافة Backtest معدل: {symbol} (وزن: {adjusted['weight']:.2f})"
+            )
             return True
 
         except Exception as e:
@@ -237,9 +233,7 @@ class MLTrainingManager:
 
         # إضافة البيانات للمصنف
         if self.current_cycle_data:
-            added = self.classifier.add_backtest_results(
-                self.current_cycle_data
-            )
+            added = self.classifier.add_backtest_results(self.current_cycle_data)
             logger.info(f"   ✅ تم إضافة {added} صفقة للتدريب")
 
         # تدريب النموذج
@@ -249,10 +243,7 @@ class MLTrainingManager:
         logger.info(f"   📊 إجمالي البيانات المتراكمة: {total_samples}")
 
         # التدريب إذا كانت البيانات كافية
-        if (
-            total_samples >= MLSignalClassifier.MIN_SAMPLES_FOR_TRAINING
-            or force_train
-        ):
+        if total_samples >= MLSignalClassifier.MIN_SAMPLES_FOR_TRAINING or force_train:
             logger.info("🧠 بدء التدريب...")
             train_result = self.classifier.train(force=force_train)
 
@@ -261,22 +252,20 @@ class MLTrainingManager:
                 logger.info(f"   📊 الدقة: {train_result['accuracy']:.2%}")
                 logger.info(
                     f"   🎯 الجاهزية: {
-                        '✅ جاهز' if train_result['is_ready'] else '❌ غير جاهز'}")
+                        '✅ جاهز' if train_result['is_ready'] else '❌ غير جاهز'
+                    }"
+                )
             else:
-                logger.warning(f"⚠️ فشل التدريب: {
-                    train_result.get(
-                        'error',
-                        'غير معروف')}")
+                logger.warning(
+                    f"⚠️ فشل التدريب: {train_result.get('error', 'غير معروف')}"
+                )
 
             return train_result
         else:
-            remaining = (
-                MLSignalClassifier.MIN_SAMPLES_FOR_TRAINING - total_samples
-            )
+            remaining = MLSignalClassifier.MIN_SAMPLES_FOR_TRAINING - total_samples
             logger.info(f"⏳ بيانات غير كافية للتدريب")
             logger.info(f"   📊 الموجود: {total_samples}")
-            logger.info(f"   📊 المطلوب: {
-                MLSignalClassifier.MIN_SAMPLES_FOR_TRAINING}")
+            logger.info(f"   📊 المطلوب: {MLSignalClassifier.MIN_SAMPLES_FOR_TRAINING}")
             logger.info(f"   📊 المتبقي: {remaining}")
 
             return {
