@@ -38,7 +38,23 @@ class ScannerMixin:
             return
 
         try:
-            self.db.save_current_signals(signals)
+            with self.db.get_write_connection() as conn:
+                for signal in signals:
+                    conn.execute(
+                        """
+                        INSERT INTO trading_signals
+                        (symbol, signal_type, strategy, timeframe, price, confidence)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            signal.get("symbol"),
+                            signal.get("signal_type"),
+                            signal.get("strategy"),
+                            signal.get("timeframe"),
+                            signal.get("price"),
+                            signal.get("confidence", 0.0),
+                        ),
+                    )
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to persist detected signals: {e}")
 
@@ -53,8 +69,11 @@ class ScannerMixin:
         entries = []
         symbols_to_scan = self.config["symbols_pool"]
         strategy_name = self.strategy.name if self.strategy else "none"
-        self.logger.info(f"\n🔍 [{strategy_name}] Scanning {
-            len(symbols_to_scan)} symbols for entries...")
+        self.logger.info(
+            f"\n🔍 [{strategy_name}] Scanning {
+                len(symbols_to_scan)
+            } symbols for entries..."
+        )
 
         # ===== Phase 0+1: فحص بوابات الحماية قبل أي شيء =====
         portfolio = self._load_user_portfolio()
@@ -62,9 +81,7 @@ class ScannerMixin:
         risk_balance = portfolio.get("total_value", balance)
         open_positions = self._get_open_positions()
 
-        can_trade, gate_reason = self._check_risk_gates(
-            open_positions, risk_balance
-        )
+        can_trade, gate_reason = self._check_risk_gates(open_positions, risk_balance)
         if not can_trade:
             self.logger.info(f"   🛡️ Risk Gate BLOCKED: {gate_reason}")
             return entries
@@ -72,9 +89,7 @@ class ScannerMixin:
         # فحص حالة السوق العامة أولاً (عبر BTC)
         market_ok = self._check_market_regime()
         if not market_ok:
-            self.logger.info(
-                "   ⚠️ Market regime unfavorable - skipping new entries"
-            )
+            self.logger.info("   ⚠️ Market regime unfavorable - skipping new entries")
             return entries
 
         # 📈 فلتر ساعات التداول (التعلم التكيّفي)
@@ -86,7 +101,8 @@ class ScannerMixin:
                     # يبقى التقييم التكيّفي إرشادياً فقط ولا يمنع التداول
                     # بالكامل.
                     self.logger.warning(
-                        f"   📈 Adaptive hour warning (non-blocking): {hour_reason}")
+                        f"   📈 Adaptive hour warning (non-blocking): {hour_reason}"
+                    )
             except Exception as e:
                 self.logger.warning(f"⚠️ Hour filter error: {e}")
 
@@ -131,18 +147,14 @@ class ScannerMixin:
                     # كشف إشارة الدخول (عبر الواجهة الموحدة)
                     signal = self.strategy.detect_entry(df, {"trend": trend})
                     if not signal:
-                        self.logger.info(
-                            f"   ⏭️ [{symbol}] trend={trend} → no signal"
-                        )
+                        self.logger.info(f"   ⏭️ [{symbol}] trend={trend} → no signal")
 
                     # ===== Smart Money Enhancement =====
                     # تحسين الإشارة بتحليل Smart Money إذا كان متاحاً
                     if signal and SMART_MONEY_AVAILABLE:
                         try:
                             smart_money_enhancement = (
-                                self._analyze_smart_money_confluence(
-                                    symbol, df, signal
-                                )
+                                self._analyze_smart_money_confluence(symbol, df, signal)
                             )
                             if smart_money_enhancement:
                                 # تحسين نقاط الإشارة بناءً على تحليل Smart
@@ -152,28 +164,24 @@ class ScannerMixin:
                                 )
                         except Exception as e:
                             self.logger.warning(
-                                f"⚠️ Smart Money analysis error for {symbol}: {e}")
+                                f"⚠️ Smart Money analysis error for {symbol}: {e}"
+                            )
 
                     if signal:
                         signals_to_persist.append(
                             {
                                 "symbol": symbol,
-                                "strategy": signal.get(
-                                    "strategy", strategy_name
-                                ),
+                                "strategy": signal.get("strategy", strategy_name),
                                 "timeframe": timeframe,
                                 "signal_type": signal.get(
                                     "signal_type",
                                     signal.get("side", "UNKNOWN"),
                                 ),
                                 "price": float(
-                                    signal.get("entry_price")
-                                    or df["close"].iloc[-1]
+                                    signal.get("entry_price") or df["close"].iloc[-1]
                                 ),
                                 "confidence": float(
-                                    signal.get(
-                                        "confidence", signal.get("score", 0.0)
-                                    )
+                                    signal.get("confidence", signal.get("score", 0.0))
                                     or 0.0
                                 ),
                             }
@@ -185,13 +193,12 @@ class ScannerMixin:
                         )
                         if not dir_ok:
                             self.logger.info(
-                                f"   🛡️ [{symbol}] Directional Stress BLOCKED: {dir_reason}")
+                                f"   🛡️ [{symbol}] Directional Stress BLOCKED: {dir_reason}"
+                            )
                             continue
 
                         # 📈 استخراج المؤشرات للتعلم (عبر الواجهة الموحدة)
-                        entry_indicators = (
-                            self.strategy.extract_entry_indicators(df)
-                        )
+                        entry_indicators = self.strategy.extract_entry_indicators(df)
                         entry_indicators["trend_4h"] = trend
                         entry_indicators["score"] = signal.get("score", 0)
                         signal["_entry_indicators"] = entry_indicators
@@ -203,9 +210,7 @@ class ScannerMixin:
                                 sig_score = self.optimizer.score_signal(
                                     symbol, entry_indicators
                                 )
-                                predicted_wr = sig_score.get(
-                                    "predicted_wr", 0.5
-                                )
+                                predicted_wr = sig_score.get("predicted_wr", 0.5)
                                 if not sig_score.get("should_trade", True):
                                     self.logger.info(
                                         f"   📈 [{symbol}] Signal REJECTED: "
@@ -214,9 +219,7 @@ class ScannerMixin:
                                     )
                                     continue
                             except Exception as e:
-                                self.logger.warning(
-                                    f"⚠️ Signal scoring error: {e}"
-                                )
+                                self.logger.warning(f"⚠️ Signal scoring error: {e}")
 
                         # ✅ إضافة للمرشحين بدلاً من الدخول فوراً
                         sig_score_val = signal.get("score", 0)
@@ -226,12 +229,12 @@ class ScannerMixin:
                             (symbol, signal, predicted_wr, sig_score_val, df)
                         )
                         self.logger.info(
-                            f"   🎯 [{symbol}] {
-                                signal['side']} QUALIFIED: " f"{
-                                signal.get(
-                                    'strategy',
-                                    strategy_name)} | Score={sig_score_val} | " f"WR={
-                                predicted_wr:.0%} | Trend: {trend}")
+                            f"   🎯 [{symbol}] {signal['side']} QUALIFIED: "
+                            f"{signal.get('strategy', strategy_name)} | Score={
+                                sig_score_val
+                            } | "
+                            f"WR={predicted_wr:.0%} | Trend: {trend}"
+                        )
 
                 except Exception as e:
                     self.logger.error(f"Error scanning {symbol}: {e}")
@@ -250,9 +253,7 @@ class ScannerMixin:
                     f"   📊 {len(qualified_signals)} qualified signals — "
                     f"picking best (max 2):"
                 )
-                for i, (sym, sig, wr, sc, _df_prepared) in enumerate(
-                    qualified_signals
-                ):
+                for i, (sym, sig, wr, sc, _df_prepared) in enumerate(qualified_signals):
                     marker = "→ ✅" if i < 2 else "  ⏭️"
                     self.logger.info(
                         f"   {marker} #{i + 1} {sym}: WR={wr:.0%} Score={sc} "
@@ -283,11 +284,10 @@ class ScannerMixin:
 
                             if decision == "REJECT" or size_factor <= 0:
                                 self.logger.info(
-                                    f"   💧 [{sym}] Entry REJECTED by LiquidityFilter " f"(sig={
-                                        lf_result.get(
-                                            'signal_score', 0):.1f} " f"liq={
-                                        lf_result.get(
-                                            'liquidity_score', 0):.1f})")
+                                    f"   💧 [{sym}] Entry REJECTED by LiquidityFilter "
+                                    f"(sig={lf_result.get('signal_score', 0):.1f} "
+                                    f"liq={lf_result.get('liquidity_score', 0):.1f})"
+                                )
                                 continue
                             elif decision == "DOWNGRADE" and size_factor < 1.0:
                                 # نعمل نسخة من الإشارة ولا نعدل الأصل مباشرة
@@ -315,15 +315,14 @@ class ScannerMixin:
                         "total_value", portfolio_for_entry.get("balance", 0)
                     )
 
-                    can_trade_entry, gate_reason_entry = (
-                        self._check_risk_gates(
-                            open_positions_for_entry, risk_balance_for_entry
-                        )
+                    can_trade_entry, gate_reason_entry = self._check_risk_gates(
+                        open_positions_for_entry, risk_balance_for_entry
                     )
 
                     if not can_trade_entry:
                         self.logger.warning(
-                            f"   🛡️ [{sym}] Pre-entry risk gate BLOCKED: {gate_reason_entry}")
+                            f"   🛡️ [{sym}] Pre-entry risk gate BLOCKED: {gate_reason_entry}"
+                        )
                         continue
 
                     entry = self._open_position(sym, filtered_signal)
@@ -356,10 +355,8 @@ class ScannerMixin:
                 )
 
                 if self.cognitive_orchestrator:
-                    cognitive_decision = (
-                        self.cognitive_orchestrator.analyze_entry(
-                            symbol=symbol, df_4h=df_4h, df_1h=df_1h
-                        )
+                    cognitive_decision = self.cognitive_orchestrator.analyze_entry(
+                        symbol=symbol, df_4h=df_4h, df_1h=df_1h
                     )
 
                     if (
@@ -373,8 +370,7 @@ class ScannerMixin:
                             "stop_loss": cognitive_decision.stop_loss,
                             "take_profit": cognitive_decision.take_profit,
                             "side": "LONG",
-                            "reasons": [
-                                cognitive_decision.entry_logic],
+                            "reasons": [cognitive_decision.entry_logic],
                         }
                         self._persist_detected_signals(
                             [
@@ -385,9 +381,7 @@ class ScannerMixin:
                                     "signal_type": signal.get(
                                         "signal_type", "COGNITIVE"
                                     ),
-                                    "price": float(
-                                        signal.get("entry_price") or 0.0
-                                    ),
+                                    "price": float(signal.get("entry_price") or 0.0),
                                     "confidence": float(
                                         signal.get("confidence", 0.0) or 0.0
                                     ),
@@ -418,9 +412,7 @@ class ScannerMixin:
         self._market_caution_factor = 1.0
 
         try:
-            df = self.data_provider.get_historical_data(
-                "BTCUSDT", "1h", limit=50
-            )
+            df = self.data_provider.get_historical_data("BTCUSDT", "1h", limit=50)
             if df is None or len(df) < 30:
                 return True  # في حال عدم توفر بيانات BTC، نسمح بالدخول
 
@@ -444,18 +436,17 @@ class ScannerMixin:
                 change_24h = (price_now - price_24h_ago) / price_24h_ago
 
                 if change_24h < -0.05:
-                    self.logger.warning(f"   🚨 BTC crashed {
-                        change_24h *
-                        100:.1f}% in 24h - blocking entries")
+                    self.logger.warning(
+                        f"   🚨 BTC crashed {
+                            change_24h * 100:.1f}% in 24h - blocking entries"
+                    )
                     # لن يُستخدم (نرجع False)
                     self._market_caution_factor = 0.0
                     return False
 
                 # Fix-A: هبوط 3–5% → تقليل حجم الصفقة 30%
                 if change_24h < -0.03:
-                    self._market_caution_factor = min(
-                        self._market_caution_factor, 0.7
-                    )
+                    self._market_caution_factor = min(self._market_caution_factor, 0.7)
                     self.logger.info(
                         f"   ⚠️ BTC down {change_24h * 100:.1f}% in 24h "
                         f"— position size ×{self._market_caution_factor:.1f}"
@@ -466,8 +457,10 @@ class ScannerMixin:
                 atr = df["close"].diff().abs().rolling(14).mean().iloc[-1]
                 atr_pct = atr / df.iloc[-1]["close"]
                 if atr_pct > 0.03:
-                    self.logger.warning(f"   🌊 BTC volatility too high (ATR={
-                        atr_pct * 100:.1f}%) - blocking entries")
+                    self.logger.warning(
+                        f"   🌊 BTC volatility too high (ATR={
+                            atr_pct * 100:.1f}%) - blocking entries"
+                    )
                     # لن يُستخدم (نرجع False)
                     self._market_caution_factor = 0.0
                     return False
@@ -476,7 +469,8 @@ class ScannerMixin:
 
         except Exception as e:
             self.logger.warning(
-                f"⚠️ Market regime check failed: {e} — blocking entries (No classification → No trade)")
+                f"⚠️ Market regime check failed: {e} — blocking entries (No classification → No trade)"
+            )
             self._market_caution_factor = 0.0
             return False  # قانون: لا تصنيف = لا تداول
 
@@ -529,26 +523,23 @@ class ScannerMixin:
                 self._smart_money_orchestrator = SmartMoneyOrchestrator()
 
             # تحضير البيانات - نحتاج إطارين زمنيين
-            df_15m = self.data_provider.get_historical_data(
-                symbol, "15m", limit=200
-            )
-            df_5m = self.data_provider.get_historical_data(
-                symbol, "5m", limit=200
-            )
+            df_15m = self.data_provider.get_historical_data(symbol, "15m", limit=200)
+            df_5m = self.data_provider.get_historical_data(symbol, "5m", limit=200)
 
             if df_15m is None or df_5m is None:
                 return None
 
             # التحليل الشامل لنشاط Smart Money
-            analysis = (
-                self._smart_money_orchestrator.analyze_smart_money_activity(
-                    symbol=symbol, df_15m=df_15m, df_5m=df_5m
-                )
+            analysis = self._smart_money_orchestrator.analyze_smart_money_activity(
+                symbol=symbol, df_15m=df_15m, df_5m=df_5m
             )
 
             if analysis.get("error"):
-                self.logger.debug(f"Smart Money analysis error for {symbol}: {
-                    analysis.get('error_message')}")
+                self.logger.debug(
+                    f"Smart Money analysis error for {symbol}: {
+                        analysis.get('error_message')
+                    }"
+                )
                 return None
 
             # استخراج المعلومات المهمة
@@ -592,9 +583,7 @@ class ScannerMixin:
             # تحسين نقاط الإشارة
             # مكافأة تصل إلى 20 نقطة
             score_boost = min(20, confluence_score * 0.2)
-            enhanced_signal["score"] = (
-                enhanced_signal.get("score", 0) + score_boost
-            )
+            enhanced_signal["score"] = enhanced_signal.get("score", 0) + score_boost
 
             # إضافة معلومات Smart Money
             enhanced_signal["smart_money"] = {
@@ -615,26 +604,29 @@ class ScannerMixin:
 
                 if signal_alignment:
                     enhanced_signal["smart_money"]["aligned"] = True
-                    enhanced_signal["smart_money"][
-                        "smart_confidence"
-                    ] = smart_signal.confidence
-                    enhanced_signal["smart_money"][
-                        "reasons"
-                    ] = smart_signal.reasons
+                    enhanced_signal["smart_money"]["smart_confidence"] = (
+                        smart_signal.confidence
+                    )
+                    enhanced_signal["smart_money"]["reasons"] = smart_signal.reasons
 
                     # مكافأة إضافية للتوافق
                     enhanced_signal["score"] += 10
                     enhanced_signal["smart_money"]["alignment_boost"] = 10
 
-                    self.logger.info(f"   🧠 Smart Money ALIGNED: {
-                        enhanced_signal.get('side')} signal " f"supported by {
-                        smart_signal.signal_type} (confidence: {
-                        smart_signal.confidence:.1f}%)")
+                    self.logger.info(
+                        f"   🧠 Smart Money ALIGNED: {
+                            enhanced_signal.get('side')
+                        } signal "
+                        f"supported by {smart_signal.signal_type} (confidence: {
+                            smart_signal.confidence:.1f}%)"
+                    )
                 else:
                     enhanced_signal["smart_money"]["aligned"] = False
-                    self.logger.debug(f"   🧠 Smart Money conflict: {
-                        enhanced_signal.get('side')} vs {
-                        smart_signal.signal_type}")
+                    self.logger.debug(
+                        f"   🧠 Smart Money conflict: {enhanced_signal.get('side')} vs {
+                            smart_signal.signal_type
+                        }"
+                    )
 
             # إضافة معلومات مناطق السيولة المهمة
             zones_data = analysis_data.get("liquidity_zones", {})
@@ -642,8 +634,8 @@ class ScannerMixin:
                 all_zones = zones_data.get("all_zones", [])
                 if all_zones:
                     strong_zones = [z for z in all_zones if z.strength > 70]
-                    enhanced_signal["smart_money"]["liquidity_zones_count"] = (
-                        len(strong_zones)
+                    enhanced_signal["smart_money"]["liquidity_zones_count"] = len(
+                        strong_zones
                     )
 
             # إضافة معلومات VWAP
@@ -654,9 +646,7 @@ class ScannerMixin:
                 )
                 if vwap_strength > 60:
                     enhanced_signal["smart_money"]["vwap_support"] = True
-                    enhanced_signal["smart_money"][
-                        "vwap_strength"
-                    ] = vwap_strength
+                    enhanced_signal["smart_money"]["vwap_strength"] = vwap_strength
 
             return enhanced_signal
 
