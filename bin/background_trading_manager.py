@@ -310,8 +310,14 @@ class BackgroundTradingManager:
             logger.info("✅ تم بدء Heartbeat (نبضات النظام - كل 15 ثانية)")
 
             # ✅ تحديث حالة النظام في Database (بعد بدء الخيوط — لا يحجب التداول)
+            # ⚠️ FIX: لا نُعيد النظام إلى RUNNING إذا كان متوقفاً intentionally
             try:
-                self._update_system_status("running")
+                current_state = self._get_system_trading_state()
+                if current_state == "STOPPED":
+                    logger.warning("⚠️ النظام متوقف - لن يتم فتح صفقات جديدة")
+                    self._update_system_status("stopped", "النظام متوقف - انتظار")
+                else:
+                    self._update_system_status("running")
             except Exception as status_error:
                 logger.warning(f"⚠️ فشل تحديث حالة النظام (الخيوط تعمل): {status_error}")
 
