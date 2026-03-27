@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
+import 'package:trading_app/core/services/debounce_service.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
@@ -30,6 +31,9 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   String _searchQuery = '';
   int _touchedSection = -1;
   Timer? _debounceTimer;
+  final Debouncer _searchDebouncer = Debouncer(
+    duration: const Duration(milliseconds: 400),
+  );
 
   @override
   void initState() {
@@ -53,6 +57,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _searchDebouncer.dispose();
     _scrollController.dispose();
     _searchCtrl.dispose();
     super.dispose();
@@ -61,6 +66,16 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
   void _applyFilter(String? filter) {
     setState(() => _selectedFilter = filter);
     ref.read(tradesListProvider.notifier).loadFirstPage(statusFilter: filter);
+  }
+
+  void _onSearchChanged(String value) {
+    final query = value.trim().toUpperCase();
+    // Debounce search to avoid rapid API calls
+    _searchDebouncer.run(() {
+      if (mounted) {
+        setState(() => _searchQuery = query);
+      }
+    });
   }
 
   @override
@@ -133,9 +148,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                       vertical: SpacingTokens.sm,
                     ),
                   ),
-                  onChanged: (value) {
-                    setState(() => _searchQuery = value.trim().toUpperCase());
-                  },
+                  onChanged: _onSearchChanged,
                 ),
               ),
               const SizedBox(height: SpacingTokens.md),

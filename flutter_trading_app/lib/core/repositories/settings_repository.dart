@@ -1,6 +1,7 @@
 import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/models/settings_model.dart';
 import 'package:trading_app/core/services/api_service.dart';
+import 'package:trading_app/core/services/api_cache.dart';
 import 'package:trading_app/core/services/parsing_service.dart';
 
 /// Settings Repository — data access for trading settings
@@ -58,7 +59,13 @@ class SettingsRepository {
   }
 
   Future<SettingsModel> getSettings(int userId, {String? mode}) async {
-    final response = await _api.get(ApiEndpoints.settings(userId, mode: mode));
+    final cacheKey = CacheKeys.settings(userId, mode: mode);
+    final response = await _api.get(
+      ApiEndpoints.settings(userId, mode: mode),
+      useCache: true,
+      cacheTTL: CacheTTL.settings,
+      cacheKey: cacheKey,
+    );
     final data = response.data;
     if (data['success'] == true) {
       return SettingsModel.fromJson(
@@ -75,6 +82,10 @@ class SettingsRepository {
     Map<String, dynamic> settings, {
     String? mode,
   }) async {
+    // Invalidate cache on update
+    final cacheKey = CacheKeys.settings(userId, mode: mode);
+    ApiCache().invalidate(cacheKey);
+
     final response = await _api.put(
       ApiEndpoints.updateSettings(userId, mode: mode),
       data: _normalizeSettingsPayload(settings),
@@ -140,8 +151,12 @@ class SettingsRepository {
     int userId, {
     String? mode,
   }) async {
+    final cacheKey = CacheKeys.dailyStatus(userId, mode: mode);
     final response = await _api.get(
       ApiEndpoints.dailyStatus(userId, mode: mode),
+      useCache: true,
+      cacheTTL: CacheTTL.dailyStatus,
+      cacheKey: cacheKey,
     );
     final data = response.data;
     if (data['success'] == true) {

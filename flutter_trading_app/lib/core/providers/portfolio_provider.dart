@@ -8,6 +8,7 @@ import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/notifications_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
+import 'package:trading_app/core/services/debounce_service.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 
 class AccountTradingState {
@@ -42,6 +43,9 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   final Ref _ref;
   bool _disposed = false;
   bool _busy = false;
+  final Debouncer _debouncer = Debouncer(
+    duration: const Duration(milliseconds: 500),
+  );
 
   AccountTradingNotifier(this._ref)
     : super(
@@ -55,6 +59,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   @override
   void dispose() {
     _disposed = true;
+    _debouncer.dispose();
     super.dispose();
   }
 
@@ -123,6 +128,22 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   }
 
   Future<bool> setEnabled(bool enabled) async {
+    // Debounce rapid taps - wait for 500ms after last tap
+    if (_busy) return false;
+
+    // Use debouncer to prevent rapid spam
+    final completer = Completer<bool>();
+    _debouncer.runFuture(() async {
+      final result = await _setEnabledInternal(enabled);
+      if (!completer.isCompleted) {
+        completer.complete(result);
+      }
+    });
+
+    return completer.future;
+  }
+
+  Future<bool> _setEnabledInternal(bool enabled) async {
     if (_busy) return false;
     _busy = true;
 

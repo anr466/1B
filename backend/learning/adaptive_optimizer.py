@@ -132,8 +132,7 @@ class AdaptiveOptimizer:
             # إبطال الكاش
             self._cache_time = 0
 
-            logger.debug(f"📈 Recorded trade: {symbol} {side} PnL={
-                pnl_pct:+.1f}%")
+            logger.debug(f"📈 Recorded trade: {symbol} {side} PnL={pnl_pct:+.1f}%")
 
             # 🔬 الاختبار الخفي — كل N صفقة
             self._trades_since_validation += 1
@@ -161,10 +160,7 @@ class AdaptiveOptimizer:
             float: SL% (مثال: 0.010 = 1.0%)
         """
         stats = self._get_symbol_stats(symbol)
-        if (
-            not stats
-            or stats["total_trades"] < SAFE_LIMITS["min_trades_for_learning"]
-        ):
+        if not stats or stats["total_trades"] < SAFE_LIMITS["min_trades_for_learning"]:
             return SAFE_LIMITS["sl_pct_default"]
 
         # نسبة الصفقات التي أُغلقت بـ SL
@@ -295,9 +291,11 @@ class AdaptiveOptimizer:
         for sym, data in ranked_map.items():
             if data["trades"] >= 8 and data["win_rate"] < 0.25:
                 blocked.add(sym)
-                logger.info(f"📈 Dropping {sym}: WR={
-                    data['win_rate']:.0%} over {
-                    data['trades']} trades")
+                logger.info(
+                    f"📈 Dropping {sym}: WR={data['win_rate']:.0%} over {
+                        data['trades']
+                    } trades"
+                )
 
         # فلترة العملات المتاحة
         active = [s for s in available_symbols if s not in blocked]
@@ -346,8 +344,7 @@ class AdaptiveOptimizer:
             return True, f"بيانات قليلة ({stats['trades']} صفقات)"
 
         if stats["win_rate"] < 0.35:
-            return False, f"Win Rate ضعيف {
-                stats['win_rate']:.0%} في الساعة {hour}:00"
+            return False, f"Win Rate ضعيف {stats['win_rate']:.0%} في الساعة {hour}:00"
 
         return True, f"Win Rate {stats['win_rate']:.0%}"
 
@@ -412,7 +409,7 @@ class AdaptiveOptimizer:
                         AVG(pnl_pct) as avg_pnl,
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as wr
                     FROM trade_learning_log
-                    WHERE created_at > %s AND open_positions_count > 0 AND is_demo = FALSE
+                    WHERE created_at > %s AND open_positions_count > 0
                     GROUP BY open_positions_count
                     HAVING trades >= 5
                     ORDER BY avg_pnl DESC
@@ -444,7 +441,7 @@ class AdaptiveOptimizer:
         try:
             with self.db_manager.get_connection() as conn:
                 total = conn.execute(
-                    "SELECT COUNT(*) FROM trade_learning_log WHERE is_demo = FALSE"
+                    "SELECT COUNT(*) FROM trade_learning_log"
                 ).fetchone()[0]
 
                 last_7d = (datetime.now() - timedelta(days=7)).isoformat()
@@ -455,7 +452,7 @@ class AdaptiveOptimizer:
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
                         AVG(pnl_pct) as avg_pnl,
                         SUM(pnl) as total_pnl
-                    FROM trade_learning_log WHERE created_at > %s AND is_demo = FALSE
+                    FROM trade_learning_log WHERE created_at > %s
                 """,
                     (last_7d,),
                 ).fetchone()
@@ -483,9 +480,7 @@ class AdaptiveOptimizer:
                 "last_7_days": {
                     "trades": trades_7d,
                     "wins": wins_7d,
-                    "win_rate": (
-                        round(wins_7d / trades_7d, 2) if trades_7d > 0 else 0
-                    ),
+                    "win_rate": (round(wins_7d / trades_7d, 2) if trades_7d > 0 else 0),
                     "avg_pnl_pct": round(avg_pnl_7d or 0, 2),
                     "total_pnl": round(total_pnl_7d or 0, 2),
                 },
@@ -525,14 +520,14 @@ class AdaptiveOptimizer:
                     SELECT pnl, pnl_pct, rsi, macd, bb_position,
                            volume_ratio, ema_trend, atr_pct, trend_4h, score, symbol
                     FROM trade_learning_log
-                    WHERE created_at > %s AND rsi IS NOT NULL AND is_demo = FALSE
+                    WHERE created_at > %s AND rsi IS NOT NULL
                     ORDER BY created_at ASC
                 """,
                     (cutoff,),
                 ).fetchall()
 
                 total_trades = conn.execute(
-                    "SELECT COUNT(*) FROM trade_learning_log WHERE created_at > %s AND is_demo = FALSE",
+                    "SELECT COUNT(*) FROM trade_learning_log WHERE created_at > %s",
                     (cutoff,),
                 ).fetchone()[0]
 
@@ -543,12 +538,13 @@ class AdaptiveOptimizer:
                     "baseline": 0.5,
                     "lift": 0,
                     "verdict": "INSUFFICIENT_DATA",
-                    "details": f"بيانات قليلة: {
-                        len(all_rows)} صفقات مع مؤشرات",
+                    "details": f"بيانات قليلة: {len(all_rows)} صفقات مع مؤشرات",
                 }
-                logger.info(f"🔬 Shadow Validation: {
-                    result['verdict']} ({
-                    len(all_rows)} trades)")
+                logger.info(
+                    f"🔬 Shadow Validation: {result['verdict']} ({
+                        len(all_rows)
+                    } trades)"
+                )
                 return result
 
             # تقسيم 80/20
@@ -597,9 +593,7 @@ class AdaptiveOptimizer:
 
             accuracy = correct / len(test)
             precision = (
-                true_positives / predicted_positives
-                if predicted_positives > 0
-                else 0
+                true_positives / predicted_positives if predicted_positives > 0 else 0
             )
             lift = accuracy - baseline_acc
 
@@ -636,11 +630,8 @@ class AdaptiveOptimizer:
                             _json.dumps(weights),
                             _json.dumps(factor_accuracies),
                             verdict,
-                            f"Acc={
-                                accuracy:.0%} Prec={
-                                precision:.0%} Base={
-                                baseline_acc:.0%} Lift={
-                                    lift:+.0%}",
+                            f"Acc={accuracy:.0%} Prec={precision:.0%} Base={
+                                baseline_acc:.0%} Lift={lift:+.0%}",
                         ),
                     )
             except Exception as db_err:
@@ -661,9 +652,7 @@ class AdaptiveOptimizer:
 
             # إذا التعلم ضار → إعادة الأوزان للافتراضي
             if verdict == "LEARNING_HARMFUL":
-                logger.warning(
-                    "🔴 Learning is HARMFUL — resetting to default weights"
-                )
+                logger.warning("🔴 Learning is HARMFUL — resetting to default weights")
 
             return {
                 "accuracy": round(accuracy, 3),
@@ -673,11 +662,8 @@ class AdaptiveOptimizer:
                 "verdict": verdict,
                 "holdout_size": len(test),
                 "weights": weights,
-                "details": f"Acc={
-                    accuracy:.0%} Prec={
-                    precision:.0%} Base={
-                    baseline_acc:.0%} Lift={
-                    lift:+.0%}",
+                "details": f"Acc={accuracy:.0%} Prec={precision:.0%} Base={
+                    baseline_acc:.0%} Lift={lift:+.0%}",
             }
 
         except Exception as e:
@@ -706,9 +692,7 @@ class AdaptiveOptimizer:
         def _wr_conf(matches, w_key):
             if len(matches) >= 3:
                 wr = sum(1 for m in matches if m[0] > 0) / len(matches)
-                w = weights.get(w_key, 1.0) * self._confidence_scale(
-                    len(matches)
-                )
+                w = weights.get(w_key, 1.0) * self._confidence_scale(len(matches))
                 return wr, w
             return None, 0
 
@@ -809,7 +793,7 @@ class AdaptiveOptimizer:
                         AVG(CASE WHEN pnl < 0 THEN pnl_pct ELSE NULL END) as avg_loss,
                         SUM(CASE WHEN exit_reason = 'STOP_LOSS' THEN 1 ELSE 0 END) as sl_hits
                     FROM trade_learning_log
-                    WHERE symbol = %s AND created_at > %s AND is_demo = FALSE
+                    WHERE symbol = %s AND created_at > %s
                 """,
                     (symbol, cutoff),
                 ).fetchone()
@@ -842,7 +826,7 @@ class AdaptiveOptimizer:
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
                         AVG(pnl_pct) as avg_pnl
                     FROM trade_learning_log
-                    WHERE created_at > %s AND is_demo = FALSE
+                    WHERE created_at > %s
                     GROUP BY hour_of_day
                 """,
                     (cutoff,),
@@ -880,7 +864,7 @@ class AdaptiveOptimizer:
                         COUNT(*) as total,
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins
                     FROM trade_learning_log
-                    WHERE created_at > %s AND is_demo = FALSE
+                    WHERE created_at > %s
                 """,
                     (cutoff,),
                 ).fetchone()
@@ -974,12 +958,8 @@ class AdaptiveOptimizer:
                 if r[2] is not None and self._get_rsi_zone(r[2]) == rsi_zone
             ]
             if len(rsi_indices) >= 3:
-                rsi_wr = self._decay_weighted_wr(
-                    rows, rsi_indices, decay_weights
-                )
-                w = weights["rsi_zone"] * self._confidence_scale(
-                    len(rsi_indices)
-                )
+                rsi_wr = self._decay_weighted_wr(rows, rsi_indices, decay_weights)
+                w = weights["rsi_zone"] * self._confidence_scale(len(rsi_indices))
                 factors["rsi_zone"] = {
                     "zone": rsi_zone,
                     "wr": round(rsi_wr, 2),
@@ -997,12 +977,8 @@ class AdaptiveOptimizer:
                 if r[5] is not None and self._vol_level(r[5]) == vol_level
             ]
             if len(vol_indices) >= 3:
-                vol_wr = self._decay_weighted_wr(
-                    rows, vol_indices, decay_weights
-                )
-                w = weights["volume"] * self._confidence_scale(
-                    len(vol_indices)
-                )
+                vol_wr = self._decay_weighted_wr(rows, vol_indices, decay_weights)
+                w = weights["volume"] * self._confidence_scale(len(vol_indices))
                 factors["volume"] = {
                     "level": vol_level,
                     "wr": round(vol_wr, 2),
@@ -1013,16 +989,10 @@ class AdaptiveOptimizer:
                 total_weight += w
 
             # Factor 3: Trend (with decay + confidence)
-            trend_indices = [
-                i for i, r in enumerate(rows) if r[8] == trend_now
-            ]
+            trend_indices = [i for i, r in enumerate(rows) if r[8] == trend_now]
             if len(trend_indices) >= 3:
-                trend_wr = self._decay_weighted_wr(
-                    rows, trend_indices, decay_weights
-                )
-                w = weights["trend"] * self._confidence_scale(
-                    len(trend_indices)
-                )
+                trend_wr = self._decay_weighted_wr(rows, trend_indices, decay_weights)
+                w = weights["trend"] * self._confidence_scale(len(trend_indices))
                 factors["trend"] = {
                     "direction": trend_now,
                     "wr": round(trend_wr, 2),
@@ -1040,12 +1010,8 @@ class AdaptiveOptimizer:
                 if r[4] is not None and self._bb_zone(r[4]) == bb_zone
             ]
             if len(bb_indices) >= 3:
-                bb_wr = self._decay_weighted_wr(
-                    rows, bb_indices, decay_weights
-                )
-                w = weights["bb_position"] * self._confidence_scale(
-                    len(bb_indices)
-                )
+                bb_wr = self._decay_weighted_wr(rows, bb_indices, decay_weights)
+                w = weights["bb_position"] * self._confidence_scale(len(bb_indices))
                 factors["bb_position"] = {
                     "zone": bb_zone,
                     "wr": round(bb_wr, 2),
@@ -1081,9 +1047,7 @@ class AdaptiveOptimizer:
                 and r[8] == trend_now
             ]
             if len(rt_indices) >= 3:
-                rt_wr = self._decay_weighted_wr(
-                    rows, rt_indices, decay_weights
-                )
+                rt_wr = self._decay_weighted_wr(rows, rt_indices, decay_weights)
                 w = weights.get("rsi_trend", 2.5) * self._confidence_scale(
                     len(rt_indices)
                 )
@@ -1107,9 +1071,7 @@ class AdaptiveOptimizer:
                 and r[8] == trend_now
             ]
             if len(vt_indices) >= 3:
-                vt_wr = self._decay_weighted_wr(
-                    rows, vt_indices, decay_weights
-                )
+                vt_wr = self._decay_weighted_wr(rows, vt_indices, decay_weights)
                 w = weights.get("vol_trend", 2.0) * self._confidence_scale(
                     len(vt_indices)
                 )
@@ -1122,9 +1084,7 @@ class AdaptiveOptimizer:
                 weighted_wins += vt_wr * w
                 total_weight += w
 
-            predicted_wr = (
-                weighted_wins / total_weight if total_weight > 0 else 0.5
-            )
+            predicted_wr = weighted_wins / total_weight if total_weight > 0 else 0.5
 
             # Progressive threshold: gets stricter as data grows
             # R:R = 1.52:1 → break-even WR = 40%
@@ -1197,14 +1157,11 @@ class AdaptiveOptimizer:
                     continue
                 key = get_key_fn(r)
                 matches = [
-                    t
-                    for t in train_rows
-                    if col_check_fn(t) and get_key_fn(t) == key
+                    t for t in train_rows if col_check_fn(t) and get_key_fn(t) == key
                 ]
                 if len(matches) >= 3:
                     predicted = (
-                        sum(1 for m in matches if m[0] > 0) / len(matches)
-                        >= 0.5
+                        sum(1 for m in matches if m[0] > 0) / len(matches) >= 0.5
                     )
                     actual = r[0] > 0
                     if predicted == actual:
@@ -1273,21 +1230,13 @@ class AdaptiveOptimizer:
         for factor, accuracy in factor_accuracy.items():
             if factor in weights:
                 if accuracy >= 0.65:
-                    weights[factor] = (
-                        self._DEFAULT_WEIGHTS[factor] * 1.5
-                    )  # +50%
+                    weights[factor] = self._DEFAULT_WEIGHTS[factor] * 1.5  # +50%
                 elif accuracy >= 0.55:
-                    weights[factor] = (
-                        self._DEFAULT_WEIGHTS[factor] * 1.2
-                    )  # +20%
+                    weights[factor] = self._DEFAULT_WEIGHTS[factor] * 1.2  # +20%
                 elif accuracy < 0.40:
-                    weights[factor] = (
-                        self._DEFAULT_WEIGHTS[factor] * 0.5
-                    )  # -50%
+                    weights[factor] = self._DEFAULT_WEIGHTS[factor] * 0.5  # -50%
                 elif accuracy < 0.45:
-                    weights[factor] = (
-                        self._DEFAULT_WEIGHTS[factor] * 0.7
-                    )  # -30%
+                    weights[factor] = self._DEFAULT_WEIGHTS[factor] * 0.7  # -30%
 
         return weights
 

@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/services/storage_service.dart';
+import 'package:trading_app/core/services/api_cache.dart';
 
 /// API Service — Dio HTTP client + interceptors + auto-refresh
 /// منطق صافي — لا يستورد Flutter UI
@@ -15,10 +16,15 @@ class _PendingRequest {
 class ApiService {
   late final Dio _dio;
   final StorageService _storage;
+  final ApiCache _cache = ApiCache();
   bool _isRefreshing = false;
   Completer<bool>? _refreshCompleter;
   final List<_PendingRequest> _pendingRequests = [];
   bool _isRecoveringConnection = false;
+
+  // 429 retry configuration
+  static const int _maxRetries = 3;
+  static const Duration _baseRetryDelay = Duration(seconds: 2);
 
   /// Callback invoked when session expires (refresh token fails).
   /// Set by AuthNotifier to trigger forced logout.
@@ -54,7 +60,7 @@ class ApiService {
     handler.next(options);
   }
 
-  // ─── Error Interceptor (auto-refresh on 401) ────
+  // ─── Error Interceptor (auto-refresh on 401 + 429 retry) ────
   Future<void> _onError(
     DioException err,
     ErrorInterceptorHandler handler,
@@ -75,6 +81,33 @@ class ApiService {
       } finally {
         _isRecoveringConnection = false;
       }
+    }
+
+    // ─── 429 Retry with Exponential Backoff ────
+    if (err.response?.statusCode == 429) {
+      final retryCount = err.requestOptions.extra['_retry_count'] ?? 0;
+      if (retryCount < _maxRetries &&
+          _isSafeRetryMethod(err.requestOptions.method)) {
+        // Calculate exponential backoff delay
+        final delay =
+            _baseRetryDelay * (1 << retryCount); // 2^retryCount seconds
+        await Future.delayed(delay);
+
+        // Clone request with incremented retry count
+        final retryOptions = err.requestOptions;
+        retryOptions.extra['_retry_count'] = retryCount + 1;
+        retryOptions.extra['_429_retry'] = true;
+
+        try {
+          final response = await _dio.fetch(retryOptions);
+          return handler.resolve(response);
+        } catch (retryErr) {
+          // If retry also fails, let it flow to next error handler
+          return handler.next(retryErr as DioException);
+        }
+      }
+      // Max retries exceeded or unsafe method — return rate limit error
+      return handler.next(err);
     }
 
     if (err.response?.statusCode == 401) {
@@ -233,9 +266,36 @@ class ApiService {
     return false;
   }
 
-  // ─── Convenience Methods ────────────────────────
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) =>
-      _dio.get(path, queryParameters: queryParameters);
+  // ─── Convenience Methods (with optional caching) ────
+  Future<Response> get(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    bool useCache = false,
+    Duration cacheTTL = const Duration(seconds: 30),
+    String? cacheKey,
+  }) async {
+    // Try cache first for GET requests
+    if (useCache && cacheKey != null) {
+      final cached = _cache.get<Map<String, dynamic>>(cacheKey);
+      if (cached != null) {
+        // Return cached response as a fake Response object
+        return Response(
+          requestOptions: RequestOptions(path: path),
+          statusCode: 200,
+          data: cached,
+        );
+      }
+    }
+
+    final response = await _dio.get(path, queryParameters: queryParameters);
+
+    // Cache successful GET responses
+    if (useCache && cacheKey != null && response.statusCode == 200) {
+      _cache.set(cacheKey, response.data, ttl: cacheTTL);
+    }
+
+    return response;
+  }
 
   Future<Response> post(String path, {dynamic data}) =>
       _dio.post(path, data: data);
