@@ -85,7 +85,8 @@ class FirebaseNotificationService:
         if not cred_path:
             logger.warning(
                 "⚠️ لم يُعثر على ملف firebase service-account — الإشعارات معطّلة. "
-                "ضع الملف في: config/security/firebase-service-account.json")
+                "ضع الملف في: config/security/firebase-service-account.json"
+            )
             return
 
         try:
@@ -208,6 +209,11 @@ class FirebaseNotificationService:
         if data:
             for k, v in data.items():
                 str_data[str(k)] = str(v) if v is not None else ""
+
+        # ✅ إضافة body و title إلى data لضمان توفرها في كِلا الحالتين
+        # (عندما لا يدعم الجهاز notification payload)
+        str_data["title"] = title
+        str_data["body"] = body
 
         success_count = 0
         invalid_tokens: List[str] = []

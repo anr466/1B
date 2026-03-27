@@ -6,6 +6,7 @@ class AppConstants {
   // ─── App Info ───────────────────────────────────
   static const String appName = '1B Trading';
   static const String appVersion = '1.0.0';
+  static const int appBuildNumber = 1;
 
   // ─── Token Config ───────────────────────────────
   static const int accessTokenExpirySeconds = 86400; // 24h

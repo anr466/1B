@@ -170,10 +170,10 @@ class PushNotificationService {
         data['title'] = title;
         data['body'] = body;
 
-        // ✅ Deduplication: Check if notification was already shown
-        final notifId =
-            data['id']?.toString() ??
-            '${data['trade_id']}_${data['timestamp']}';
+        // ✅ Deduplication: Use trade_id + type for consistent key across FCM and Polling
+        final notifId = data['trade_id'] != null && data['type'] != null
+            ? '${data['trade_id']}_${data['type']}'
+            : data['id']?.toString() ?? '${data['timestamp']}_${data['type']}';
         if (_seenNotificationIds.contains(notifId)) {
           return; // Already shown via polling
         }
@@ -254,25 +254,27 @@ class PushNotificationService {
             ? notif['id'] as int
             : int.tryParse('${notif['id']}') ?? 0;
         if (id > lastSeenId) {
-          // ✅ Deduplication: Check if notification was already shown via FCM
-          final notifId = '${notif['id'] ?? id}';
+          // ✅ Deduplication: Use same key as FCM (trade_id + type)
+          final tradeId = notif['data']?['trade_id']?.toString();
+          final notifType =
+              notif['type']?.toString() ?? notif['data']?['type']?.toString();
+          final notifId = (tradeId != null && notifType != null)
+              ? '${tradeId}_$notifType'
+              : '${notif['id'] ?? id}';
           if (_seenNotificationIds.contains(notifId)) {
             continue; // Already shown via FCM
           }
           _addToSeenIds(notifId);
 
-          final type =
-              notif['type']?.toString() ??
-              notif['notification_type']?.toString();
-
           // Check user notification settings before showing
-          if (!_isNotificationTypeEnabled(type)) {
+          if (!_isNotificationTypeEnabled(notifType)) {
             continue; // Skip this notification if disabled by user
           }
 
           // Show system notification for new items
           final title = notif['title']?.toString() ?? 'إشعار جديد';
-          final body = notif['body']?.toString() ?? '';
+          final body =
+              notif['message']?.toString() ?? notif['body']?.toString() ?? '';
           final notifData = Map<String, dynamic>.from(notif);
 
           // Show local notification
