@@ -855,7 +855,7 @@ class PositionManagerMixin:
                     ).fetchone()
 
                 current_balance = float(balance_row[0] or 0.0) if balance_row else 0.0
-                returned_amount = position_size_entry + pnl
+                returned_amount = pnl
                 new_balance = current_balance + returned_amount
                 self.db.update_user_balance_on_conn(
                     conn, self.user_id, new_balance, position_is_demo
@@ -866,8 +866,7 @@ class PositionManagerMixin:
                     self.user_portfolio["available_balance"] = new_balance
                 self.logger.info(
                     f"   💰 Balance updated atomically: ${current_balance:.2f} → ${
-                        new_balance:.2f} (returned ${position_size_entry:.2f} + PnL {
-                        pnl:+.2f})"
+                        new_balance:.2f} (PnL {pnl:+.2f})"
                 )
 
         except Exception as e:

@@ -1488,7 +1488,7 @@ def close_position(position_id):
                     ).fetchone()
             if bal_row is not None:
                 available_before = float(bal_row[0] or 0)
-                returned_amount = (entry_price * quantity) + pnl
+                returned_amount = pnl
                 new_available = available_before + returned_amount
                 db.update_user_balance(user_id, new_available, bool(is_demo))
         except Exception as bal_err:
