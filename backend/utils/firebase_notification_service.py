@@ -15,12 +15,14 @@ logger = logging.getLogger(__name__)
 try:
     import firebase_admin
     from firebase_admin import credentials, messaging
+
     _FIREBASE_ADMIN_OK = True
 except Exception:
     _FIREBASE_ADMIN_OK = False
 
 try:
     from backend.infrastructure.db_access import get_db_manager
+
     _DB_OK = True
 except Exception:
     _DB_OK = False
@@ -83,8 +85,7 @@ class FirebaseNotificationService:
         if not cred_path:
             logger.warning(
                 "⚠️ لم يُعثر على ملف firebase service-account — الإشعارات معطّلة. "
-                "ضع الملف في: config/security/firebase-service-account.json"
-            )
+                "ضع الملف في: config/security/firebase-service-account.json")
             return
 
         try:
@@ -103,7 +104,9 @@ class FirebaseNotificationService:
 
     # ─── Token Management ──────────────────────────────────────
 
-    def register_token(self, user_id: int, fcm_token: str, platform: str = "android") -> bool:
+    def register_token(
+        self, user_id: int, fcm_token: str, platform: str = "android"
+    ) -> bool:
         """تسجيل FCM token للمستخدم في جدول fcm_tokens"""
         if not fcm_token or not self._db:
             return False
@@ -113,11 +116,11 @@ class FirebaseNotificationService:
                 # حذف أي token قديم لنفس المستخدم أو نفس الجهاز
                 cursor.execute(
                     "DELETE FROM fcm_tokens WHERE user_id = %s OR fcm_token = %s",
-                    (user_id, fcm_token)
+                    (user_id, fcm_token),
                 )
                 cursor.execute(
                     "INSERT INTO fcm_tokens (user_id, fcm_token, platform, created_at) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)",
-                    (user_id, fcm_token, platform)
+                    (user_id, fcm_token, platform),
                 )
             logger.debug(f"✅ FCM token مسجّل للمستخدم {user_id}")
             return True
@@ -133,8 +136,7 @@ class FirebaseNotificationService:
             with self._db.get_write_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "DELETE FROM fcm_tokens WHERE fcm_token = %s",
-                    (fcm_token,)
+                    "DELETE FROM fcm_tokens WHERE fcm_token = %s", (fcm_token,)
                 )
             return True
         except Exception as e:
@@ -150,7 +152,7 @@ class FirebaseNotificationService:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT fcm_token FROM fcm_tokens WHERE user_id = %s",
-                    (user_id,)
+                    (user_id,),
                 )
                 rows = cursor.fetchall()
                 return [row[0] for row in rows if row[0]]

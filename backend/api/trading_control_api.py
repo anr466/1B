@@ -18,6 +18,10 @@ Author: System Orchestrator
 Date: 2026-02-09
 """
 
+from backend.infrastructure.db_access import get_db_manager
+from backend.utils.admin_auth import require_admin
+from backend.core.trading_state_machine import get_trading_state_machine
+from config.logging_config import get_logger
 import os
 import sys
 from flask import Blueprint, request, jsonify, g
@@ -27,12 +31,10 @@ project_root = os.path.dirname(
 )
 sys.path.insert(0, project_root)
 
-from config.logging_config import get_logger
-from backend.core.trading_state_machine import get_trading_state_machine
-from backend.utils.admin_auth import require_admin
-from backend.infrastructure.db_access import get_db_manager
 
-trading_control_bp = Blueprint("trading_control", __name__, url_prefix="/admin/trading")
+trading_control_bp = Blueprint(
+    "trading_control", __name__, url_prefix="/admin/trading"
+)
 logger = get_logger(__name__)
 db_manager = get_db_manager()
 
@@ -59,14 +61,17 @@ def get_trading_state():
         return jsonify(state)
     except Exception as e:
         logger.error(f"❌ get_trading_state error: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "trading_state": "ERROR",
-                "is_running": False,
-                "message": str(e),
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "trading_state": "ERROR",
+                    "is_running": False,
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
 
 
 @trading_control_bp.route("/start", methods=["POST"])
@@ -97,12 +102,13 @@ def start_trading():
                 deleted_count = cursor.rowcount
                 if deleted_count > 0:
                     logger.info(
-                        f"🗑️ تم تنظيف {deleted_count} سجل نشاط قديم عند بدء التداول"
-                    )
+                        f"🗑️ تم تنظيف {deleted_count} سجل نشاط قديم عند بدء التداول")
         except Exception as cleanup_err:
             logger.warning(f"⚠️ فشل تنظيف السجلات: {cleanup_err}")
 
-        logger.info(f"🚀 Start trading requested by {initiated_by}, mode={mode}")
+        logger.info(
+            f"🚀 Start trading requested by {initiated_by}, mode={mode}"
+        )
         state = tsm.start(initiated_by=initiated_by, mode=mode)
 
         # إضافة رسالة نجاح واضحة
@@ -113,13 +119,16 @@ def start_trading():
 
     except Exception as e:
         logger.error(f"❌ start_trading error: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "trading_state": "ERROR",
-                "message": "فشل تشغيل التداول: " + str(e),
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "trading_state": "ERROR",
+                    "message": "فشل تشغيل التداول: " + str(e),
+                }
+            ),
+            500,
+        )
 
 
 @trading_control_bp.route("/stop", methods=["POST"])
@@ -147,13 +156,16 @@ def stop_trading():
 
     except Exception as e:
         logger.error(f"❌ stop_trading error: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "trading_state": "ERROR",
-                "message": "فشل إيقاف التداول: " + str(e),
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "trading_state": "ERROR",
+                    "message": "فشل إيقاف التداول: " + str(e),
+                }
+            ),
+            500,
+        )
 
 
 @trading_control_bp.route("/emergency-stop", methods=["POST"])
@@ -178,13 +190,16 @@ def emergency_stop_trading():
 
     except Exception as e:
         logger.error(f"❌ emergency_stop error: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "trading_state": "ERROR",
-                "message": "فشل الإيقاف الطارئ: " + str(e),
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "trading_state": "ERROR",
+                    "message": "فشل الإيقاف الطارئ: " + str(e),
+                }
+            ),
+            500,
+        )
 
 
 @trading_control_bp.route("/reset-error", methods=["POST"])
@@ -205,10 +220,13 @@ def reset_error():
 
     except Exception as e:
         logger.error(f"❌ reset_error error: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "trading_state": "ERROR",
-                "message": "فشل إعادة تعيين الخطأ: " + str(e),
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "trading_state": "ERROR",
+                    "message": "فشل إعادة تعيين الخطأ: " + str(e),
+                }
+            ),
+            500,
+        )

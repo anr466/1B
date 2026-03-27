@@ -20,7 +20,9 @@ except ImportError:
     MomentumBreakoutStrategy = None
 
 try:
-    from backend.strategies.peak_valley_scalping import PeakValleyScalpingStrategy
+    from backend.strategies.peak_valley_scalping import (
+        PeakValleyScalpingStrategy,
+    )
 except ImportError:
     PeakValleyScalpingStrategy = None
 
@@ -48,30 +50,30 @@ except ImportError:
 AVAILABLE_STRATEGIES = {}
 
 if TrendFollowingStrategy:
-    AVAILABLE_STRATEGIES['trend_following'] = TrendFollowingStrategy
+    AVAILABLE_STRATEGIES["trend_following"] = TrendFollowingStrategy
 if MeanReversionStrategy:
-    AVAILABLE_STRATEGIES['mean_reversion'] = MeanReversionStrategy
+    AVAILABLE_STRATEGIES["mean_reversion"] = MeanReversionStrategy
 if MomentumBreakoutStrategy:
-    AVAILABLE_STRATEGIES['momentum_breakout'] = MomentumBreakoutStrategy
+    AVAILABLE_STRATEGIES["momentum_breakout"] = MomentumBreakoutStrategy
 if PeakValleyScalpingStrategy:
-    AVAILABLE_STRATEGIES['peak_valley_scalping'] = PeakValleyScalpingStrategy
+    AVAILABLE_STRATEGIES["peak_valley_scalping"] = PeakValleyScalpingStrategy
 if ScalpingEMAStrategy:
-    AVAILABLE_STRATEGIES['scalping_ema'] = ScalpingEMAStrategy
+    AVAILABLE_STRATEGIES["scalping_ema"] = ScalpingEMAStrategy
 if RSIDivergenceStrategy:
-    AVAILABLE_STRATEGIES['rsi_divergence'] = RSIDivergenceStrategy
+    AVAILABLE_STRATEGIES["rsi_divergence"] = RSIDivergenceStrategy
 if VolumePriceTrendStrategy:
-    AVAILABLE_STRATEGIES['volume_price_trend'] = VolumePriceTrendStrategy
+    AVAILABLE_STRATEGIES["volume_price_trend"] = VolumePriceTrendStrategy
 if MTFAOptimizedStrategy:
-    AVAILABLE_STRATEGIES['mtfa_optimized'] = MTFAOptimizedStrategy
+    AVAILABLE_STRATEGIES["mtfa_optimized"] = MTFAOptimizedStrategy
 
 __all__ = [
-    'AVAILABLE_STRATEGIES',
-    'TrendFollowingStrategy',
-    'MeanReversionStrategy',
-    'MomentumBreakoutStrategy',
-    'PeakValleyScalpingStrategy',
-    'ScalpingEMAStrategy',
-    'RSIDivergenceStrategy',
-    'VolumePriceTrendStrategy',
-    'MTFAOptimizedStrategy',
+    "AVAILABLE_STRATEGIES",
+    "TrendFollowingStrategy",
+    "MeanReversionStrategy",
+    "MomentumBreakoutStrategy",
+    "PeakValleyScalpingStrategy",
+    "ScalpingEMAStrategy",
+    "RSIDivergenceStrategy",
+    "VolumePriceTrendStrategy",
+    "MTFAOptimizedStrategy",
 ]

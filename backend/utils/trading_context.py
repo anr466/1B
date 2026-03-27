@@ -6,9 +6,14 @@ def is_admin_user(db, user_id: int) -> bool:
     return bool(user_data and user_data.get("user_type") == "admin")
 
 
-def get_effective_trading_mode(db, user_id: int) -> str:
+def get_effective_trading_mode(
+    db, user_id: int, requested_mode: Optional[str] = None
+) -> str:
     if not is_admin_user(db, user_id):
         return "real"
+
+    if requested_mode in {"demo", "real"}:
+        return requested_mode
 
     mode_query = """
         SELECT is_demo, trading_mode
@@ -41,7 +46,7 @@ def get_effective_is_demo(
     if requested_mode in {"demo", "real"}:
         return requested_mode == "demo"
 
-    return get_effective_trading_mode(db, user_id) == "demo"
+    return get_effective_trading_mode(db, user_id, requested_mode) == "demo"
 
 
 def get_trading_context(
@@ -51,11 +56,7 @@ def get_trading_context(
     effective_is_demo = get_effective_is_demo(
         db, user_id, requested_mode=requested_mode
     )
-    trading_mode = (
-        requested_mode
-        if requested_mode in {"demo", "real"}
-        else get_effective_trading_mode(db, user_id)
-    )
+    trading_mode = get_effective_trading_mode(db, user_id, requested_mode)
     portfolio_owner_id = user_id
     return {
         "is_admin": is_admin,

@@ -3,6 +3,7 @@ Simple Email OTP Service - خدمة OTP بسيطة للإيميل
 تستخدم verification_codes جدول قاعدة البيانات
 """
 
+from backend.infrastructure.db_access import get_db_manager
 import random
 import string
 import smtplib
@@ -12,65 +13,81 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from backend.infrastructure.db_access import get_db_manager
+
+sys.path.insert(
+    0,
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ),
+)
+
 
 class SimpleEmailOTPService:
     """خدمة OTP بسيطة - تحفظ في قاعدة البيانات فقط"""
-    
+
     def __init__(self):
         self.db = get_db_manager()
         # ✅ تنظيف تلقائي عند التهيئة
         self._cleanup_expired_otps()
-    
+
     def generate_otp_code(self, length=6):
         """توليد رمز OTP عشوائي"""
-        return ''.join(random.choices(string.digits, k=length))
-    
-    def can_send_otp(self, email: str, purpose: str = 'password_reset', cooldown_minutes: int = 2) -> tuple:
+        return "".join(random.choices(string.digits, k=length))
+
+    def can_send_otp(
+        self,
+        email: str,
+        purpose: str = "password_reset",
+        cooldown_minutes: int = 2,
+    ) -> tuple:
         """
         ✅ FIX: التحقق مما إذا كان يمكن إرسال OTP جديد
         يمنع الإرسال المتكرر خلال فترة قصيرة
-        
+
         Returns:
             (can_send: bool, wait_seconds: int or None)
         """
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT created_at FROM verification_codes
                     WHERE email = %s AND purpose = %s
                     ORDER BY created_at DESC
                     LIMIT 1
-                """, (email.lower(), purpose))
-                
+                """,
+                    (email.lower(), purpose),
+                )
+
                 result = cursor.fetchone()
-                
+
                 if not result:
                     return True, None
-                
+
                 # حساب الوقت المتبقي
                 created_at_str = result[0]
                 try:
-                    created_at = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
+                    created_at = datetime.strptime(
+                        created_at_str, "%Y-%m-%d %H:%M:%S"
+                    )
                 except Exception:
                     return True, None
-                
+
                 time_since = (datetime.now() - created_at).total_seconds()
                 cooldown_seconds = cooldown_minutes * 60
-                
+
                 if time_since < cooldown_seconds:
                     wait_seconds = int(cooldown_seconds - time_since)
                     return False, wait_seconds
-                
+
                 return True, None
-                
+
         except Exception as e:
             print(f"❌ خطأ في فحص can_send_otp: {e}")
             return True, None  # السماح في حالة الخطأ
-    
-    def send_email_otp(self, email, purpose='password_reset'):
+
+    def send_email_otp(self, email, purpose="password_reset"):
         """
         إرسال OTP للإيميل
         في الواقع: فقط حفظ في قاعدة البيانات
@@ -79,58 +96,64 @@ class SimpleEmailOTPService:
         try:
             # ✅ تنظيف OTPs منتهية قبل الإرسال
             self._cleanup_expired_otps()
-            
+
             # توليد رمز OTP
             otp_code = self.generate_otp_code()
-            
+
             # حفظ في قاعدة البيانات
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 # حذف أي رموز قديمة لنفس الإيميل
-                cursor.execute("""
-                    DELETE FROM verification_codes 
+                cursor.execute(
+                    """
+                    DELETE FROM verification_codes
                     WHERE email = %s AND purpose = %s
-                """, (email.lower(), purpose))
-                
+                """,
+                    (email.lower(), purpose),
+                )
+
                 # إضافة الرمز الجديد
                 expires_at = datetime.now() + timedelta(minutes=10)
                 expires_timestamp = expires_at.timestamp()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO verification_codes (
                         email, otp_code, purpose, expires_at, created_at
                     ) VALUES (%s, %s, %s, %s, %s)
-                """, (
-                    email.lower(),
-                    otp_code,
-                    purpose,
-                    expires_timestamp,
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                ))
-            
+                """,
+                    (
+                        email.lower(),
+                        otp_code,
+                        purpose,
+                        expires_timestamp,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ),
+                )
+
             threading.Thread(
                 target=self._send_email_async,
                 args=(email, otp_code, purpose),
                 daemon=True,
             ).start()
-            
+
             print(f"""
 ╔════════════════════════════════════════╗
-║        OTP Code for {email[:20]}       
-║                                        
-║        Code: {otp_code}                
-║        Purpose: {purpose}              
-║        Valid for: 10 minutes           
-║        Email Sent: queued              
+║        OTP Code for {email[:20]}
+║
+║        Code: {otp_code}
+║        Purpose: {purpose}
+║        Valid for: 10 minutes
+║        Email Sent: queued
 ╚════════════════════════════════════════╝
             """)
-            
+
             return True, otp_code
-            
+
         except Exception as e:
             print(f"❌ خطأ في إرسال OTP: {e}")
             return False, None
-    
+
     def _cleanup_expired_otps(self):
         """
         ✅ تنظيف OTPs المنتهية والمستخدمة
@@ -139,124 +162,158 @@ class SimpleEmailOTPService:
         try:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 # حذف OTPs المنتهية
-                cursor.execute("""
-                    DELETE FROM verification_codes 
+                cursor.execute(
+                    """
+                    DELETE FROM verification_codes
                     WHERE expires_at < %s
-                """, (datetime.now().timestamp(),))
-                
+                """,
+                    (datetime.now().timestamp(),),
+                )
+
                 deleted_expired = cursor.rowcount
-                
+
                 # حذف OTPs المستخدمة والقديمة (أكثر من 24 ساعة)
-                yesterday = (datetime.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
-                cursor.execute("""
-                    DELETE FROM verification_codes 
+                yesterday = (datetime.now() - timedelta(hours=24)).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM verification_codes
                     WHERE verified = TRUE AND verified_at < %s
-                """, (yesterday,))
-                
+                """,
+                    (yesterday,),
+                )
+
                 deleted_verified = cursor.rowcount
-                
+
                 # حذف OTPs الفاشلة (attempts >= 5)
                 cursor.execute("""
-                    DELETE FROM verification_codes 
+                    DELETE FROM verification_codes
                     WHERE attempts >= 5
                 """)
-                
+
                 deleted_failed = cursor.rowcount
-                
+
                 if deleted_expired + deleted_verified + deleted_failed > 0:
-                    print(f"🧹 OTP Cleanup: منتهية={deleted_expired}, مستخدمة={deleted_verified}, فاشلة={deleted_failed}")
-                
+                    print(
+                        f"🧹 OTP Cleanup: منتهية={deleted_expired}, مستخدمة={deleted_verified}, فاشلة={deleted_failed}")
+
                 return True
         except Exception as e:
             print(f"❌ خطأ في cleanup OTPs: {e}")
             return False
-    
-    def cancel_otp(self, email: str, purpose: str = 'password_reset') -> bool:
+
+    def cancel_otp(self, email: str, purpose: str = "password_reset") -> bool:
         """
         ✅ إلغاء OTP نشط (للمستخدم الذي يريد الإلغاء)
         """
         try:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    DELETE FROM verification_codes 
+                cursor.execute(
+                    """
+                    DELETE FROM verification_codes
                     WHERE email = %s AND purpose = %s
-                """, (email.lower(), purpose))
-                
+                """,
+                    (email.lower(), purpose),
+                )
+
                 deleted = cursor.rowcount > 0
                 if deleted:
                     print(f"🗑️ تم إلغاء OTP للإيميل {email} ({purpose})")
-                
+
                 return deleted
         except Exception as e:
             print(f"❌ خطأ في إلغاء OTP: {e}")
             return False
-    
-    def verify_email_otp(self, email, code, purpose='password_reset'):
+
+    def verify_email_otp(self, email, code, purpose="password_reset"):
         """التحقق من صحة رمز OTP حسب الغرض (registration/password_reset)"""
         try:
             with self.db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 # البحث عن الرمز
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT otp_code, expires_at, attempts, verified
                     FROM verification_codes
                     WHERE email = %s AND purpose = %s
                     ORDER BY created_at DESC
                     LIMIT 1
-                """, (email.lower(), purpose))
-                
+                """,
+                    (email.lower(), purpose),
+                )
+
                 result = cursor.fetchone()
-                
+
                 if not result:
-                    return False, {'error': 'رمز التحقق غير صحيح'}
-                
+                    return False, {"error": "رمز التحقق غير صحيح"}
+
                 stored_code, expires_at, attempts, verified = result
-                
+
                 # ✅ FIX: التحقق من أن الرمز لم يُستخدم مسبقاً
                 if verified:
-                    return False, {'error': 'رمز التحقق مستخدم مسبقاً'}
-                
+                    return False, {"error": "رمز التحقق مستخدم مسبقاً"}
+
                 # التحقق من انتهاء الصلاحية (expires_at هو timestamp)
                 if datetime.now().timestamp() > expires_at:
-                    return False, {'error': 'انتهت صلاحية رمز التحقق'}
-                
+                    return False, {"error": "انتهت صلاحية رمز التحقق"}
+
                 # ✅ CRITICAL FIX: التحقق من صحة الرمز أولاً
                 if stored_code != code:
                     # عدد المحاولات الحالي
                     current_attempts = attempts if attempts else 0
-                    
+
                     # تحديث عدد المحاولات
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         UPDATE verification_codes
                         SET attempts = attempts + 1
                         WHERE email = %s AND otp_code = %s AND purpose = %s
-                    """, (email.lower(), stored_code, purpose))
-                    
+                    """,
+                        (email.lower(), stored_code, purpose),
+                    )
+
                     # التحقق من تجاوز الحد بعد الزيادة
                     if current_attempts + 1 >= 5:
-                        return False, {'error': 'تجاوزت الحد الأقصى للمحاولات', 'remaining_attempts': 0}
-                    
+                        return False, {
+                            "error": "تجاوزت الحد الأقصى للمحاولات",
+                            "remaining_attempts": 0,
+                        }
+
                     remaining = 5 - (current_attempts + 1)
-                    return False, {'error': 'رمز التحقق غير صحيح', 'remaining_attempts': remaining}
-                
+                    return False, {
+                        "error": "رمز التحقق غير صحيح",
+                        "remaining_attempts": remaining,
+                    }
+
                 # ✅ التحقق ناجح - تعيين verified = TRUE بدلاً من الحذف
-                cursor.execute("""
+                cursor.execute(
+                    """
                     UPDATE verification_codes
                     SET verified = TRUE, verified_at = %s
                     WHERE email = %s AND otp_code = %s AND purpose = %s
-                """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), email.lower(), code, purpose))
-                
-                return True, {'message': 'تم التحقق بنجاح'}
-                
+                """,
+                    (
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        email.lower(),
+                        code,
+                        purpose,
+                    ),
+                )
+
+                return True, {"message": "تم التحقق بنجاح"}
+
         except Exception as e:
             print(f"❌ خطأ في التحقق من OTP: {e}")
-            return False, {'error': 'خطأ في التحقق'}
-    
-    def _send_email_async(self, email: str, otp_code: str, purpose: str) -> None:
+            return False, {"error": "خطأ في التحقق"}
+
+    def _send_email_async(
+        self, email: str, otp_code: str, purpose: str
+    ) -> None:
         try:
             self._send_email(email, otp_code, purpose)
         except Exception as e:
@@ -265,27 +322,27 @@ class SimpleEmailOTPService:
     def _send_email(self, email: str, otp_code: str, purpose: str) -> bool:
         """إرسال البريد الإلكتروني عبر SMTP"""
         try:
-            smtp_enabled = os.getenv('SMTP_ENABLED', 'True').lower() == 'true'
+            smtp_enabled = os.getenv("SMTP_ENABLED", "True").lower() == "true"
             if not smtp_enabled:
                 print("⚠️ SMTP disabled")
                 return False
-            
-            smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-            smtp_port = int(os.getenv('SMTP_PORT', '587'))
-            smtp_username = os.getenv('SMTP_USERNAME', '')
-            smtp_password = os.getenv('SMTP_PASSWORD', '')
-            smtp_from = os.getenv('SMTP_FROM_EMAIL', smtp_username)
-            
+
+            smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+            smtp_port = int(os.getenv("SMTP_PORT", "587"))
+            smtp_username = os.getenv("SMTP_USERNAME", "")
+            smtp_password = os.getenv("SMTP_PASSWORD", "")
+            smtp_from = os.getenv("SMTP_FROM_EMAIL", smtp_username)
+
             if not smtp_username or not smtp_password:
                 print("⚠️ SMTP credentials not configured")
                 return False
-            
-            msg = MIMEMultipart('alternative')
-            msg['From'] = smtp_from
-            msg['To'] = email
-            
-            if purpose == 'password_reset':
-                msg['Subject'] = 'رمز إعادة تعيين كلمة المرور - Trading Bot'
+
+            msg = MIMEMultipart("alternative")
+            msg["From"] = smtp_from
+            msg["To"] = email
+
+            if purpose == "password_reset":
+                msg["Subject"] = "رمز إعادة تعيين كلمة المرور - Trading Bot"
                 body = f"""
                 <html>
                 <body dir="rtl" style="font-family: Arial, sans-serif; padding: 20px;">
@@ -302,7 +359,7 @@ class SimpleEmailOTPService:
                 </html>
                 """
             else:
-                msg['Subject'] = 'رمز التحقق - Trading Bot'
+                msg["Subject"] = "رمز التحقق - Trading Bot"
                 body = f"""
                 <html>
                 <body dir="rtl" style="font-family: Arial, sans-serif; padding: 20px;">
@@ -317,17 +374,17 @@ class SimpleEmailOTPService:
                 </body>
                 </html>
                 """
-            
-            msg.attach(MIMEText(body, 'html'))
-            
+
+            msg.attach(MIMEText(body, "html"))
+
             with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
                 server.starttls()
                 server.login(smtp_username, smtp_password)
                 server.send_message(msg)
-            
+
             print(f"✅ تم إرسال OTP إلى {email}")
             return True
-            
+
         except Exception as e:
             print(f"❌ فشل إرسال البريد: {e}")
             return False

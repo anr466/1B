@@ -18,7 +18,8 @@ Group B System - نظام التداول الموحد الرئيسي
     result = system.run_trading_cycle()
 """
 
-from datetime import datetime, timedelta
+import os as _os
+from datetime import datetime
 from typing import Dict, List, Optional
 import pandas as pd
 import logging
@@ -32,8 +33,12 @@ from backend.risk.kelly_position_sizer import KellyPositionSizer
 from backend.risk.portfolio_heat_manager import PortfolioHeatManager
 from backend.ml.training_manager import MLTrainingManager
 from backend.selection.dynamic_blacklist import get_dynamic_blacklist
-from backend.utils.trading_notification_service import get_trading_notification_service
-from backend.analysis.liquidity_cognitive_filter import LiquidityCognitiveFilter
+from backend.utils.trading_notification_service import (
+    get_trading_notification_service,
+)
+from backend.analysis.liquidity_cognitive_filter import (
+    LiquidityCognitiveFilter,
+)
 
 # ===== مدير Binance للتداول الحقيقي =====
 try:
@@ -47,7 +52,6 @@ except ImportError as e:
 # ===== التعلم التكيّفي (تحسين المعاملات إحصائياً) =====
 try:
     from backend.learning.adaptive_optimizer import (
-        AdaptiveOptimizer,
         get_adaptive_optimizer,
     )
 
@@ -62,7 +66,6 @@ from backend.strategies.base_strategy import BaseStrategy
 # ===== نظام السكالبينج V8 (المحرك المحسّن) =====
 try:
     from backend.strategies.scalping_v8_strategy import (
-        ScalpingV8Strategy,
         get_scalping_v8_strategy,
     )
 
@@ -74,7 +77,6 @@ except ImportError as e:
 # ===== نظام السكالبينج V7 (احتياطي) =====
 try:
     from backend.strategies.scalping_v7_strategy import (
-        ScalpingV7Strategy,
         get_scalping_v7_strategy,
     )
 
@@ -86,15 +88,9 @@ except ImportError as e:
 # ===== النظام المعرفي (احتياطي) =====
 try:
     from backend.cognitive.cognitive_orchestrator import (
-        CognitiveOrchestrator,
-        CognitiveAction,
-        CognitiveDecision,
         get_cognitive_orchestrator,
     )
     from backend.cognitive.multi_exit_engine import (
-        MultiExitEngine,
-        ExitReason,
-        ExitUrgency,
         get_multi_exit_engine,
     )
 
@@ -111,7 +107,6 @@ logger = get_logger(__name__)
 
 # ✅ FIX: جعل قائمة الرموز قابلة للتكوين
 # يمكن تجاوزها عبر متغير البيئة TRADING_SYMBOLS (مفصولة بفواصل)
-import os as _os
 
 _default_pool = [
     "ETHUSDT",
@@ -320,7 +315,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         )
         self.logger.info(f"   Can Trade: {self.can_trade}")
         self.logger.info(
-            f"   🛡️ Risk Protection: Heat={self.heat_manager.max_heat_pct}% | DailyLimit={self.daily_state['max_daily_trades']} | MaxLoss={self.daily_state['max_daily_loss_pct'] * 100}%"
+            f"   🛡️ Risk Protection: Heat={
+                self.heat_manager.max_heat_pct
+            }% | DailyLimit={self.daily_state['max_daily_trades']} | MaxLoss={
+                self.daily_state['max_daily_loss_pct'] * 100
+            }%"
         )
 
     def start_runtime_services(self) -> None:
@@ -357,26 +356,15 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         """جلب محفظة المستخدم من الجدول الموحد portfolio"""
         try:
             with self.db.get_connection() as conn:
-                if self.is_demo_trading:
-                    row = conn.execute(
-                        """
-                        SELECT total_balance, available_balance
-                        FROM demo_accounts
-                        WHERE user_id = %s
-                        LIMIT 1
-                        """,
-                        (self.user_id,),
-                    ).fetchone()
-                else:
-                    row = conn.execute(
-                        """
-                        SELECT total_balance, available_balance
-                        FROM portfolio
-                        WHERE user_id = %s AND is_demo = FALSE
-                        LIMIT 1
-                        """,
-                        (self.user_id,),
-                    ).fetchone()
+                row = conn.execute(
+                    """
+                    SELECT total_balance, available_balance
+                    FROM portfolio
+                    WHERE user_id = %s AND is_demo = %s
+                    LIMIT 1
+                    """,
+                    (self.user_id, self.is_demo_trading),
+                ).fetchone()
 
             if row:
                 total_balance_str = str(row[0] or "0.0").replace(",", "")
@@ -387,9 +375,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                     "balance": available_balance,
                     "total_value": total_balance,
                     "available_balance": available_balance,
-                    "source": "portfolio_table"
-                    if not self.is_demo_trading
-                    else "demo_accounts",
+                    "source": "portfolio_table",
                 }
             return {
                 "balance": 0.0,
@@ -477,8 +463,8 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         with self.db.get_connection() as conn:
             cursor = conn.execute("""
                 SELECT symbol, score, win_rate, total_trades, profit_pct, analysis_date
-                FROM successful_coins 
-                WHERE is_active = TRUE 
+                FROM successful_coins
+                WHERE is_active = TRUE
                 ORDER BY score DESC
                 LIMIT 50
             """)
@@ -769,7 +755,9 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             # Explicit boolean conversion
             self.can_trade = bool(self.user_settings.get("trading_enabled", False))
             self.logger.warning(
-                f"🔍 READ SETTINGS: user_settings.trading_enabled={self.user_settings.get('trading_enabled')}, can_trade={self.can_trade}"
+                f"🔍 READ SETTINGS: user_settings.trading_enabled={
+                    self.user_settings.get('trading_enabled')
+                }, can_trade={self.can_trade}"
             )
             self.is_demo_trading = self._determine_trading_mode()
 
@@ -810,7 +798,9 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 effective_max = min(user_max_positions, max_affordable)
 
                 self.logger.info(
-                    f"🔍 Scan check: open={len(open_positions)}, max={effective_max}, can_scan={len(open_positions) < effective_max}"
+                    f"🔍 Scan check: open={len(open_positions)}, max={
+                        effective_max
+                    }, can_scan={len(open_positions) < effective_max}"
                 )
 
                 if len(open_positions) < effective_max:
@@ -824,15 +814,23 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                         result["new_positions"] += 1
                 else:
                     self.logger.info(
-                        f"⏸️ Max positions reached ({len(open_positions)}/{effective_max})"
+                        f"⏸️ Max positions reached ({len(open_positions)}/{
+                            effective_max
+                        })"
                     )
             elif self.can_trade and (position_size_pct <= 0 or user_max_positions <= 0):
                 self.logger.warning(
-                    f"⚠️ User {self.user_id}: trading enabled but settings incomplete (size={position_size_pct}%, max={user_max_positions})"
+                    f"⚠️ User {
+                        self.user_id
+                    }: trading enabled but settings incomplete (size={
+                        position_size_pct
+                    }%, max={user_max_positions})"
                 )
             else:
                 self.logger.debug(
-                    f"⏸️ Not scanning: can_trade={self.can_trade}, balance={available_balance}, size_pct={position_size_pct}, max_pos={user_max_positions}"
+                    f"⏸️ Not scanning: can_trade={self.can_trade}, balance={
+                        available_balance
+                    }, size_pct={position_size_pct}, max_pos={user_max_positions}"
                 )
 
         except Exception as e:
@@ -841,7 +839,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
 
         return result
 
-    # ===== Position/Scanner/Indicator methods: see position_manager.py, scanner_mixin.py =====
+    # ===== Position/Scanner/Indicator methods: see position_manager.py, scann
     # _get_open_positions, _manage_position, _close_position → PositionManagerMixin
     # _open_position, _get_current_price, _update_trailing_stop → PositionManagerMixin
     # _scan_for_entries, _check_market_regime, _add_indicators → ScannerMixin

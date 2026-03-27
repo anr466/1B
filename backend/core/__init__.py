@@ -6,5 +6,5 @@ Core Trading System Module
 from .group_b_system import GroupBSystem
 
 __all__ = [
-    'GroupBSystem',
+    "GroupBSystem",
 ]

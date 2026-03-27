@@ -10,10 +10,10 @@ from .intelligent_coin_filter import IntelligentCoinFilter
 from .dynamic_blacklist import DynamicBlacklist, get_dynamic_blacklist
 
 __all__ = [
-    'DynamicUniverseSelector', 
-    'CoinScorer',
-    'AdvancedCoinFilter',
-    'IntelligentCoinFilter',
-    'DynamicBlacklist',
-    'get_dynamic_blacklist'
+    "DynamicUniverseSelector",
+    "CoinScorer",
+    "AdvancedCoinFilter",
+    "IntelligentCoinFilter",
+    "DynamicBlacklist",
+    "get_dynamic_blacklist",
 ]

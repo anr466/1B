@@ -19,7 +19,10 @@ logger = get_logger(__name__)
 
 # Import token verification
 try:
-    from backend.api.token_refresh_endpoint import verify_token, verify_token_with_lock
+    from backend.api.token_refresh_endpoint import (
+        verify_token,
+        verify_token_with_lock,
+    )
 
     TOKEN_VERIFICATION_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -36,17 +39,26 @@ def _verify_jwt_and_set_g():
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header:
-        return jsonify({"success": False, "error": "Authorization header missing"}), 401
+        return (
+            jsonify(
+                {"success": False, "error": "Authorization header missing"}
+            ),
+            401,
+        )
 
     if not auth_header.startswith("Bearer "):
-        return jsonify(
-            {
-                "success": False,
-                "error": "Invalid authorization format. Use: Bearer <token>",
-            }
-        ), 401
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid authorization format. Use: Bearer <token>",
+                }),
+            401,
+        )
 
-    token = auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
+    token = (
+        auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
+    )
     if not token:
         return jsonify({"success": False, "error": "Token missing"}), 401
 
@@ -64,18 +76,24 @@ def _verify_jwt_and_set_g():
             return jsonify({"success": False, "error": "Invalid token"}), 401
         except Exception as e:
             logger.error(f"❌ Token verification error: {e}")
-            return jsonify(
-                {"success": False, "error": "Token verification failed"}
-            ), 401
+            return (
+                jsonify(
+                    {"success": False, "error": "Token verification failed"}
+                ),
+                401,
+            )
     else:
         logger.error("❌ JWT verification system not available")
-        return jsonify(
-            {
-                "success": False,
-                "error": "Authentication system unavailable",
-                "code": "AUTH_SYSTEM_UNAVAILABLE",
-            }
-        ), 503
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Authentication system unavailable",
+                    "code": "AUTH_SYSTEM_UNAVAILABLE",
+                }
+            ),
+            503,
+        )
 
     return None  # success
 
@@ -103,12 +121,24 @@ def _verify_jwt_atomic():
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header:
-        return jsonify({"success": False, "error": "Authorization header missing"}), 401
+        return (
+            jsonify(
+                {"success": False, "error": "Authorization header missing"}
+            ),
+            401,
+        )
 
     if not auth_header.startswith("Bearer "):
-        return jsonify({"success": False, "error": "Invalid authorization format"}), 401
+        return (
+            jsonify(
+                {"success": False, "error": "Invalid authorization format"}
+            ),
+            401,
+        )
 
-    token = auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
+    token = (
+        auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
+    )
     if not token:
         return jsonify({"success": False, "error": "Token missing"}), 401
 
@@ -126,13 +156,22 @@ def _verify_jwt_atomic():
             return jsonify({"success": False, "error": "Invalid token"}), 401
         except Exception as e:
             logger.error(f"❌ Token verification error (atomic): {e}")
-            return jsonify(
-                {"success": False, "error": "Token verification failed"}
-            ), 401
+            return (
+                jsonify(
+                    {"success": False, "error": "Token verification failed"}
+                ),
+                401,
+            )
     else:
-        return jsonify(
-            {"success": False, "error": "Authentication system unavailable"}
-        ), 503
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Authentication system unavailable",
+                }
+            ),
+            503,
+        )
 
     return None
 
@@ -151,7 +190,10 @@ def require_auth_atomic(f):
             return error_response
 
         user_id_from_url = kwargs.get("user_id")
-        if user_id_from_url and getattr(g, "current_user_type", None) != "admin":
+        if (
+            user_id_from_url
+            and getattr(g, "current_user_type", None) != "admin"
+        ):
             try:
                 user_id_int = int(user_id_from_url)
                 if g.current_user_id != user_id_int:
@@ -159,11 +201,17 @@ def require_auth_atomic(f):
                         f"⚠️ Unauthorized access: User {g.current_user_id} "
                         f"tried to access User {user_id_from_url} data"
                     )
-                    return jsonify(
-                        {"success": False, "error": "Unauthorized access"}
-                    ), 403
+                    return (
+                        jsonify(
+                            {"success": False, "error": "Unauthorized access"}
+                        ),
+                        403,
+                    )
             except ValueError:
-                return jsonify({"success": False, "error": "Invalid user ID"}), 400
+                return (
+                    jsonify({"success": False, "error": "Invalid user ID"}),
+                    400,
+                )
 
         return f(*args, **kwargs)
 
@@ -178,8 +226,14 @@ def require_admin(f):
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not hasattr(g, "current_user_type") or g.current_user_type != "admin":
-            return jsonify({"success": False, "error": "Admin access required"}), 403
+        if (
+            not hasattr(g, "current_user_type")
+            or g.current_user_type != "admin"
+        ):
+            return (
+                jsonify({"success": False, "error": "Admin access required"}),
+                403,
+            )
         return f(*args, **kwargs)
 
     return decorated_function

@@ -3,10 +3,13 @@ Token Refresh Endpoint
 يوفر endpoint لتحديث JWT tokens بدون إعادة تسجيل دخول
 """
 
+from backend.infrastructure.db_access import get_db_manager
+from dotenv import load_dotenv
+import os
 import jwt
 import time
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from functools import wraps
 
@@ -15,11 +18,8 @@ token_refresh_bp = Blueprint("token_refresh", __name__)
 
 # إعدادات JWT (يجب أن تتطابق مع auth_endpoints.py)
 # ✅ FIX: تحميل dotenv أولاً لضمان وجود المتغيرات
-import os
-from dotenv import load_dotenv
 
 load_dotenv()
-from backend.infrastructure.db_access import get_db_manager
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = "HS256"
@@ -29,7 +29,7 @@ REFRESH_TOKEN_EXPIRY = 2592000  # 30 يوم
 # ✅ FIX: متغير للتحقق من توفر النظام
 TOKEN_SYSTEM_AVAILABLE = bool(JWT_SECRET_KEY)
 
-# ─── DB-backed token blocklist ────────────────────────────────────────────────
+# ─── DB-backed token blocklist ──────────────────────────────────────────
 try:
     _db = get_db_manager()
     with _db.get_write_connection() as _conn:
@@ -51,7 +51,9 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def revoke_token(token: str, user_id: int = None, expires_at: datetime = None) -> bool:
+def revoke_token(
+    token: str, user_id: int = None, expires_at: datetime = None
+) -> bool:
     """Add token to DB blocklist atomically. Returns True on success."""
     if not BLOCKLIST_AVAILABLE or not _db:
         return False
@@ -101,7 +103,8 @@ def verify_token_with_lock(token: str, token_type: str = "access") -> dict:
     try:
         with _db.get_write_connection() as conn:
             conn.execute(
-                "SELECT pg_advisory_xact_lock(%s)", (abs(hash(token_hash)) % (2**31),)
+                "SELECT pg_advisory_xact_lock(%s)",
+                (abs(hash(token_hash)) % (2**31),),
             )
 
             result = conn.execute(
@@ -147,7 +150,9 @@ def generate_tokens(
         "iat": now,
         "exp": now + ACCESS_TOKEN_EXPIRY,
     }
-    access_token = jwt.encode(access_payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    access_token = jwt.encode(
+        access_payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM
+    )
 
     # Refresh Token (طويل المدى)
     refresh_payload = {
@@ -157,7 +162,9 @@ def generate_tokens(
         "iat": now,
         "exp": now + REFRESH_TOKEN_EXPIRY,
     }
-    refresh_token = jwt.encode(refresh_payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    refresh_token = jwt.encode(
+        refresh_payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM
+    )
 
     return {
         "access_token": access_token,
@@ -206,9 +213,15 @@ def require_refresh_token(func):
         # الحصول على Token من Header
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
-            return jsonify(
-                {"success": False, "message": "Missing or invalid authorization header"}
-            ), 401
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Missing or invalid authorization header",
+                    }
+                ),
+                401,
+            )
 
         token = auth_header.split(" ")[1]
 
@@ -265,20 +278,26 @@ def refresh_token():
             access_payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM
         )
 
-        return jsonify(
-            {
-                "success": True,
-                "access_token": new_access_token,
-                "expires_in": ACCESS_TOKEN_EXPIRY,
-                "message": "تم تحديث الـ token بنجاح",
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "access_token": new_access_token,
+                    "expires_in": ACCESS_TOKEN_EXPIRY,
+                    "message": "تم تحديث الـ token بنجاح",
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         import logging
 
         logging.getLogger(__name__).error(f"❌ خطأ في تحديث Token: {str(e)}")
-        return jsonify({"success": False, "message": "فشل في تحديث الـ token"}), 500
+        return (
+            jsonify({"success": False, "message": "فشل في تحديث الـ token"}),
+            500,
+        )
 
 
 @token_refresh_bp.route("/validate-token", methods=["GET"])
@@ -300,34 +319,48 @@ def validate_token_endpoint():
     try:
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
-            return jsonify(
-                {
-                    "success": False,
-                    "valid": False,
-                    "message": "Missing authorization header",
-                }
-            ), 401
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "valid": False,
+                        "message": "Missing authorization header",
+                    }
+                ),
+                401,
+            )
 
         token = auth_header.split(" ")[1]
 
         try:
             payload = verify_token(token, token_type="access")
 
-            return jsonify(
-                {
-                    "success": True,
-                    "valid": True,
-                    "user_id": payload["user_id"],
-                    "username": payload["username"],
-                    "expires_at": int(payload["exp"]),
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "valid": True,
+                        "user_id": payload["user_id"],
+                        "username": payload["username"],
+                        "expires_at": int(payload["exp"]),
+                    }
+                ),
+                200,
+            )
 
         except Exception as e:
-            return jsonify({"success": False, "valid": False, "message": str(e)}), 401
+            return (
+                jsonify({"success": False, "valid": False, "message": str(e)}),
+                401,
+            )
 
-    except Exception as e:
-        return jsonify({"success": False, "message": "خطأ في التحقق من الـ token"}), 500
+    except Exception:
+        return (
+            jsonify(
+                {"success": False, "message": "خطأ في التحقق من الـ token"}
+            ),
+            500,
+        )
 
 
 @token_refresh_bp.route("/logout", methods=["POST"])

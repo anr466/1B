@@ -12,6 +12,7 @@ import hashlib
 
 try:
     import bcrypt
+
     BCRYPT_AVAILABLE = True
 except ImportError:
     BCRYPT_AVAILABLE = False
@@ -33,7 +34,7 @@ def verify_password(password: str, password_hash: str) -> bool:
     Verify a password against a hash.
     Supports both bcrypt ($2b$ prefix) and legacy SHA-256 (64-char hex).
     """
-    if BCRYPT_AVAILABLE and password_hash.startswith('$2b$'):
+    if BCRYPT_AVAILABLE and password_hash.startswith("$2b$"):
         try:
             return bcrypt.checkpw(password.encode(), password_hash.encode())
         except Exception:
@@ -46,7 +47,7 @@ def needs_upgrade(password_hash: str) -> bool:
     """Check if a password hash should be upgraded from SHA-256 to bcrypt."""
     if not BCRYPT_AVAILABLE:
         return False
-    return len(password_hash) == 64 and not password_hash.startswith('$2b$')
+    return len(password_hash) == 64 and not password_hash.startswith("$2b$")
 
 
 def upgrade_hash(password: str) -> str:

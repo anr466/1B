@@ -22,7 +22,7 @@ Usage:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import pandas as pd
 import logging
 
@@ -30,7 +30,7 @@ import logging
 class BaseStrategy(ABC):
     """
     واجهة موحدة لجميع استراتيجيات التداول.
-    
+
     كل استراتيجية يجب أن تطبق:
     1. prepare_data() — إضافة المؤشرات للبيانات
     2. detect_entry() — كشف إشارات الدخول
@@ -44,32 +44,33 @@ class BaseStrategy(ABC):
     description: str = ""
 
     def __init__(self):
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}"
+        )
 
     # ===== 1. تحضير البيانات =====
     @abstractmethod
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         إضافة المؤشرات الفنية المطلوبة للبيانات الخام.
-        
+
         Args:
             df: DataFrame بأعمدة OHLCV (open, high, low, close, volume)
-        
+
         Returns:
             DataFrame مع المؤشرات المضافة
         """
-        pass
 
     # ===== 2. كشف إشارة الدخول =====
     @abstractmethod
     def detect_entry(self, df: pd.DataFrame, context: Dict) -> Optional[Dict]:
         """
         كشف إشارة دخول جديدة.
-        
+
         Args:
             df: DataFrame مع المؤشرات (من prepare_data)
             context: سياق إضافي (مثلاً: الاتجاه العام، حالة السوق)
-        
+
         Returns:
             None إذا لا يوجد إشارة، أو dict بالمحتوى التالي:
             {
@@ -84,14 +85,13 @@ class BaseStrategy(ABC):
                 'metadata': {} أي بيانات إضافية للاستراتيجية
             }
         """
-        pass
 
     # ===== 3. فحص شروط الخروج =====
     @abstractmethod
     def check_exit(self, df: pd.DataFrame, position: Dict) -> Dict:
         """
         فحص ما إذا يجب إغلاق صفقة مفتوحة.
-        
+
         Args:
             df: DataFrame مع المؤشرات (من prepare_data)
             position: بيانات الصفقة المفتوحة:
@@ -104,7 +104,7 @@ class BaseStrategy(ABC):
                     'created_at': وقت الفتح,
                     'position_type': 'long' أو 'short',
                 }
-        
+
         Returns:
             {
                 'should_exit': bool,
@@ -119,14 +119,13 @@ class BaseStrategy(ABC):
                 'peak': أعلى نقطة,
             }
         """
-        pass
 
     # ===== 4. إعدادات الاستراتيجية =====
     @abstractmethod
     def get_config(self) -> Dict:
         """
         إرجاع إعدادات الاستراتيجية.
-        
+
         Returns:
             {
                 'name': اسم الاستراتيجية,
@@ -138,18 +137,17 @@ class BaseStrategy(ABC):
                 ... أي إعدادات خاصة بالاستراتيجية
             }
         """
-        pass
 
     # ===== 5. تحديد اتجاه السوق (اختياري — override if needed) =====
     def get_market_trend(self, df: pd.DataFrame) -> str:
         """
         تحديد اتجاه السوق العام.
         القيمة الافتراضية: NEUTRAL
-        
+
         Returns:
             'UP', 'DOWN', أو 'NEUTRAL'
         """
-        return 'NEUTRAL'
+        return "NEUTRAL"
 
     # ===== 6. استخراج مؤشرات الدخول للتعلم (اختياري) =====
     def extract_entry_indicators(self, df: pd.DataFrame) -> Dict:
@@ -166,8 +164,8 @@ class BaseStrategy(ABC):
     def get_info(self) -> Dict:
         """معلومات عامة عن الاستراتيجية"""
         return {
-            'name': self.name,
-            'version': self.version,
-            'description': self.description,
-            'config': self.get_config(),
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "config": self.get_config(),
         }

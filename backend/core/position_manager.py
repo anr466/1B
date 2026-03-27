@@ -14,7 +14,11 @@ import pandas as pd
 import threading
 
 try:
-    from backend.utils.error_logger import error_logger, ErrorLevel, ErrorSource
+    from backend.utils.error_logger import (
+        error_logger,
+        ErrorLevel,
+        ErrorSource,
+    )
 
     ERROR_LOGGER_AVAILABLE = True
 except Exception:
@@ -162,7 +166,11 @@ class PositionManagerMixin:
             return default_rules
 
     def _get_demo_execution_price(
-        self, symbol: str, side: str, reference_price: float, spread_fallback_bps: float
+        self,
+        symbol: str,
+        side: str,
+        reference_price: float,
+        spread_fallback_bps: float,
     ) -> float:
         """اختيار سعر التنفيذ الأساسي من bid/ask إن توفر، وإلا استخدام spread fallback."""
         side_upper = side.upper()
@@ -204,7 +212,10 @@ class PositionManagerMixin:
         import time
 
         if reference_price <= 0 or quantity <= 0:
-            return {"success": False, "message": "invalid_reference_price_or_quantity"}
+            return {
+                "success": False,
+                "message": "invalid_reference_price_or_quantity",
+            }
 
         rules = self._get_demo_symbol_rules(symbol)
         side_upper = side.upper()
@@ -225,7 +236,10 @@ class PositionManagerMixin:
             spread_fallback_bps=rules.get("spread_fallback_bps", 10),
         )
         if base_exec_price <= 0:
-            return {"success": False, "message": "invalid_base_execution_price"}
+            return {
+                "success": False,
+                "message": "invalid_base_execution_price",
+            }
 
         slip_bps = random.uniform(rules["slip_min_bps"], rules["slip_max_bps"])
 
@@ -243,7 +257,8 @@ class PositionManagerMixin:
         if notional < min_notional:
             return {
                 "success": False,
-                "message": f"min_notional_not_met ({notional:.4f} < {min_notional:.4f})",
+                "message": f"min_notional_not_met ({notional:.4f} < {
+                    min_notional:.4f})",
             }
 
         # Partial fills simulation: تقسيم التنفيذ إلى 1-3 تعبئات حسب حجم الكمية
@@ -423,14 +438,16 @@ class PositionManagerMixin:
                             if highest_high >= sl:
                                 sl_breached = True
                                 self.logger.warning(
-                                    f"🚨 [{symbol}] HISTORICAL SL BREACH: High {highest_high:.4f} >= SL {sl:.4f}"
+                                    f"🚨 [{symbol}] HISTORICAL SL BREACH: High {
+                                        highest_high:.4f} >= SL {sl:.4f}"
                                 )
                         else:
                             lowest_low = df_sl_filtered["low"].min()
                             if lowest_low <= sl:
                                 sl_breached = True
                                 self.logger.warning(
-                                    f"🚨 [{symbol}] HISTORICAL SL BREACH: Low {lowest_low:.4f} <= SL {sl:.4f}"
+                                    f"🚨 [{symbol}] HISTORICAL SL BREACH: Low {
+                                        lowest_low:.4f} <= SL {sl:.4f}"
                                 )
             except Exception as e:
                 self.logger.warning(
@@ -483,7 +500,8 @@ class PositionManagerMixin:
                 # تحضير البيانات (عبر الواجهة الموحدة)
                 df = self.strategy.prepare_data(df)
 
-                # فحص شروط الخروج (عبر الواجهة الموحدة — الاستراتيجية تتولى بناء pos_data داخلياً)
+                # فحص شروط الخروج (عبر الواجهة الموحدة — الاستراتيجية تتولى
+                # بناء pos_data داخلياً)
                 exit_result = self.strategy.check_exit(df, position)
 
                 # تحديث peak و trailing stop في DB
@@ -508,14 +526,16 @@ class PositionManagerMixin:
                 if exit_result["should_exit"]:
                     requested_close_pct = float(
                         exit_result.get(
-                            "close_quantity_pct", exit_result.get("exit_pct", 1.0)
+                            "close_quantity_pct",
+                            exit_result.get("exit_pct", 1.0),
                         )
                         or 1.0
                     )
                     if 0 < requested_close_pct < 1.0:
                         # ✅ FIX: تنفيذ الخروج الجزئي المدعوم
                         self.logger.info(
-                            f"   📊 [{symbol}] Partial exit requested ({requested_close_pct:.2%}) — executing partial close"
+                            f"   📊 [{symbol}] Partial exit requested ({
+                                requested_close_pct:.2%}) — executing partial close"
                         )
                         # 将继续执行_close_position，使用requested_close_pct进行部分平仓
 
@@ -542,7 +562,10 @@ class PositionManagerMixin:
                             )
                             if conf.get("decision") == "HOLD":
                                 self.logger.info(
-                                    f"   💧 [{symbol}] ExitConfirmation HOLD: exit_score={conf.get('exit_score', 0):.1f} "
+                                    f"   💧 [{
+                                        symbol
+                                    }] ExitConfirmation HOLD: exit_score={
+                                        conf.get('exit_score', 0):.1f} "
                                     f"hold_score={conf.get('hold_score', 0):.1f}"
                                 )
                                 return None
@@ -590,7 +613,7 @@ class PositionManagerMixin:
                             f"Peak: ${exit_result.get('peak', 0):.4f}"
                         )
 
-                    # ===== Liquidity-Cognitive Early Exit (إضافة سريعة فوق منطق الاستراتيجية) =====
+                    # ===== Liquidity-Cognitive Early Exit (إضافة سريعة فوق منط
                     # لا نمنع أي خروج تقرره الاستراتيجية؛ فقط نضيف خروجاً مبكراً إذا:
                     # - PnL سلبي/قريب من الصفر في سياق سيولة سيء، أو
                     # - ربح صغير جداً مع سياق سيولة ضعيف جداً.
@@ -635,7 +658,10 @@ class PositionManagerMixin:
                         )
                     if tp > 0 and current_price <= tp:
                         return self._close_position(
-                            position, current_price, "TAKE_PROFIT_FALLBACK", 1.0
+                            position,
+                            current_price,
+                            "TAKE_PROFIT_FALLBACK",
+                            1.0,
                         )
                 else:
                     if sl > 0 and current_price <= sl:
@@ -644,13 +670,20 @@ class PositionManagerMixin:
                         )
                     if tp > 0 and current_price >= tp:
                         return self._close_position(
-                            position, current_price, "TAKE_PROFIT_FALLBACK", 1.0
+                            position,
+                            current_price,
+                            "TAKE_PROFIT_FALLBACK",
+                            1.0,
                         )
 
         return None
 
     def _close_position(
-        self, position: Dict, exit_price: float, reason: str, close_pct: float = 1.0
+        self,
+        position: Dict,
+        exit_price: float,
+        reason: str,
+        close_pct: float = 1.0,
     ) -> Dict:
         """إغلاق صفقة (كاملة أو جزئية)
 
@@ -692,7 +725,9 @@ class PositionManagerMixin:
             )
             if not demo_close_fill.get("success"):
                 self.logger.warning(
-                    f"⚠️ Demo close simulation failed for {symbol}: {demo_close_fill.get('message')}"
+                    f"⚠️ Demo close simulation failed for {symbol}: {
+                        demo_close_fill.get('message')
+                    }"
                 )
                 return None
 
@@ -709,7 +744,8 @@ class PositionManagerMixin:
             pnl = pnl_raw - exit_commission
             pnl_pct = pnl / position_size_entry if position_size_entry > 0 else 0
             self.logger.info(
-                f"   💰 Demo Exit Fill: ${exit_price:.4f} | Commission ${exit_commission:.4f} "
+                f"   💰 Demo Exit Fill: ${exit_price:.4f} | Commission ${
+                    exit_commission:.4f} "
                 f"(Entry commission ${entry_commission:.4f} already deducted at open)"
             )
         else:
@@ -732,7 +768,8 @@ class PositionManagerMixin:
                     return None
 
             self.logger.info(
-                f"   💱 Executing REAL close on Binance: {position_type} {symbol} qty={quantity:.6f}"
+                f"   💱 Executing REAL close on Binance: {position_type} {symbol} qty={
+                    quantity:.6f}"
             )
 
             if position_type == "LONG":
@@ -772,7 +809,9 @@ class PositionManagerMixin:
                 )
                 self._report_trading_error(
                     message="Binance close failed",
-                    details=f"user_id={self.user_id}, symbol={symbol}, message={close_result.get('message')}",
+                    details=f"user_id={self.user_id}, symbol={symbol}, message={
+                        close_result.get('message')
+                    }",
                     critical=False,
                     requires_admin=False,
                     auto_action="retry_close_order",
@@ -803,6 +842,7 @@ class PositionManagerMixin:
                 )
 
                 # 2. تحديث رصيد المحفظة (على نفس الاتصال)
+                # ملاحظة: demo_accounts هو المصدر، portfolio.is_demo=TRUE يتم مزامنته
                 if position_is_demo:
                     balance_row = conn.execute(
                         "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
@@ -825,7 +865,9 @@ class PositionManagerMixin:
                     self.user_portfolio["balance"] = new_balance
                     self.user_portfolio["available_balance"] = new_balance
                 self.logger.info(
-                    f"   💰 Balance updated atomically: ${current_balance:.2f} → ${new_balance:.2f} (returned ${position_size_entry:.2f} + PnL {pnl:+.2f})"
+                    f"   💰 Balance updated atomically: ${current_balance:.2f} → ${
+                        new_balance:.2f} (returned ${position_size_entry:.2f} + PnL {
+                        pnl:+.2f})"
                 )
 
         except Exception as e:
@@ -997,7 +1039,8 @@ class PositionManagerMixin:
                     original_size = position_size
                     position_size = position_size * size_mult
                     self.logger.info(
-                        f"   📈 Adaptive size: ${original_size:.2f} × {size_mult:.2f} = ${position_size:.2f}"
+                        f"   📈 Adaptive size: ${original_size:.2f} × {
+                            size_mult:.2f} = ${position_size:.2f}"
                     )
             except Exception as e:
                 self.logger.warning(f"⚠️ Adaptive size error: {e}")
@@ -1005,7 +1048,8 @@ class PositionManagerMixin:
         # ✅ رفض إذا أقل من الحد الأدنى $10 (Binance)
         if position_size < 10:
             self.logger.warning(
-                f"❌ Rejected {symbol}: Position size ${position_size:.2f} < $10 minimum"
+                f"❌ Rejected {symbol}: Position size ${
+                    position_size:.2f} < $10 minimum"
             )
             return None
 
@@ -1025,7 +1069,9 @@ class PositionManagerMixin:
             )
             if not demo_open_fill.get("success"):
                 self.logger.warning(
-                    f"⚠️ Demo open simulation failed for {symbol}: {demo_open_fill.get('message')}"
+                    f"⚠️ Demo open simulation failed for {symbol}: {
+                        demo_open_fill.get('message')
+                    }"
                 )
                 return None
 
@@ -1049,7 +1095,8 @@ class PositionManagerMixin:
                 return None
 
             self.logger.info(
-                f"   💱 Executing REAL {side} order on Binance: {symbol} qty={quantity:.6f}"
+                f"   💱 Executing REAL {side} order on Binance: {symbol} qty={
+                    quantity:.6f}"
             )
 
             if side == "LONG":
@@ -1067,7 +1114,9 @@ class PositionManagerMixin:
                 )
                 self._report_trading_error(
                     message="Binance open order failed",
-                    details=f"user_id={self.user_id}, symbol={symbol}, side={side}, message={result.get('message', 'unknown error')}",
+                    details=f"user_id={self.user_id}, symbol={symbol}, side={
+                        side
+                    }, message={result.get('message', 'unknown error')}",
                     critical=False,
                     requires_admin=False,
                     auto_action="retry_open_order",
@@ -1094,7 +1143,8 @@ class PositionManagerMixin:
             position_size = entry_price * quantity
 
             self.logger.info(
-                f"   ✅ Binance order FILLED: price=${entry_price:.4f} qty={quantity:.6f} "
+                f"   ✅ Binance order FILLED: price=${entry_price:.4f} qty={
+                    quantity:.6f} "
                 f"commission=${entry_commission:.4f} order_id={order_id}"
             )
 
@@ -1108,7 +1158,8 @@ class PositionManagerMixin:
                     adaptive_sl = self.optimizer.get_optimal_sl(symbol)
                     if adaptive_sl != sl_pct:
                         self.logger.info(
-                            f"   📈 Adaptive SL: {sl_pct * 100:.1f}% → {adaptive_sl * 100:.1f}% for {symbol}"
+                            f"   📈 Adaptive SL: {sl_pct * 100:.1f}% → {
+                                adaptive_sl * 100:.1f}% for {symbol}"
                         )
                         sl_pct = adaptive_sl
                 except Exception as e:
@@ -1175,7 +1226,8 @@ class PositionManagerMixin:
                 self.user_portfolio["balance"] = new_balance
                 self.user_portfolio["available_balance"] = new_balance
                 self.logger.info(
-                    f"   💰 Balance deducted atomically: ${balance:.2f} → ${new_balance:.2f} (-${total_deduction:.2f})"
+                    f"   💰 Balance deducted atomically: ${balance:.2f} → ${
+                        new_balance:.2f} (-${total_deduction:.2f})"
                 )
 
         except Exception as e:

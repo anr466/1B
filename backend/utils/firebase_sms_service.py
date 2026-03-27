@@ -45,7 +45,9 @@ class FirebaseSMSHandler:
 
         cred_path = _find_firebase_credentials_file()
         if not cred_path:
-            logger.warning("No Firebase service-account credentials file found")
+            logger.warning(
+                "No Firebase service-account credentials file found"
+            )
             return
 
         try:
@@ -84,7 +86,9 @@ class FirebaseSMSHandler:
                 return False, {"error": "الرمز لا يحتوي رقم هاتف"}
 
             if expected_phone_number and expected_phone_number.strip():
-                if _normalize_phone(phone_number) != _normalize_phone(expected_phone_number):
+                if _normalize_phone(phone_number) != _normalize_phone(
+                    expected_phone_number
+                ):
                     return False, {"error": "رقم الهاتف لا يطابق الرمز"}
 
             return True, {"phone_number": phone_number, "uid": uid}
@@ -92,7 +96,9 @@ class FirebaseSMSHandler:
             logger.warning("Firebase token verification failed: %s", exc)
             return False, {"error": "فشل التحقق من رمز Firebase"}
 
-    def update_user_verification_status(self, user_id: int, phone_number: str) -> bool:
+    def update_user_verification_status(
+        self, user_id: int, phone_number: str
+    ) -> bool:
         """Persist phone verification status for a user."""
         try:
             with self._db.get_write_connection() as conn:
@@ -114,7 +120,10 @@ class FirebaseSMSHandler:
 
     def send_sms(self, phone_number: str, message: str) -> bool:
         """Compatibility method. Firebase Admin cannot send SMS directly."""
-        logger.info("SMS send requested for %s (not supported server-side by Firebase Admin)", phone_number)
+        logger.info(
+            "SMS send requested for %s (not supported server-side by Firebase Admin)",
+            phone_number,
+        )
         return False
 
 
@@ -130,7 +139,9 @@ def send_sms_otp(phone: str, otp_code: str, action_name: str) -> bool:
 
     Returns False so caller can use its existing fallback flow.
     """
-    logger.info("send_sms_otp fallback path used for %s action=%s", phone, action_name)
+    logger.info(
+        "send_sms_otp fallback path used for %s action=%s", phone, action_name
+    )
     return False
 
 

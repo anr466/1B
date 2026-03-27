@@ -34,7 +34,11 @@ from backend.analysis.liquidity_analyzer import LiquidityAnalyzer
 from backend.analysis.market_regime_detector import MarketRegimeDetector
 
 try:
-    from backend.analysis.smart_money_orchestrator import SmartMoneyOrchestrator, SmartMoneySignal
+    from backend.analysis.smart_money_orchestrator import (
+        SmartMoneyOrchestrator,
+        SmartMoneySignal,
+    )
+
     SMART_MONEY_AVAILABLE = True
 except Exception:  # pragma: no cover - اختياري
     SmartMoneyOrchestrator = None  # type: ignore
@@ -54,7 +58,9 @@ class LiquidityCognitiveFilter:
 
     def __init__(self, data_provider: Any, mode: str = "balanced") -> None:
         self.data_provider = data_provider
-        self.mode = mode if mode in {"conservative", "balanced"} else "balanced"
+        self.mode = (
+            mode if mode in {"conservative", "balanced"} else "balanced"
+        )
         self.logger = logging.getLogger(f"{__name__}.LiquidityCognitiveFilter")
 
         self.liquidity_analyzer = LiquidityAnalyzer()
@@ -63,15 +69,21 @@ class LiquidityCognitiveFilter:
         if SMART_MONEY_AVAILABLE:
             try:
                 self.smart_money = SmartMoneyOrchestrator()
-                self.logger.info("💧 Liquidity-Cognitive SmartMoney layer enabled")
+                self.logger.info(
+                    "💧 Liquidity-Cognitive SmartMoney layer enabled"
+                )
             except Exception as e:  # pragma: no cover - حماية تشغيلية
-                self.logger.warning(f"⚠️ Failed to init SmartMoneyOrchestrator: {e}")
+                self.logger.warning(
+                    f"⚠️ Failed to init SmartMoneyOrchestrator: {e}"
+                )
                 self.smart_money = None
 
     # ------------------------------------------------------------------
     # واجهة رئيسية للدخول
     # ------------------------------------------------------------------
-    def evaluate_entry(self, symbol: str, df_1h: pd.DataFrame, signal: Dict[str, Any]) -> Dict[str, Any]:
+    def evaluate_entry(
+        self, symbol: str, df_1h: pd.DataFrame, signal: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """تقييم إشارة دخول واحدة.
 
         Returns dict with:
@@ -95,10 +107,14 @@ class LiquidityCognitiveFilter:
             raw_score = float(signal.get("score", 0) or 0)
             confidence = float(signal.get("confidence", 0) or 0)
             # مزيج بسيط: الثقة أساس + مكافأة للـ score
-            signal_score = max(0.0, min(100.0, confidence * 0.6 + raw_score * 4.0))
+            signal_score = max(
+                0.0, min(100.0, confidence * 0.6 + raw_score * 4.0)
+            )
 
             # 2) تحليل السيولة والسوق / Smart Money
-            liquidity_score, reasons = self._compute_liquidity_score(symbol, df_1h, side)
+            liquidity_score, reasons = self._compute_liquidity_score(
+                symbol, df_1h, side
+            )
 
             # 3) دمج النتيجتين
             total_score = 0.6 * signal_score + 0.4 * liquidity_score
@@ -108,7 +124,8 @@ class LiquidityCognitiveFilter:
             result["total_score"] = total_score
             result["reasons"] = reasons
 
-            # 4) منطق العتبات حسب الوضع (متوازن/محافظ) + عدوانية عند الإشارات القوية
+            # 4) منطق العتبات حسب الوضع (متوازن/محافظ) + عدوانية عند الإشارات
+            # القوية
             base_thresholds = {
                 "conservative": {"liq_min": 65.0, "total_min": 75.0},
                 "balanced": {"liq_min": 55.0, "total_min": 65.0},
@@ -117,7 +134,8 @@ class LiquidityCognitiveFilter:
             liq_min = thr["liq_min"]
             total_min = thr["total_min"]
 
-            # Aggressive override: إذا الإشارة نفسها قوية جداً نخفف الشروط قليلاً
+            # Aggressive override: إذا الإشارة نفسها قوية جداً نخفف الشروط
+            # قليلاً
             if signal_score >= 85.0:
                 liq_min -= 10.0
                 total_min -= 5.0
@@ -134,7 +152,10 @@ class LiquidityCognitiveFilter:
                 # إشارة غير مقنعة من ناحية السيولة/السياق
                 result["decision"] = "REJECT"
                 result["size_factor"] = 0.0
-            elif liquidity_score < liq_min + 5.0 or total_score < total_min + 5.0:
+            elif (
+                liquidity_score < liq_min + 5.0
+                or total_score < total_min + 5.0
+            ):
                 # حالة وسط: دخول مسموح لكن بحجم أقل
                 result["decision"] = "DOWNGRADE"
                 result["size_factor"] = 0.5
@@ -142,20 +163,25 @@ class LiquidityCognitiveFilter:
                 result["decision"] = "ACCEPT"
                 result["size_factor"] = 1.0
 
-            self.logger.info(
-                f"💧 [{symbol}] LiquidityFilter {result['decision']} "
-                f"sig={signal_score:.1f} liq={liquidity_score:.1f} total={total_score:.1f}"
-            )
+            self.logger.info(f"💧 [{symbol}] LiquidityFilter {
+                result['decision']} " f"sig={
+                signal_score:.1f} liq={
+                liquidity_score:.1f} total={
+                total_score:.1f}")
             return result
 
-        except Exception as e:  # pragma: no cover - في حال الخطأ نسمح بالإشارة ولا نكسر النظام
+        except (
+            Exception
+        ) as e:  # pragma: no cover - في حال الخطأ نسمح بالإشارة ولا نكسر النظام
             self.logger.warning(f"⚠️ Liquidity filter error for {symbol}: {e}")
             return result
 
     # ------------------------------------------------------------------
     # حساب درجة السيولة + Smart Money + حالة السوق
     # ------------------------------------------------------------------
-    def _compute_liquidity_score(self, symbol: str, df_1h: pd.DataFrame, side: str) -> Tuple[float, List[str]]:
+    def _compute_liquidity_score(
+        self, symbol: str, df_1h: pd.DataFrame, side: str
+    ) -> Tuple[float, List[str]]:
         reasons: List[str] = []
         score_components: List[float] = []
 
@@ -196,25 +222,44 @@ class LiquidityCognitiveFilter:
         # 3) Smart Money / Liquidity Sweeps إذا متاح
         if self.smart_money is not None:
             try:
-                df_15m = self.data_provider.get_historical_data(symbol, "15m", limit=200)
-                df_5m = self.data_provider.get_historical_data(symbol, "5m", limit=200)
-                if df_15m is not None and len(df_15m) >= 60 and df_5m is not None and len(df_5m) >= 60:
-                    sm_result = self.smart_money.analyze_smart_money_activity(symbol, df_15m, df_5m)
-                    confluence = float(sm_result.get("confluence_score", 0.0) or 0.0)
+                df_15m = self.data_provider.get_historical_data(
+                    symbol, "15m", limit=200
+                )
+                df_5m = self.data_provider.get_historical_data(
+                    symbol, "5m", limit=200
+                )
+                if (
+                    df_15m is not None
+                    and len(df_15m) >= 60
+                    and df_5m is not None
+                    and len(df_5m) >= 60
+                ):
+                    sm_result = self.smart_money.analyze_smart_money_activity(
+                        symbol, df_15m, df_5m
+                    )
+                    confluence = float(
+                        sm_result.get("confluence_score", 0.0) or 0.0
+                    )
                     score_components.append(confluence)
                     reasons.append(f"SmartMoney confluence={confluence:.1f}")
 
-                    smart_sig: Optional[SmartMoneySignal] = sm_result.get("smart_money_signal")  # type: ignore
+                    smart_sig: Optional[SmartMoneySignal] = sm_result.get(
+                        "smart_money_signal"
+                    )  # type: ignore
                     if smart_sig is not None:
                         # توافق الاتجاه بين إشارة V7 و Smart Money
-                        if (side == "LONG" and smart_sig.signal_type == "BUY") or (
+                        if (
+                            side == "LONG" and smart_sig.signal_type == "BUY"
+                        ) or (
                             side == "SHORT" and smart_sig.signal_type == "SELL"
                         ):
-                            reasons.append(f"SmartMoney aligned ({smart_sig.signal_type})")
+                            reasons.append(f"SmartMoney aligned ({
+                                smart_sig.signal_type})")
                             score_components.append(15.0)
                         elif smart_sig.signal_type in {"BUY", "SELL"}:
                             # تعارض مباشر
-                            reasons.append(f"SmartMoney conflict ({smart_sig.signal_type})")
+                            reasons.append(f"SmartMoney conflict ({
+                                smart_sig.signal_type})")
                             score_components.append(-20.0)
             except Exception as e:  # pragma: no cover
                 logger.debug(f"SmartMoney analysis failed for {symbol}: {e}")
@@ -230,7 +275,9 @@ class LiquidityCognitiveFilter:
     # ------------------------------------------------------------------
     # Early Exit Helper — لا يمنع الخروج الحالي، فقط يضيف خروجاً مبكراً عند الحاجة
     # ------------------------------------------------------------------
-    def evaluate_early_exit(self, symbol: str, df_1h: pd.DataFrame, position: Dict[str, Any]) -> Dict[str, Any]:
+    def evaluate_early_exit(
+        self, symbol: str, df_1h: pd.DataFrame, position: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """محاولة اقتراح خروج مبكر بناءً على السيولة والسياق.
 
         لا يُستخدم لإلغاء أي خروج قائم من الاستراتيجية/أنظمة الخروج؛
@@ -268,7 +315,9 @@ class LiquidityCognitiveFilter:
                 pnl_frac = (current_price - entry_price) / entry_price
 
             # إعادة استخدام منطق السيولة نفسه
-            liquidity_score, reasons = self._compute_liquidity_score(symbol, df_1h, side)
+            liquidity_score, reasons = self._compute_liquidity_score(
+                symbol, df_1h, side
+            )
 
             result["details"] = {
                 "pnl_pct": pnl_frac * 100.0,
@@ -285,7 +334,8 @@ class LiquidityCognitiveFilter:
                 trigger = True
                 exit_reason = "LIQ_EARLY_EXIT_NEGATIVE_OR_FLAT"
 
-            # 2) ربح صغير (< 0.5%) لكن سيولة سيئة جداً → لا نستغل الحركة حتى تتحول لفخ
+            # 2) ربح صغير (< 0.5%) لكن سيولة سيئة جداً → لا نستغل الحركة حتى
+            # تتحول لفخ
             elif 0 < pnl_frac < 0.005 and liquidity_score < 45.0:
                 trigger = True
                 exit_reason = "LIQ_EARLY_EXIT_SMALL_PROFIT_WEAK_CONTEXT"
@@ -299,7 +349,9 @@ class LiquidityCognitiveFilter:
             return result
 
         except Exception as e:  # pragma: no cover - حماية تشغيلية
-            self.logger.warning(f"⚠️ Liquidity early-exit error for {symbol}: {e}")
+            self.logger.warning(
+                f"⚠️ Liquidity early-exit error for {symbol}: {e}"
+            )
             return result
 
     # ------------------------------------------------------------------
@@ -359,36 +411,67 @@ class LiquidityCognitiveFilter:
             # PnL-based contribution
             if pnl_frac <= -0.01:  # خسارة أكبر من 1%
                 exit_score += 25.0
-                reasons.append(f"PnL loss {pnl_frac*100:.2f}% → favors EXIT")
+                reasons.append(f"PnL loss {pnl_frac * 100:.2f}% → favors EXIT")
             elif -0.01 < pnl_frac < 0.003:
                 exit_score += 10.0
-                reasons.append(f"PnL flat/weak {pnl_frac*100:.2f}% → slight EXIT bias")
+                reasons.append(
+                    f"PnL flat/weak {pnl_frac * 100:.2f}% → slight EXIT bias"
+                )
             elif pnl_frac >= 0.02:  # ربح أكبر من 2%
                 hold_score += 20.0
-                reasons.append(f"PnL profit {pnl_frac*100:.2f}% → favors HOLD/let run")
+                reasons.append(f"PnL profit {
+                    pnl_frac *
+                    100:.2f}% → favors HOLD/let run")
 
             # 2) نمط الشموع على إطار التنفيذ
             try:
                 last = df_exec.iloc[-1]
                 prev = df_exec.iloc[-2]
-                o, h, l, c = last["open"], last["high"], last["low"], last["close"]
+                o, h, l, c = (
+                    last["open"],
+                    last["high"],
+                    last["low"],
+                    last["close"],
+                )
                 body = abs(c - o)
                 range_ = max(h - l, 1e-8)
                 body_ratio = body / range_
 
                 # شمعة انعكاسية قوية ضد الصفقة
-                if side == "LONG" and c < o and body_ratio > 0.6 and c < prev["close"]:
+                if (
+                    side == "LONG"
+                    and c < o
+                    and body_ratio > 0.6
+                    and c < prev["close"]
+                ):
                     exit_score += 20.0
                     reasons.append("Strong bearish candle against LONG → EXIT")
-                elif side == "SHORT" and c > o and body_ratio > 0.6 and c > prev["close"]:
+                elif (
+                    side == "SHORT"
+                    and c > o
+                    and body_ratio > 0.6
+                    and c > prev["close"]
+                ):
                     exit_score += 20.0
-                    reasons.append("Strong bullish candle against SHORT → EXIT")
+                    reasons.append(
+                        "Strong bullish candle against SHORT → EXIT"
+                    )
 
                 # شمعة استمرارية مع الصفقة
-                if side == "LONG" and c > o and body_ratio > 0.6 and c > prev["close"]:
+                if (
+                    side == "LONG"
+                    and c > o
+                    and body_ratio > 0.6
+                    and c > prev["close"]
+                ):
                     hold_score += 15.0
                     reasons.append("Strong bullish continuation candle → HOLD")
-                elif side == "SHORT" and c < o and body_ratio > 0.6 and c < prev["close"]:
+                elif (
+                    side == "SHORT"
+                    and c < o
+                    and body_ratio > 0.6
+                    and c < prev["close"]
+                ):
                     hold_score += 15.0
                     reasons.append("Strong bearish continuation candle → HOLD")
             except Exception:
@@ -396,7 +479,9 @@ class LiquidityCognitiveFilter:
 
             # 3) سياق الإطار الأعلى (4h)
             try:
-                df_4h = self.data_provider.get_historical_data(symbol, "4h", limit=80)
+                df_4h = self.data_provider.get_historical_data(
+                    symbol, "4h", limit=80
+                )
                 if df_4h is not None and len(df_4h) >= 20:
                     close_now = float(df_4h["close"].iloc[-1])
                     close_past = float(df_4h["close"].iloc[-20])
@@ -405,31 +490,43 @@ class LiquidityCognitiveFilter:
                     if side == "LONG":
                         if delta_htf < -0.02:
                             exit_score += 20.0
-                            reasons.append("4h trend turned down vs LONG → EXIT")
+                            reasons.append(
+                                "4h trend turned down vs LONG → EXIT"
+                            )
                         elif delta_htf > 0.03:
                             hold_score += 20.0
-                            reasons.append("4h strong uptrend with LONG → HOLD")
+                            reasons.append(
+                                "4h strong uptrend with LONG → HOLD"
+                            )
                     else:  # SHORT
                         if delta_htf > 0.02:
                             exit_score += 20.0
-                            reasons.append("4h trend turned up vs SHORT → EXIT")
+                            reasons.append(
+                                "4h trend turned up vs SHORT → EXIT"
+                            )
                         elif delta_htf < -0.03:
                             hold_score += 20.0
-                            reasons.append("4h strong downtrend with SHORT → HOLD")
+                            reasons.append(
+                                "4h strong downtrend with SHORT → HOLD"
+                            )
             except Exception:
                 pass
 
             # 4) سيولة / Smart Money (نفس منطق الدخول)
             try:
-                liq_score, liq_reasons = self._compute_liquidity_score(symbol, df_exec, side)
+                liq_score, liq_reasons = self._compute_liquidity_score(
+                    symbol, df_exec, side
+                )
                 reasons.extend([f"LIQ: {r}" for r in liq_reasons])
 
                 if liq_score < 45.0:
                     exit_score += 20.0
-                    reasons.append(f"Weak liquidity score {liq_score:.1f} → favors EXIT")
+                    reasons.append(f"Weak liquidity score {
+                        liq_score:.1f} → favors EXIT")
                 elif liq_score > 65.0:
                     hold_score += 20.0
-                    reasons.append(f"Strong liquidity score {liq_score:.1f} → favors HOLD")
+                    reasons.append(f"Strong liquidity score {
+                        liq_score:.1f} → favors HOLD")
             except Exception:
                 pass
 
@@ -450,6 +547,8 @@ class LiquidityCognitiveFilter:
             )
             return result
 
-        except Exception as e:  # pragma: no cover - في حال الخطأ نؤكد الخروج ولا نعرقل
+        except (
+            Exception
+        ) as e:  # pragma: no cover - في حال الخطأ نؤكد الخروج ولا نعرقل
             self.logger.warning(f"⚠️ ExitConfirmation error for {symbol}: {e}")
             return result

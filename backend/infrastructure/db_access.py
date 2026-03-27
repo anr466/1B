@@ -2,7 +2,6 @@ from contextlib import contextmanager
 
 from database.database_manager import DatabaseManager
 
-
 _db_manager = DatabaseManager()
 
 

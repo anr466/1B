@@ -793,7 +793,8 @@ class _HybridTradeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final semantic = SemanticColors.of(context);
-    final sideColor = trade.isBuy ? semantic.positive : semantic.negative;
+    final isOpen = trade.isOpen;
+    final statusColor = isOpen ? semantic.info : semantic.positive;
 
     return Material(
       color: Colors.transparent,
@@ -802,7 +803,10 @@ class _HybridTradeTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
         child: IntrinsicHeight(
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: SpacingTokens.sm),
+            padding: const EdgeInsets.symmetric(
+              vertical: SpacingTokens.sm,
+              horizontal: SpacingTokens.sm,
+            ),
             decoration: BoxDecoration(
               color: cs.surfaceContainerLow,
               borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
@@ -812,16 +816,12 @@ class _HybridTradeTile extends StatelessWidget {
               ),
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
                   width: 4,
                   decoration: BoxDecoration(
-                    color: sideColor,
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(SpacingTokens.radiusMd),
-                      bottomRight: Radius.circular(SpacingTokens.radiusMd),
-                    ),
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(width: SpacingTokens.sm),
@@ -840,78 +840,63 @@ class _HybridTradeTile extends StatelessWidget {
                             ),
                           ),
                           StatusBadge(
-                            text: trade.isOpen ? 'مفتوحة' : 'مغلقة',
-                            type: trade.isOpen
-                                ? BadgeType.info
-                                : BadgeType.success,
+                            text: isOpen ? 'مفتوحة' : 'مغلقة',
+                            type: isOpen ? BadgeType.info : BadgeType.success,
                             showDot: false,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 4),
                       Row(
                         children: [
-                          StatusBadge(
-                            text: trade.isBuy ? 'شراء' : 'بيع',
-                            type: trade.isBuy
-                                ? BadgeType.success
-                                : BadgeType.error,
-                            showDot: false,
-                          ),
-                          const SizedBox(width: SpacingTokens.xs),
                           Expanded(
                             child: Text(
-                              trade.isOpen
-                                  ? (trade.currentPrice != null
-                                        ? 'الآن ${trade.currentPrice!.toStringAsFixed(4)}'
-                                        : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}')
-                                  : (trade.exitTime != null
-                                        ? 'خروج: ${_shortDateLabel(trade.exitTime!)}'
-                                        : trade.exitPrice != null
-                                        ? 'خرج بـ ${trade.exitPrice!.toStringAsFixed(4)}'
-                                        : 'مبلغ الدخول ${trade.entryAmount.toStringAsFixed(2)}'),
+                              isOpen
+                                  ? 'دخل: ${trade.entryPrice.toStringAsFixed(4)}'
+                                  : 'خرج: ${trade.exitPrice?.toStringAsFixed(4) ?? "-"}',
                               style: TypographyTokens.caption(
                                 cs.onSurface.withValues(alpha: 0.45),
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (trade.strategy != null)
+                            Text(
+                              trade.strategy!,
+                              style: TypographyTokens.caption(
+                                cs.onSurface.withValues(alpha: 0.35),
+                              ),
+                            ),
                         ],
                       ),
+                      if (!isOpen && trade.exitReason != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatExitReason(trade.exitReason!),
+                          style: TypographyTokens.caption(
+                            cs.onSurface.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
+                const SizedBox(width: SpacingTokens.sm),
                 SizedBox(
-                  width: 90,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: SpacingTokens.xs,
-                    ),
-                    child: trade.isOpen
-                        ? _OpenTradeLiveIndicator(trade: trade)
-                        : trade.pnl != null
-                        ? FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: PnlIndicator(
-                              amount: trade.pnl!,
-                              percentage: trade.pnlPct,
-                              compact: true,
-                              fontSize: 12,
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(
-                    end: SpacingTokens.sm,
-                  ),
-                  child: Icon(
-                    Icons.chevron_left_rounded,
-                    size: 18,
-                    color: cs.onSurface.withValues(alpha: 0.25),
-                  ),
+                  width: 85,
+                  child: isOpen
+                      ? _OpenTradeLiveIndicator(trade: trade)
+                      : trade.pnl != null
+                      ? FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: PnlIndicator(
+                            amount: trade.pnl!,
+                            percentage: trade.pnlPct,
+                            compact: true,
+                            fontSize: 12,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ],
             ),
@@ -921,12 +906,20 @@ class _HybridTradeTile extends StatelessWidget {
     );
   }
 
-  String _shortDateLabel(String iso) {
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return iso;
+  String _formatExitReason(String reason) {
+    switch (reason.toUpperCase()) {
+      case 'STOP_LOSS':
+        return 'وقف خسارة';
+      case 'TAKE_PROFIT':
+        return 'جني أرباح';
+      case 'TRAILING_STOP':
+        return 'وقف متحرك';
+      case 'MANUAL':
+        return 'يدوي';
+      case 'SIGNAL':
+        return 'إشارة';
+      default:
+        return reason;
     }
   }
 }

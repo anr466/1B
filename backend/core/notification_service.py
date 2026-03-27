@@ -4,7 +4,8 @@ from typing import Optional
 
 class NotificationService:
     def __init__(self, db=None):
-        # Lazy-injected DB wrapper; can be replaced with a real DB wrapper later
+        # Lazy-injected DB wrapper; can be replaced with a real DB wrapper
+        # later
         self.db = db
 
     def log_delivery(

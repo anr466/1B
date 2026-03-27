@@ -13,11 +13,11 @@ Endpoints:
 - GET /api/admin/background/logs
 """
 
+from backend.infrastructure.db_access import get_db_manager
 import os
 import sys
 import subprocess
 from datetime import datetime
-from pathlib import Path
 from config.logging_config import get_logger
 from flask import Blueprint, request, jsonify
 from functools import wraps
@@ -29,7 +29,6 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, "backend"))
 sys.path.insert(0, os.path.join(project_root, "utils"))
 
-from backend.infrastructure.db_access import get_db_manager
 
 try:
     from utils.error_logger import error_logger
@@ -63,9 +62,15 @@ except (ImportError, ModuleNotFoundError):
         def admin_require(f):
             @wraps(f)
             def decorated_function(*args, **kwargs):
-                return _jsonify(
-                    {"success": False, "error": "Admin auth system unavailable"}
-                ), 503
+                return (
+                    _jsonify(
+                        {
+                            "success": False,
+                            "error": "Admin auth system unavailable",
+                        }
+                    ),
+                    503,
+                )
 
             return decorated_function
 
@@ -103,7 +108,8 @@ except (ImportError, ModuleNotFoundError):
 background_bp = Blueprint(
     "background_control", __name__, url_prefix="/admin/background"
 )
-# ملاحظة: جميع الـ routes تبدأ من /api/admin/background/* (Flask mounted on /api)
+# ملاحظة: جميع الـ routes تبدأ من /api/admin/background/* (Flask mounted
+# on /api)
 logger = get_logger(__name__)
 db_manager = get_db_manager()
 
@@ -137,13 +143,12 @@ def start_background_system():
     ⛔ DEPRECATED: استخدم /admin/trading/start (State Machine) بدلاً من هذا
     يُعيد توجيه الطلب للحفاظ على التوافق
     """
-    return jsonify(
-        {
-            "success": False,
-            "error": "هذا المسار مُلغى. استخدم POST /api/admin/trading/start",
-            "redirect": "/api/admin/trading/start",
-        }
-    ), 410  # 410 Gone
+    return (jsonify({"success": False,
+                     "error": "هذا المسار مُلغى. استخدم POST /api/admin/trading/start",
+                     "redirect": "/api/admin/trading/start",
+                     }),
+            410,
+            )  # 410 Gone
 
 
 @background_bp.route("/stop", methods=["POST"])
@@ -152,13 +157,12 @@ def stop_background_system():
     """
     ⛔ DEPRECATED: استخدم /admin/trading/stop (State Machine) بدلاً من هذا
     """
-    return jsonify(
-        {
-            "success": False,
-            "error": "هذا المسار مُلغى. استخدم POST /api/admin/trading/stop",
-            "redirect": "/api/admin/trading/stop",
-        }
-    ), 410
+    return (jsonify({"success": False,
+                     "error": "هذا المسار مُلغى. استخدم POST /api/admin/trading/stop",
+                     "redirect": "/api/admin/trading/stop",
+                     }),
+            410,
+            )
 
 
 @background_bp.route("/emergency-stop", methods=["POST"])
@@ -167,13 +171,15 @@ def emergency_stop_background_system():
     """
     ⛔ DEPRECATED: استخدم /admin/trading/emergency-stop (State Machine) بدلاً من هذا
     """
-    return jsonify(
-        {
-            "success": False,
-            "error": "هذا المسار مُلغى. استخدم POST /api/admin/trading/emergency-stop",
-            "redirect": "/api/admin/trading/emergency-stop",
-        }
-    ), 410
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": "هذا المسار مُلغى. استخدم POST /api/admin/trading/emergency-stop",
+                "redirect": "/api/admin/trading/emergency-stop",
+            }),
+        410,
+    )
 
 
 @background_bp.route("/status", methods=["GET"])
@@ -185,7 +191,7 @@ def get_background_status():
     الأدمن فقط
     """
     try:
-        from pathlib import Path
+        pass
 
         # ✅ الخطوة 1: التحقق من العملية الفعلية أولاً (المصدر الحقيقي)
         process_running = False
@@ -220,14 +226,18 @@ def get_background_status():
                             start_time_str, "%a %b %d %H:%M:%S %Y"
                         )
                         started_at = start_time.isoformat()
-                        uptime = int((datetime.now() - start_time).total_seconds())
+                        uptime = int(
+                            (datetime.now() - start_time).total_seconds()
+                        )
         except Exception as proc_error:
             logger.warning(f"⚠️ فشل فحص العملية: {proc_error}")
 
         # ✅ الخطوة 2: جلب حالة قاعدة البيانات من State Machine (المصدر الموحد)
         db_status = {}
         try:
-            from backend.core.trading_state_machine import get_trading_state_machine
+            from backend.core.trading_state_machine import (
+                get_trading_state_machine,
+            )
 
             tsm = get_trading_state_machine()
             tsm_state = tsm.get_state()
@@ -251,13 +261,14 @@ def get_background_status():
                     "is_running": process_running,
                     "status": actual_status,
                     "last_update": datetime.now().isoformat(),
-                    "message": f"النظام {'يعمل' if process_running else 'متوقف'}",
+                    "message": f"النظام {
+                        'يعمل' if process_running else 'متوقف'}",
                     "uptime": uptime,
                     "started_at": started_at,
                     "pid": pid,
-                    "uptime_formatted": _format_uptime(uptime)
-                    if process_running
-                    else None,
+                    "uptime_formatted": (
+                        _format_uptime(uptime) if process_running else None
+                    ),
                 },
             }
         )
@@ -286,7 +297,9 @@ def get_background_logs():
 
         with open(log_file, "r", encoding="utf-8") as f:
             all_lines = f.readlines()
-            last_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            last_lines = (
+                all_lines[-lines:] if len(all_lines) > lines else all_lines
+            )
 
         return jsonify(
             {
@@ -333,7 +346,9 @@ def get_errors():
             limit=limit, level=level, source=source, resolved=resolved
         )
 
-        return jsonify({"success": True, "count": len(errors), "errors": errors})
+        return jsonify(
+            {"success": True, "count": len(errors), "errors": errors}
+        )
 
     except Exception as e:
         logger.error(f"❌ خطأ في جلب الأخطاء: {e}")
@@ -352,7 +367,9 @@ def get_critical_errors():
         limit = request.args.get("limit", 20, type=int)
 
         if not error_logger:
-            return jsonify({"success": True, "count": 0, "critical_errors": []})
+            return jsonify(
+                {"success": True, "count": 0, "critical_errors": []}
+            )
 
         errors = error_logger.get_critical_errors(limit=limit)
 
@@ -376,7 +393,10 @@ def get_error_stats():
     try:
         if not error_logger:
             return jsonify(
-                {"success": True, "stats": {"total": 0, "critical": 0, "unresolved": 0}}
+                {
+                    "success": True,
+                    "stats": {"total": 0, "critical": 0, "unresolved": 0},
+                }
             )
 
         stats = error_logger.get_error_stats()
@@ -401,12 +421,16 @@ def resolve_error(error_id):
         resolved_by = data.get("resolved_by", "admin")
 
         if not error_logger:
-            return jsonify({"success": True, "message": f"تم حل الخطأ #{error_id}"})
+            return jsonify(
+                {"success": True, "message": f"تم حل الخطأ #{error_id}"}
+            )
 
         success = error_logger.resolve_error(error_id, resolved_by)
 
         if success:
-            return jsonify({"success": True, "message": f"تم حل الخطأ #{error_id}"})
+            return jsonify(
+                {"success": True, "message": f"تم حل الخطأ #{error_id}"}
+            )
         else:
             return jsonify({"success": False, "error": "فشل في حل الخطأ"}), 500
 
@@ -429,13 +453,21 @@ def resolve_all_errors():
 
         if not error_logger:
             return jsonify(
-                {"success": True, "message": "تم حل 0 خطأ", "resolved_count": 0}
+                {
+                    "success": True,
+                    "message": "تم حل 0 خطأ",
+                    "resolved_count": 0,
+                }
             )
 
         count = error_logger.resolve_all_errors(resolved_by)
 
         return jsonify(
-            {"success": True, "message": f"تم حل {count} خطأ", "resolved_count": count}
+            {
+                "success": True,
+                "message": f"تم حل {count} خطأ",
+                "resolved_count": count,
+            }
         )
 
     except Exception as e:
@@ -461,7 +493,9 @@ def get_operations_log():
                 limit=limit, operation_type=operation_type
             )
 
-        return jsonify({"success": True, "data": operations, "count": len(operations)})
+        return jsonify(
+            {"success": True, "data": operations, "count": len(operations)}
+        )
 
     except Exception as e:
         logger.error(f"❌ خطأ في جلب السجل: {e}")

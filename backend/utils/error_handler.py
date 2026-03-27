@@ -4,6 +4,7 @@
 Error Handler - معالجة الأخطاء الموحدة
 """
 
+
 class HTTPStatus:
     OK = 200
     CREATED = 201
@@ -25,6 +26,7 @@ class ErrorMessages:
 def log_error(message, error=None):
     """تسجيل الأخطاء - للتوافق مع الكود القديم"""
     import logging
+
     logger = logging.getLogger(__name__)
     if error:
         logger.error(f"{message}: {error}")

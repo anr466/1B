@@ -3,14 +3,15 @@
 يوفر واجهة آمنة للتفاعل مع Binance API
 """
 
+from backend.utils.trading_context import get_effective_is_demo
+from backend.infrastructure.db_access import get_db_manager
 import os
 import logging
 import json
 import threading
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime
+from typing import Dict, Optional, Any, Tuple
 from decimal import Decimal
-import asyncio
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceOrderException
 import sys
@@ -18,15 +19,10 @@ from pathlib import Path
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "database"))
-from backend.infrastructure.db_access import get_db_manager
-from backend.utils.trading_context import get_effective_is_demo
-import hashlib
-import hmac
-import base64
 
 # استيراد خدمة التشفير الموحدة
 try:
-    from config.security.encryption_service import decrypt_binance_keys, decrypt_text
+    from config.security.encryption_service import decrypt_text
 
     ENCRYPTION_AVAILABLE = True
 except ImportError:
@@ -56,7 +52,9 @@ class BinanceManager:
                 self.__class__._shared_balance_locks[user_id] = lock
             return lock
 
-    def _decrypt_api_keys(self, encrypted_key: str, encrypted_secret: str) -> tuple:
+    def _decrypt_api_keys(
+        self, encrypted_key: str, encrypted_secret: str
+    ) -> tuple:
         """فك تشفير مفاتيح API باستخدام خدمة التشفير الموحدة"""
         try:
             if ENCRYPTION_AVAILABLE:
@@ -72,7 +70,11 @@ class BinanceManager:
             return encrypted_key, encrypted_secret
 
     def save_user_api_keys(
-        self, user_id: int, api_key: str, api_secret: str, is_testnet: bool = True
+        self,
+        user_id: int,
+        api_key: str,
+        api_secret: str,
+        is_testnet: bool = True,
     ) -> bool:
         """حفظ مفاتيح API للمستخدم"""
         try:
@@ -82,13 +84,14 @@ class BinanceManager:
             with self.db_manager.get_write_connection() as conn:
                 # حذف المفاتيح القديمة إن وجدت
                 conn.execute(
-                    "DELETE FROM user_binance_keys WHERE user_id = %s", (user_id,)
+                    "DELETE FROM user_binance_keys WHERE user_id = %s",
+                    (user_id,),
                 )
 
                 # إدراج المفاتيح الجديدة
                 conn.execute(
                     """
-                    INSERT INTO user_binance_keys 
+                    INSERT INTO user_binance_keys
                     (user_id, api_key, api_secret, is_testnet, is_active)
                     VALUES (%s, %s, %s, %s, FALSE)
                 """,
@@ -113,7 +116,10 @@ class BinanceManager:
             # إنشاء عميل Binance
             client = self._get_binance_client(user_id)
             if not client:
-                return {"success": False, "message": "فشل في إنشاء عميل Binance"}
+                return {
+                    "success": False,
+                    "message": "فشل في إنشاء عميل Binance",
+                }
 
             # اختبار الاتصال
             account_info = client.get_account()
@@ -131,8 +137,8 @@ class BinanceManager:
             with self.db_manager.get_write_connection() as conn:
                 conn.execute(
                     """
-                    UPDATE user_binance_keys SET is_active = TRUE, 
-                        permissions = %s, 
+                    UPDATE user_binance_keys SET is_active = TRUE,
+                        permissions = %s,
                         last_verified = CURRENT_TIMESTAMP
                     WHERE user_id = %s
                 """,
@@ -163,7 +169,7 @@ class BinanceManager:
                 row = conn.execute(
                     """
                     SELECT api_key, api_secret, is_testnet, is_active, permissions, last_verified
-                    FROM user_binance_keys 
+                    FROM user_binance_keys
                     WHERE user_id = %s
                 """,
                     (user_id,),
@@ -182,12 +188,15 @@ class BinanceManager:
                 allow_env_keys = (
                     os.getenv("ALLOW_ENV_BINANCE_KEYS_FOR_TESTING") or ""
                 ).strip().lower() in ("1", "true", "yes", "on")
-                env_api_key = (os.getenv("BINANCE_BACKEND_API_KEY") or "").strip()
-                env_api_secret = (os.getenv("BINANCE_BACKEND_API_SECRET") or "").strip()
+                env_api_key = (
+                    os.getenv("BINANCE_BACKEND_API_KEY") or ""
+                ).strip()
+                env_api_secret = (
+                    os.getenv("BINANCE_BACKEND_API_SECRET") or ""
+                ).strip()
                 if allow_env_keys and env_api_key and env_api_secret:
                     self.logger.info(
-                        f"✅ استخدام مفاتيح Binance من البيئة للمستخدم {user_id} داخل BinanceManager في وضع الاختبار"
-                    )
+                        f"✅ استخدام مفاتيح Binance من البيئة للمستخدم {user_id} داخل BinanceManager في وضع الاختبار")
                     return {
                         "api_key": env_api_key,
                         "api_secret": env_api_secret,
@@ -222,7 +231,9 @@ class BinanceManager:
 
             # إنشاء العميل
             client = Client(
-                api_key=api_key, api_secret=api_secret, testnet=api_data["is_testnet"]
+                api_key=api_key,
+                api_secret=api_secret,
+                testnet=api_data["is_testnet"],
             )
 
             # حفظ في التخزين المؤقت
@@ -283,7 +294,9 @@ class BinanceManager:
 
         return total_usdt, free_usdt, locked_usdt
 
-    def _get_cached_balance_summary(self, user_id: int) -> Optional[Dict[str, float]]:
+    def _get_cached_balance_summary(
+        self, user_id: int
+    ) -> Optional[Dict[str, float]]:
         cached = self._balance_cache.get(user_id)
         if not cached:
             return None
@@ -349,7 +362,7 @@ class BinanceManager:
                         if total > 0:
                             conn.execute(
                                 """
-                                INSERT INTO user_binance_balance 
+                                INSERT INTO user_binance_balance
                                 (user_id, asset, free_balance, locked_balance, total_balance)
                                 VALUES (%s, %s, %s, %s, %s)
                             """,
@@ -373,8 +386,8 @@ class BinanceManager:
                         """
                         INSERT INTO portfolio (user_id, total_balance, available_balance, is_demo, updated_at)
                         VALUES (%s, %s, %s, FALSE, CURRENT_TIMESTAMP)
-                        ON CONFLICT(user_id, is_demo) DO UPDATE SET 
-                        total_balance = excluded.total_balance, 
+                        ON CONFLICT(user_id, is_demo) DO UPDATE SET
+                        total_balance = excluded.total_balance,
                         available_balance = excluded.available_balance,
                         updated_at = CURRENT_TIMESTAMP
                     """,
@@ -398,9 +411,13 @@ class BinanceManager:
     ) -> Dict[str, Any]:
         """تنفيذ أمر شراء (حقيقي أو وهمي) مع سحب البيانات الفعلية"""
         try:
-            is_demo_mode = bool(get_effective_is_demo(self.db_manager, user_id))
+            is_demo_mode = bool(
+                get_effective_is_demo(self.db_manager, user_id)
+            )
             if is_demo_mode:
-                current_price = price if price else self._get_current_price(symbol)
+                current_price = (
+                    price if price else self._get_current_price(symbol)
+                )
                 return self._execute_demo_buy_order(
                     user_id, symbol, quantity, current_price
                 )
@@ -427,7 +444,9 @@ class BinanceManager:
                 )
                 return {
                     "success": False,
-                    "message": f"الرصيد غير كافٍ. المطلوب: {required_amount:.2f}, المتاح: {user_balance:.2f}",
+                    "message": f"الرصيد غير كافٍ. المطلوب: {
+                        required_amount:.2f}, المتاح: {
+                        user_balance:.2f}",
                     "error_code": "INSUFFICIENT_BALANCE",
                 }
 
@@ -436,9 +455,8 @@ class BinanceManager:
                 user_id, symbol, "BUY", quantity
             )
             if existing_order:
-                self.logger.warning(
-                    f"⚠️ أمر موجود مسبقاً للمستخدم {user_id}: {existing_order['order_id']}"
-                )
+                self.logger.warning(f"⚠️ أمر موجود مسبقاً للمستخدم {user_id}: {
+                    existing_order['order_id']}")
                 return {
                     "success": True,
                     "order_id": existing_order["order_id"],
@@ -451,17 +469,27 @@ class BinanceManager:
             self.logger.info(f"🔄 إرسال أمر شراء {symbol}: {quantity}")
 
             if order_type == "MARKET":
-                order = client.order_market_buy(symbol=symbol, quantity=quantity)
+                order = client.order_market_buy(
+                    symbol=symbol, quantity=quantity
+                )
             else:
-                return {"success": False, "message": "نوع الأمر غير مدعوم حالياً"}
+                return {
+                    "success": False,
+                    "message": "نوع الأمر غير مدعوم حالياً",
+                }
 
             order_id = order.get("orderId")
             if not order_id:
-                return {"success": False, "message": "لم يتم إرجاع order_id من Binance"}
+                return {
+                    "success": False,
+                    "message": "لم يتم إرجاع order_id من Binance",
+                }
             self.logger.info(f"✅ تم إرسال الأمر برقم: {order_id}")
 
             # 🔍 الخطوة 2: سحب بيانات الأمر الفعلية من Binance
-            actual_order_data = self._fetch_real_order_data(client, symbol, order_id)
+            actual_order_data = self._fetch_real_order_data(
+                client, symbol, order_id
+            )
 
             if not actual_order_data:
                 return {
@@ -493,7 +521,9 @@ class BinanceManager:
                 "quantity": final_order_data["executedQty"],
                 "price": self._calculate_average_price(final_order_data),
                 "status": final_order_data["status"],
-                "commission": self._calculate_total_commission(final_order_data),
+                "commission": self._calculate_total_commission(
+                    final_order_data
+                ),
                 "data_source": "binance_api",  # مصدر البيانات
             }
 
@@ -505,11 +535,17 @@ class BinanceManager:
             return {"success": False, "message": f"خطأ غير متوقع: {str(e)}"}
 
     def execute_sell_order(
-        self, user_id: int, symbol: str, quantity: float, order_type: str = "MARKET"
+        self,
+        user_id: int,
+        symbol: str,
+        quantity: float,
+        order_type: str = "MARKET",
     ) -> Dict[str, Any]:
         """تنفيذ أمر بيع (حقيقي أو وهمي) مع سحب البيانات الفعلية"""
         try:
-            is_demo_mode = bool(get_effective_is_demo(self.db_manager, user_id))
+            is_demo_mode = bool(
+                get_effective_is_demo(self.db_manager, user_id)
+            )
             if is_demo_mode:
                 return self._execute_demo_sell_order(user_id, symbol, quantity)
 
@@ -527,17 +563,27 @@ class BinanceManager:
             self.logger.info(f"🔄 إرسال أمر بيع {symbol}: {quantity}")
 
             if order_type == "MARKET":
-                order = client.order_market_sell(symbol=symbol, quantity=quantity)
+                order = client.order_market_sell(
+                    symbol=symbol, quantity=quantity
+                )
             else:
-                return {"success": False, "message": "نوع الأمر غير مدعوم حالياً"}
+                return {
+                    "success": False,
+                    "message": "نوع الأمر غير مدعوم حالياً",
+                }
 
             order_id = order.get("orderId")
             if not order_id:
-                return {"success": False, "message": "لم يتم إرجاع order_id من Binance"}
+                return {
+                    "success": False,
+                    "message": "لم يتم إرجاع order_id من Binance",
+                }
             self.logger.info(f"✅ تم إرسال أمر البيع برقم: {order_id}")
 
             # 🔍 الخطوة 2: سحب بيانات الأمر الفعلية
-            actual_order_data = self._fetch_real_order_data(client, symbol, order_id)
+            actual_order_data = self._fetch_real_order_data(
+                client, symbol, order_id
+            )
 
             if not actual_order_data:
                 return {
@@ -546,7 +592,9 @@ class BinanceManager:
                 }
 
             final_order_data = actual_order_data
-            self.logger.info(f"📊 تم سحب بيانات البيع الحقيقية للأمر {order_id}")
+            self.logger.info(
+                f"📊 تم سحب بيانات البيع الحقيقية للأمر {order_id}"
+            )
 
             if not final_order_data.get("orderId"):
                 return {
@@ -568,7 +616,9 @@ class BinanceManager:
                 "quantity": final_order_data["executedQty"],
                 "price": self._calculate_average_price(final_order_data),
                 "status": final_order_data["status"],
-                "commission": self._calculate_total_commission(final_order_data),
+                "commission": self._calculate_total_commission(
+                    final_order_data
+                ),
                 "data_source": "binance_api",
             }
 
@@ -615,8 +665,7 @@ class BinanceManager:
                 )
 
             self.logger.error(
-                f"❌ تعذر تأكيد تنفيذ الأمر {order_id} بعد {max_attempts} محاولات"
-            )
+                f"❌ تعذر تأكيد تنفيذ الأمر {order_id} بعد {max_attempts} محاولات")
             return None
 
         except Exception as e:
@@ -650,7 +699,9 @@ class BinanceManager:
         except Exception:
             return 0.0
 
-    def _save_real_binance_order(self, user_id: int, order: Dict[str, Any]) -> None:
+    def _save_real_binance_order(
+        self, user_id: int, order: Dict[str, Any]
+    ) -> None:
         """حفظ أمر Binance الحقيقي في قاعدة البيانات"""
         try:
             with self.db_manager.get_write_connection() as conn:
@@ -660,8 +711,8 @@ class BinanceManager:
 
                 conn.execute(
                     """
-                    INSERT INTO user_binance_orders 
-                    (user_id, binance_order_id, symbol, side, type, quantity, 
+                    INSERT INTO user_binance_orders
+                    (user_id, binance_order_id, symbol, side, type, quantity,
                      price, status, executed_qty, executed_price, commission)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
@@ -680,12 +731,13 @@ class BinanceManager:
                     ),
                 )
 
-                self.logger.info(
-                    f"🗄️ تم حفظ أمر حقيقي {order['symbol']} - {order['side']} برقم {order['orderId']}"
-                )
-                self.logger.info(
-                    f"💰 السعر المتوسط: {avg_price:.8f} | العمولة: {total_commission:.8f}"
-                )
+                self.logger.info(f"🗄️ تم حفظ أمر حقيقي {
+                    order['symbol']} - {
+                    order['side']} برقم {
+                    order['orderId']}")
+                self.logger.info(f"💰 السعر المتوسط: {
+                    avg_price:.8f} | العمولة: {
+                    total_commission:.8f}")
 
         except Exception as e:
             self.logger.error(f"❌ خطأ في حفظ الأمر الحقيقي: {e}")
@@ -699,7 +751,9 @@ class BinanceManager:
                 # حساب السعر المتوسط
                 avg_price = 0.0
                 if order.get("fills"):
-                    total_qty = sum(float(fill["qty"]) for fill in order["fills"])
+                    total_qty = sum(
+                        float(fill["qty"]) for fill in order["fills"]
+                    )
                     if total_qty > 0:
                         weighted_price = sum(
                             float(fill["price"]) * float(fill["qty"])
@@ -711,8 +765,8 @@ class BinanceManager:
 
                 conn.execute(
                     """
-                    INSERT INTO user_binance_orders 
-                    (user_id, binance_order_id, symbol, side, type, quantity, 
+                    INSERT INTO user_binance_orders
+                    (user_id, binance_order_id, symbol, side, type, quantity,
                      price, status, executed_qty, executed_price, commission)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
@@ -733,9 +787,10 @@ class BinanceManager:
 
                 # تسجيل نوع الأمر (حقيقي أو وهمي)
                 order_type = "وهمي" if is_demo else "حقيقي"
-                self.logger.info(
-                    f"تم حفظ أمر {order_type} {order['symbol']} - {order['side']} برقم {order['orderId']}"
-                )
+                self.logger.info(f"تم حفظ أمر {order_type} {
+                    order['symbol']} - {
+                    order['side']} برقم {
+                    order['orderId']}")
 
         except Exception as e:
             self.logger.error(f"خطأ في حفظ الأمر: {e}")
@@ -747,7 +802,7 @@ class BinanceManager:
                 balances = conn.execute(
                     """
                     SELECT asset, free_balance, locked_balance, total_balance, updated_at
-                    FROM user_binance_balance 
+                    FROM user_binance_balance
                     WHERE user_id = %s
                     ORDER BY total_balance DESC
                 """,
@@ -761,9 +816,15 @@ class BinanceManager:
 
                 cached_summary = self._get_cached_balance_summary(user_id)
                 if cached_summary is not None:
-                    total_usdt = float(cached_summary.get("total_usdt", 0.0) or 0.0)
-                    free_usdt = float(cached_summary.get("free_usdt", 0.0) or 0.0)
-                    locked_usdt = float(cached_summary.get("locked_usdt", 0.0) or 0.0)
+                    total_usdt = float(
+                        cached_summary.get("total_usdt", 0.0) or 0.0
+                    )
+                    free_usdt = float(
+                        cached_summary.get("free_usdt", 0.0) or 0.0
+                    )
+                    locked_usdt = float(
+                        cached_summary.get("locked_usdt", 0.0) or 0.0
+                    )
                     for balance in balances:
                         balance_list.append(
                             {
@@ -838,9 +899,7 @@ class BinanceManager:
                 }
 
             # إنشاء رقم أمر وهمي
-            demo_order_id = (
-                f"DEMO_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
-            )
+            demo_order_id = f"DEMO_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
 
             # محاكاة استجابة Binance
             demo_order = {
@@ -852,7 +911,9 @@ class BinanceManager:
                 "price": str(price) if price else "0.00000000",
                 "origQty": str(quantity),
                 "executedQty": str(quantity),
-                "cummulativeQuoteQty": str(quantity * price) if price else "0.00000000",
+                "cummulativeQuoteQty": (
+                    str(quantity * price) if price else "0.00000000"
+                ),
                 "status": "FILLED",
                 "timeInForce": "GTC",
                 "type": "MARKET",
@@ -900,12 +961,13 @@ class BinanceManager:
             # جلب السعر الحالي
             current_price = self._get_current_price(symbol)
             if not current_price:
-                return {"success": False, "message": f"لا يمكن جلب سعر {symbol}"}
+                return {
+                    "success": False,
+                    "message": f"لا يمكن جلب سعر {symbol}",
+                }
 
             # إنشاء رقم أمر وهمي
-            demo_order_id = (
-                f"DEMO_SELL_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
-            )
+            demo_order_id = f"DEMO_SELL_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
 
             # محاكاة استجابة Binance للبيع
             demo_order = {
@@ -937,8 +999,7 @@ class BinanceManager:
             self._save_binance_order(user_id, demo_order, is_demo=True)
 
             self.logger.info(
-                f"تم تنفيذ أمر بيع وهمي {symbol}: {quantity} بسعر {current_price}"
-            )
+                f"تم تنفيذ أمر بيع وهمي {symbol}: {quantity} بسعر {current_price}")
 
             return {
                 "success": True,
@@ -973,10 +1034,10 @@ class BinanceManager:
             with self.db_manager.get_connection() as conn:
                 row = conn.execute(
                     """
-                    SELECT total_balance 
-                    FROM portfolio 
-                    WHERE user_id = %s AND is_demo = FALSE 
-                    ORDER BY updated_at DESC 
+                    SELECT total_balance
+                    FROM portfolio
+                    WHERE user_id = %s AND is_demo = FALSE
+                    ORDER BY updated_at DESC
                     LIMIT 1
                 """,
                     (user_id,),
@@ -997,18 +1058,22 @@ class BinanceManager:
             with self.db_manager.get_connection() as conn:
                 row = conn.execute(
                     """
-                    SELECT order_id, status, created_at 
-                    FROM user_binance_orders 
-                    WHERE user_id = %s AND symbol = %s AND side = %s 
+                    SELECT order_id, status, created_at
+                    FROM user_binance_orders
+                    WHERE user_id = %s AND symbol = %s AND side = %s
                     AND orig_qty = %s AND status IN ('NEW', 'PARTIALLY_FILLED', 'FILLED')
-                    ORDER BY created_at DESC 
+                    ORDER BY created_at DESC
                     LIMIT 1
                 """,
                     (user_id, symbol, side.upper(), str(quantity)),
                 ).fetchone()
 
                 if row:
-                    return {"order_id": row[0], "status": row[1], "created_at": row[2]}
+                    return {
+                        "order_id": row[0],
+                        "status": row[1],
+                        "created_at": row[2],
+                    }
                 return None
         except Exception:
             return None

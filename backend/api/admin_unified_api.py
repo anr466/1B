@@ -3,16 +3,21 @@ Admin Unified API - نظام موحد لجميع endpoints الأدمن
 ربط حقيقي مع قاعدة البيانات، بدون تكرار أو تضارب
 """
 
+from backend.api.admin_users_routes import register_admin_users_routes
+from backend.api.admin_ml_routes import register_admin_ml_routes
+from backend.api.admin_logs_routes import register_admin_logs_routes
+from backend.utils.request_deduplicator import prevent_concurrent_duplicates
+from backend.utils.idempotency_manager import require_idempotency
+from backend.utils.error_logger import error_logger
+from config.security.encryption_utils import decrypt_data
+from backend.infrastructure.db_access import get_db_manager, open_db_connection
 from config.logging_config import get_logger
 from flask import Blueprint, request, jsonify, g
 import subprocess
-import hashlib
 import json
-from backend.utils.password_utils import hash_password as _hash_pw
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import sys
-from functools import lru_cache
 import time
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,9 +25,6 @@ repo_root = os.path.dirname(project_root)
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, "utils"))
 
-from backend.infrastructure.db_access import get_db_manager, open_db_connection
-from config.security.encryption_utils import encrypt_data, decrypt_data
-from backend.utils.error_logger import error_logger
 
 # إعداد logger
 logger = get_logger(__name__)
@@ -80,23 +82,28 @@ except (ImportError, ModuleNotFoundError):
     def require_admin(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            return jsonify(
-                {"success": False, "error": "Admin authentication system unavailable"}
-            ), 503
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Admin authentication system unavailable",
+                    }
+                ),
+                503,
+            )
 
         return decorated
 
 
 # استيراد أنظمة منع التكرار
-from backend.utils.idempotency_manager import require_idempotency
-from backend.utils.request_deduplicator import prevent_concurrent_duplicates
 
 # ✅ استيراد Limiter للـ Rate Limiting
 try:
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
 
-    # إنشاء limiter instance محلي (سيعمل مع flask_app المسجل عليه هذا Blueprint)
+    # إنشاء limiter instance محلي (سيعمل مع flask_app المسجل عليه هذا
+    # Blueprint)
     limiter = Limiter(
         key_func=get_remote_address,
         default_limits=["100 per minute"],
@@ -155,9 +162,6 @@ _admin_shared = {
     "audit_logger": audit_logger,
 }
 
-from backend.api.admin_logs_routes import register_admin_logs_routes
-from backend.api.admin_ml_routes import register_admin_ml_routes
-from backend.api.admin_users_routes import register_admin_users_routes
 
 register_admin_logs_routes(admin_unified_bp, _admin_shared)
 register_admin_ml_routes(admin_unified_bp, _admin_shared)
@@ -190,7 +194,7 @@ def get_admin_dashboard():
         cursor.execute(
             "SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE AND is_demo = FALSE"
         )
-        active_trades = cursor.fetchone()[0]
+        cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_demo = FALSE")
         active_positions = cursor.fetchone()[0]
@@ -281,7 +285,7 @@ def get_system_overview():
         total_trades = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
-        active_trades = cursor.fetchone()[0]
+        cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM active_positions")
         active_positions = cursor.fetchone()[0]
@@ -350,7 +354,7 @@ def get_system_stats():
         total_trades = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE")
-        active_trades = cursor.fetchone()[0]
+        cursor.fetchone()[0]
 
         cursor.execute(
             "SELECT SUM(profit_loss) FROM active_positions WHERE is_active = FALSE"
@@ -583,8 +587,8 @@ def get_error_stats():
 
         # Errors by severity
         cursor.execute("""
-            SELECT severity, COUNT(*) as count 
-            FROM system_errors 
+            SELECT severity, COUNT(*) as count
+            FROM system_errors
             GROUP BY severity
         """)
         by_severity = {row[0]: row[1] for row in cursor.fetchall()}
@@ -654,7 +658,10 @@ def resolve_error(error_id):
         conn.close()
 
         if affected == 0:
-            return jsonify({"success": False, "message": "error_not_found"}), 404
+            return (
+                jsonify({"success": False, "message": "error_not_found"}),
+                404,
+            )
 
         return jsonify({"success": True, "message": "resolved"})
     except Exception as e:
@@ -754,7 +761,7 @@ def get_group_b_performance():
     """✅ FIX: أداء Group B مع health check حقيقي"""
     try:
         import subprocess
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         # 1️⃣ فحص Process — background_trading_manager أو trading state machine
         try:
@@ -778,7 +785,9 @@ def get_group_b_performance():
         # Fallback: check trading state machine if background process not found
         if not is_running:
             try:
-                from backend.core.trading_state_machine import get_trading_state_machine
+                from backend.core.trading_state_machine import (
+                    get_trading_state_machine,
+                )
 
                 tsm = get_trading_state_machine()
                 state_info = tsm.get_state()
@@ -887,22 +896,18 @@ def get_api_performance():
         cursor.execute("SELECT COUNT(*) FROM activity_logs")
         total_requests = cursor.fetchone()[0] or 0
 
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT COUNT(*)
             FROM activity_logs
             WHERE created_at >= (CURRENT_TIMESTAMP - INTERVAL '24 hours')
-            """
-        )
+            """)
         requests_24h = cursor.fetchone()[0] or 0
 
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT status, COUNT(*)
             FROM activity_logs
             GROUP BY status
-            """
-        )
+            """)
         by_status = {row[0] or "unknown": row[1] for row in cursor.fetchall()}
 
         conn.close()
@@ -916,7 +921,8 @@ def get_api_performance():
                     "requests_last_24h": requests_24h,
                     "by_status": by_status,
                     "error_rate_pct": round(
-                        (by_status.get("failed", 0) / max(total_requests, 1)) * 100, 2
+                        (by_status.get("failed", 0) / max(total_requests, 1)) * 100,
+                        2,
                     ),
                 },
             }
@@ -949,8 +955,8 @@ def get_all_users():
                 (SELECT COUNT(*) FROM active_positions WHERE user_id = users.id AND is_active = FALSE AND profit_loss > 0) as winning_trades,
                 COALESCE((SELECT trading_enabled FROM user_settings WHERE user_id = users.id LIMIT 1), FALSE) as trading_enabled,
                 COALESCE((SELECT trading_mode FROM user_settings WHERE user_id = users.id LIMIT 1), 'demo') as trading_mode
-            FROM users 
-            ORDER BY created_at DESC 
+            FROM users
+            ORDER BY created_at DESC
             LIMIT %s OFFSET %s
         """,
             (limit, offset),
@@ -1035,16 +1041,22 @@ def manage_user(user_id):
 
             if user:
                 return jsonify({"success": True, "data": {"id": user_id}})
-            return jsonify({"success": False, "message": "User not found"}), 404
+            return (
+                jsonify({"success": False, "message": "User not found"}),
+                404,
+            )
         except Exception as e:
             return jsonify({"success": False, "message": str(e)}), 500
 
-    return jsonify(
-        {
-            "success": False,
-            "message": "legacy_endpoint_not_supported_use_new_users_routes",
-        }
-    ), 410
+    return (
+        jsonify(
+            {
+                "success": False,
+                "message": "legacy_endpoint_not_supported_use_new_users_routes",
+            }
+        ),
+        410,
+    )
 
 
 @admin_unified_bp.route("/users/<user_id>/toggle-status", methods=["PATCH"])
@@ -1068,7 +1080,10 @@ SELECT id, is_active FROM users WHERE id = %s""",
         row = cursor.fetchone()
         if not row:
             conn.close()
-            return jsonify({"success": False, "message": "user_not_found"}), 404
+            return (
+                jsonify({"success": False, "message": "user_not_found"}),
+                404,
+            )
 
         current_active = bool(row[1])
         next_active = 0 if current_active else 1
@@ -1097,136 +1112,6 @@ SELECT id, is_active FROM users WHERE id = %s""",
     except Exception as e:
         logger.error(f"❌ toggle_user_status failed for user #{user_id}: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
-
-
-# ==================== Trading ====================
-@admin_unified_bp.route("/trading/status", methods=["GET"])
-@require_admin
-def get_trading_status():
-    """حالة التداول"""
-    try:
-        from backend.core.trading_state_machine import get_trading_state_machine
-
-        tsm = get_trading_state_machine()
-        state = tsm.get_state() or {}
-        trading_state = str(state.get("trading_state") or "STOPPED").upper()
-
-        return jsonify(
-            {
-                "success": True,
-                "data": {
-                    "group_b": "running" if trading_state == "RUNNING" else "stopped",
-                    "enabled": trading_state in ("RUNNING", "STARTING"),
-                    "trading_state": trading_state,
-                    "session_id": state.get("session_id"),
-                    "mode": state.get("mode", "PAPER"),
-                    "open_positions": state.get("open_positions", 0),
-                    "pid": state.get("pid"),
-                },
-            }
-        )
-    except Exception as e:
-        logger.error(f"❌ get_trading_status failed: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@admin_unified_bp.route("/background/trading-status", methods=["GET"])
-@require_admin
-def get_background_trading_status():
-    """حالة التداول الخلفي"""
-    try:
-        from backend.core.trading_state_machine import get_trading_state_machine
-
-        tsm = get_trading_state_machine()
-        state = tsm.get_state() or {}
-        trading_state = str(
-            state.get("state") or state.get("trading_state") or "STOPPED"
-        ).upper()
-        is_running = bool(state.get("is_running", state.get("trading_active", False)))
-
-        return jsonify(
-            {
-                "success": bool(state.get("success", True)),
-                "data": {
-                    "status": "running" if is_running else "stopped",
-                    "state": trading_state,
-                    "trading_state": trading_state,
-                    "is_running": is_running,
-                    "message": state.get("message")
-                    or ("النظام يعمل" if is_running else "النظام متوقف"),
-                    "session_id": state.get("session_id"),
-                    "mode": state.get("mode", "PAPER"),
-                    "open_positions": state.get("open_positions", 0),
-                    "pid": state.get("pid"),
-                    "last_update": state.get("last_update"),
-                    "last_updated": state.get("last_updated"),
-                    "timestamp": datetime.now().isoformat(),
-                },
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error in get_background_trading_status: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "error": str(e),
-                "data": {
-                    "status": "error",
-                    "is_running": False,
-                    "message": "حدث خطأ في جلب حالة النظام",
-                },
-            }
-        ), 500
-
-
-# ❌ REMOVED: Group A System is legacy - no longer exists
-# Group A functionality has been replaced by CryptoWave unified trading system
-# Historical: Group A was for backtesting/coin selection
-
-
-@admin_unified_bp.route("/performance/group-a", methods=["GET"])
-@require_admin
-def get_group_a_performance():
-    """
-    ⚠️ DEPRECATED: Group A System has been removed
-    Functionality moved to CryptoWave unified system
-    Use /api/admin/background/status for current trading status
-    """
-    return jsonify(
-        {
-            "success": False,
-            "deprecated": True,
-            "message": "Group A System has been removed - use CryptoWave system instead",
-            "alternative_endpoint": "/api/admin/background/status",
-            "info": "Group A functionality (backtesting/coin selection) is now integrated into CryptoWave",
-        }
-    ), 410  # 410 Gone - resource permanently removed
-
-
-@admin_unified_bp.route("/trading/group-b/start", methods=["POST"])
-@require_admin
-def start_group_b():
-    """⛔ DEPRECATED: استخدم /admin/trading/start (State Machine)"""
-    return jsonify(
-        {
-            "success": False,
-            "message": "هذا المسار مُلغى. استخدم POST /api/admin/trading/start",
-            "redirect": "/api/admin/trading/start",
-        }
-    ), 410
-
-
-@admin_unified_bp.route("/trading/group-b/stop", methods=["POST"])
-@require_admin
-def stop_group_b():
-    """⛔ DEPRECATED: استخدم /admin/trading/stop (State Machine)"""
-    return jsonify(
-        {
-            "success": False,
-            "message": "هذا المسار مُلغى. استخدم POST /api/admin/trading/stop",
-            "redirect": "/api/admin/trading/stop",
-        }
-    ), 410
 
 
 # ==================== إعادة ضبط الحساب التجريبي ====================
@@ -1261,9 +1146,15 @@ def reset_demo_account():
 
         reset_ok = db.reset_user_portfolio(admin_id, initial_balance=initial_balance)
         if not reset_ok:
-            return jsonify(
-                {"success": False, "message": "فشل إعادة ضبط الحساب التجريبي"}
-            ), 500
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "فشل إعادة ضبط الحساب التجريبي",
+                    }
+                ),
+                500,
+            )
 
         # مسح بيانات ML (اختياري)
         if reset_ml:
@@ -1279,7 +1170,11 @@ def reset_demo_account():
                 )
 
                 # حذف ملفات ML
-                ml_files = ["training_data.pkl", "scaler.pkl", "signal_model.json"]
+                ml_files = [
+                    "training_data.pkl",
+                    "scaler.pkl",
+                    "signal_model.json",
+                ]
                 for f in ml_files:
                     fpath = ml_dir / f
                     if fpath.exists():
@@ -1364,9 +1259,15 @@ def reset_demo_account():
 
     except Exception as e:
         logger.error(f"❌ فشل إعادة ضبط الحساب التجريبي: {str(e)}")
-        return jsonify(
-            {"success": False, "message": f"فشل إعادة ضبط الحساب: {str(e)}"}
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": f"فشل إعادة ضبط الحساب: {str(e)}",
+                }
+            ),
+            500,
+        )
 
 
 # ==================== Positions ====================
@@ -1391,9 +1292,9 @@ def get_active_positions():
 
         cursor.execute(
             """
-            SELECT id, symbol, entry_price, quantity, strategy, timeframe, 
+            SELECT id, symbol, entry_price, quantity, strategy, timeframe,
                    stop_loss, take_profit, created_at, position_type
-            FROM active_positions 
+            FROM active_positions
             WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
             ORDER BY created_at DESC
             LIMIT 20
@@ -1476,7 +1377,10 @@ def close_position(position_id):
     try:
         pid = int(position_id)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "message": "invalid_position_id"}), 400
+        return (
+            jsonify({"success": False, "message": "invalid_position_id"}),
+            400,
+        )
 
     payload = request.get_json(silent=True) or {}
     reason = str(payload.get("reason") or "ADMIN_MANUAL_CLOSE")
@@ -1498,17 +1402,24 @@ def close_position(position_id):
         conn.close()
 
         if not position:
-            return jsonify({"success": False, "message": "position_not_found"}), 404
+            return (
+                jsonify({"success": False, "message": "position_not_found"}),
+                404,
+            )
 
         if not bool(position["is_active"]):
-            return jsonify(
-                {"success": False, "message": "position_already_closed"}
-            ), 409
+            return (
+                jsonify({"success": False, "message": "position_already_closed"}),
+                409,
+            )
 
         entry_price = float(position["entry_price"] or 0)
         quantity = float(position["quantity"] or 0)
         if entry_price <= 0 or quantity <= 0:
-            return jsonify({"success": False, "message": "invalid_position_data"}), 400
+            return (
+                jsonify({"success": False, "message": "invalid_position_data"}),
+                400,
+            )
 
         exit_price = 0.0
         try:
@@ -1556,19 +1467,25 @@ def close_position(position_id):
             exit_order_id="ADMIN_MANUAL_CLOSE",
         )
         if not close_ok:
-            return jsonify({"success": False, "message": "close_position_failed"}), 500
+            return (
+                jsonify({"success": False, "message": "close_position_failed"}),
+                500,
+            )
 
         try:
             user_id = int(position["user_id"])
             is_demo = int(position["is_demo"] or 0)
             with get_safe_connection() as balance_conn:
-                balance_query = (
-                    "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1"
-                    if bool(is_demo)
-                    else "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1"
-                )
-                balance_params = (user_id,) if bool(is_demo) else (user_id, is_demo)
-                bal_row = balance_conn.execute(balance_query, balance_params).fetchone()
+                if is_demo:
+                    bal_row = balance_conn.execute(
+                        "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+                        (user_id,),
+                    ).fetchone()
+                else:
+                    bal_row = balance_conn.execute(
+                        "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = FALSE LIMIT 1",
+                        (user_id,),
+                    ).fetchone()
             if bal_row is not None:
                 available_before = float(bal_row[0] or 0)
                 returned_amount = (entry_price * quantity) + pnl
@@ -1603,11 +1520,17 @@ def update_stop_loss(position_id):
     try:
         pid = int(position_id)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "message": "invalid_position_id"}), 400
+        return (
+            jsonify({"success": False, "message": "invalid_position_id"}),
+            400,
+        )
 
     payload = request.get_json(silent=True) or {}
     if "stop_loss" not in payload:
-        return jsonify({"success": False, "message": "stop_loss_required"}), 400
+        return (
+            jsonify({"success": False, "message": "stop_loss_required"}),
+            400,
+        )
 
     try:
         new_sl = float(payload.get("stop_loss"))
@@ -1615,7 +1538,10 @@ def update_stop_loss(position_id):
         return jsonify({"success": False, "message": "invalid_stop_loss"}), 400
 
     if new_sl <= 0:
-        return jsonify({"success": False, "message": "stop_loss_must_be_positive"}), 400
+        return (
+            jsonify({"success": False, "message": "stop_loss_must_be_positive"}),
+            400,
+        )
 
     try:
         conn = get_safe_connection()
@@ -1632,11 +1558,17 @@ def update_stop_loss(position_id):
         ).fetchone()
         if not row:
             conn.close()
-            return jsonify({"success": False, "message": "position_not_found"}), 404
+            return (
+                jsonify({"success": False, "message": "position_not_found"}),
+                404,
+            )
 
         if not bool(row["is_active"]):
             conn.close()
-            return jsonify({"success": False, "message": "position_not_active"}), 409
+            return (
+                jsonify({"success": False, "message": "position_not_active"}),
+                409,
+            )
 
         cursor.execute(
             """
@@ -1702,7 +1634,10 @@ def get_trade_history():
         return jsonify({"success": True, "data": trades})
     except Exception as e:
         logger.error(f"خطأ في جلب سجل الصفقات: {e}")
-        return jsonify({"success": False, "message": "خطأ في جلب سجل الصفقات"}), 500
+        return (
+            jsonify({"success": False, "message": "خطأ في جلب سجل الصفقات"}),
+            500,
+        )
 
 
 @admin_unified_bp.route("/trades/stats", methods=["GET"])
@@ -1714,7 +1649,7 @@ def get_trade_stats():
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT 
+            SELECT
                 COUNT(*) as closed_total,
                 SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END) as wins,
                 AVG(profit_loss) as avg_profit,
@@ -1999,11 +1934,17 @@ def run_backtest():
             "optimized_backtest.py",
         }
         if script_name not in allowed:
-            return jsonify({"success": False, "message": "script_not_allowed"}), 400
+            return (
+                jsonify({"success": False, "message": "script_not_allowed"}),
+                400,
+            )
 
         script_path = os.path.join(repo_root, "tests", script_name)
         if not os.path.exists(script_path):
-            return jsonify({"success": False, "message": "script_not_found"}), 404
+            return (
+                jsonify({"success": False, "message": "script_not_found"}),
+                404,
+            )
 
         proc = subprocess.Popen(
             [sys.executable, script_path],
@@ -2053,9 +1994,15 @@ def get_database_stats():
 def create_backup():
     """إنشاء نسخة احتياطية"""
     try:
-        return jsonify(
-            {"success": False, "message": "postgres_backup_requires_pg_dump_workflow"}
-        ), 501
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "postgres_backup_requires_pg_dump_workflow",
+                }
+            ),
+            501,
+        )
     except Exception as e:
         logger.error(f"❌ create_backup failed: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -2065,9 +2012,15 @@ def create_backup():
 @require_admin
 def restore_backup():
     """استعادة نسخة احتياطية"""
-    return jsonify(
-        {"success": False, "message": "postgres_restore_requires_psql_workflow"}
-    ), 501
+    return (
+        jsonify(
+            {
+                "success": False,
+                "message": "postgres_restore_requires_psql_workflow",
+            }
+        ),
+        501,
+    )
 
 
 @admin_unified_bp.route("/database/optimize", methods=["POST"])
@@ -2124,10 +2077,16 @@ def mark_notification_read(notification_id):
             return jsonify(
                 {
                     "success": True,
-                    "data": {"notification_id": notification_id, "updated": True},
+                    "data": {
+                        "notification_id": notification_id,
+                        "updated": True,
+                    },
                 }
             )
-        return jsonify({"success": False, "message": "notification_update_failed"}), 500
+        return (
+            jsonify({"success": False, "message": "notification_update_failed"}),
+            500,
+        )
 
     except Exception as e:
         logger.error(f"فشل تحديث الإشعار: {e}")
@@ -2147,9 +2106,10 @@ def mark_all_read():
 
         if success:
             return jsonify({"success": True, "data": {"updated": True}})
-        return jsonify(
-            {"success": False, "message": "notifications_update_failed"}
-        ), 500
+        return (
+            jsonify({"success": False, "message": "notifications_update_failed"}),
+            500,
+        )
 
     except Exception as e:
         logger.error(f"فشل تحديث الإشعارات: {e}")
@@ -2172,13 +2132,16 @@ def health_check():
 
     except Exception as e:
         logger.error(f"فشل Health Check: {e}")
-        return jsonify(
-            {
-                "success": False,
-                "message": "health_check_failed",
-                "error": str(e),
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "health_check_failed",
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
 
 
 @admin_unified_bp.route("/system/metrics", methods=["GET"])
@@ -2210,9 +2173,16 @@ def get_system_metrics():
         return jsonify({"success": True, "data": metrics})
     except ModuleNotFoundError as e:
         logger.warning(f"⚠️ psutil غير مثبت: {e}")
-        return jsonify(
-            {"success": False, "message": "system_metrics_unavailable", "error": str(e)}
-        ), 503
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "system_metrics_unavailable",
+                    "error": str(e),
+                }
+            ),
+            503,
+        )
 
     except Exception as e:
         logger.error(f"فشل جلب مقاييس النظام: {e}")
@@ -2315,7 +2285,9 @@ def retry_binance_connection():
 def get_public_system_status():
     """الحالة العامة للنظام بدون مصادقة - للتطبيق"""
     try:
-        from backend.core.trading_state_machine import get_trading_state_machine
+        from backend.core.trading_state_machine import (
+            get_trading_state_machine,
+        )
 
         tsm = get_trading_state_machine()
         state = tsm.get_state()
@@ -2382,7 +2354,9 @@ def get_notifications_status():
             )
             sys.path.insert(0, project_root)
             sys.path.insert(0, os.path.join(project_root, "utils"))
-            from firebase_notification_service import FirebaseNotificationService
+            from firebase_notification_service import (
+                FirebaseNotificationService,
+            )
 
             fcm = FirebaseNotificationService()
             status["fcm_available"] = bool(getattr(fcm, "is_available", False))
@@ -2429,9 +2403,15 @@ def manage_config():
         if "cache_ttl_seconds" in payload:
             new_ttl = int(payload.get("cache_ttl_seconds"))
             if new_ttl < 5 or new_ttl > 3600:
-                return jsonify(
-                    {"success": False, "message": "cache_ttl_seconds_out_of_range"}
-                ), 400
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "cache_ttl_seconds_out_of_range",
+                        }
+                    ),
+                    400,
+                )
 
             _cache_ttl = new_ttl
             updated["cache_ttl_seconds"] = _cache_ttl
@@ -2441,7 +2421,10 @@ def manage_config():
             updated["cache_cleared"] = True
 
         if not updated:
-            return jsonify({"success": False, "message": "no_supported_fields"}), 400
+            return (
+                jsonify({"success": False, "message": "no_supported_fields"}),
+                400,
+            )
 
         return jsonify({"success": True, "data": updated})
     except Exception as e:
@@ -2459,7 +2442,8 @@ def get_binance_status():
         conn = get_safe_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT is_active FROM user_binance_keys WHERE user_id = %s", (user_id,)
+            "SELECT is_active FROM user_binance_keys WHERE user_id = %s",
+            (user_id,),
         )
         result = cursor.fetchone()
         conn.close()
@@ -2469,7 +2453,10 @@ def get_binance_status():
         return jsonify(
             {
                 "success": True,
-                "data": {"connected": is_connected, "api_configured": is_connected},
+                "data": {
+                    "connected": is_connected,
+                    "api_configured": is_connected,
+                },
             }
         )
     except Exception as e:
@@ -2487,8 +2474,8 @@ def get_binance_keys():
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT api_key, api_secret, is_active 
-            FROM user_binance_keys 
+            SELECT api_key, api_secret, is_active
+            FROM user_binance_keys
             WHERE user_id = %s
         """,
             (user_id,),
@@ -2503,7 +2490,9 @@ def get_binance_keys():
                     {
                         "success": True,
                         "data": {
-                            "apiKey": api_key[:10] + "..." if len(api_key) > 10 else "",
+                            "apiKey": (
+                                api_key[:10] + "..." if len(api_key) > 10 else ""
+                            ),
                             "configured": bool(result[2]),
                         },
                     }
@@ -2540,15 +2529,18 @@ def test_binance_connection():
         )
     except Exception as e:
         logger.warning(f"⚠️ test_binance_connection failed: {e}")
-        return jsonify(
-            {
-                "success": True,
-                "data": {
-                    "connected": False,
-                    "details": {"success": False, "message": str(e)},
-                },
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "connected": False,
+                        "details": {"success": False, "message": str(e)},
+                    },
+                }
+            ),
+            200,
+        )
 
 
 # ==================== Routes extracted to sub-modules ====================
@@ -2587,7 +2579,12 @@ def get_security_audit_log_direct():
         return jsonify(
             {
                 "success": True,
-                "data": {"logs": logs, "total": total, "page": page, "limit": limit},
+                "data": {
+                    "logs": logs,
+                    "total": total,
+                    "page": page,
+                    "limit": limit,
+                },
             }
         )
     except Exception as e:

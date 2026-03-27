@@ -25,20 +25,11 @@ Exit system: Complete redesign for higher R:R
 
 import logging
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 from backend.strategies.scalping_v7_engine import (
     ScalpingV7Engine,
     V7_CONFIG,
-    _ema,
-    _rsi,
-    _macd,
-    _atr,
-    _bbands,
-    _supertrend,
-    _adx_calc,
 )
 
 logger = logging.getLogger(__name__)
@@ -129,12 +120,14 @@ class ScalpingV8Engine:
         self.config = {**base, **(config or {})}
         self._v7 = ScalpingV7Engine(self.config)
         self.logger = logging.getLogger(f"{__name__}.ScalpingV8Engine")
-        self.logger.info(
-            f"🚀 ScalpingV8Engine[{mode}] | "
-            f"Trail={self.config['trailing_activation'] * 100}%/{self.config['trailing_distance'] * 100}% | "
-            f"BE={self.config['breakeven_trigger'] * 100}% | "
-            f"MaxHold={self.config['max_hold_hours']}h"
-        )
+        self.logger.info(f"🚀 ScalpingV8Engine[{mode}] | " f"Trail={
+            self.config['trailing_activation'] *
+            100}%/{
+            self.config['trailing_distance'] *
+            100}% | " f"BE={
+            self.config['breakeven_trigger'] *
+            100}% | " f"MaxHold={
+            self.config['max_hold_hours']}h")
 
     # ============================================================
     # DATA PREPARATION (delegates to V7)
@@ -203,9 +196,11 @@ class ScalpingV8Engine:
         trail = position.get("trail", 0)
         sl = position.get(
             "sl",
-            entry * (1 - self.config.get("sl_pct", 0.008))
-            if side == "LONG"
-            else entry * (1 + self.config.get("sl_pct", 0.008)),
+            (
+                entry * (1 - self.config.get("sl_pct", 0.008))
+                if side == "LONG"
+                else entry * (1 + self.config.get("sl_pct", 0.008))
+            ),
         )
         hold_hours = position.get("hold_hours", 0)
 
@@ -317,7 +312,9 @@ class ScalpingV8Engine:
         if hold_hours < (min_early_exit_minutes / 60):
             pass  # Skip early exit for first few minutes
         else:
-            smart_result = self._smart_early_exit(df, idx, side, pnl, hold_hours)
+            smart_result = self._smart_early_exit(
+                df, idx, side, pnl, hold_hours
+            )
             if smart_result:
                 return {
                     "should_exit": True,
@@ -457,24 +454,38 @@ class ScalpingV8Engine:
         rev = 0
 
         if side == "LONG":
-            if not pd.isna(row.get("st_dir")) and not pd.isna(prev.get("st_dir")):
+            if not pd.isna(row.get("st_dir")) and not pd.isna(
+                prev.get("st_dir")
+            ):
                 if prev["st_dir"] == 1 and row["st_dir"] == -1:
                     rev += 3
             if prev.get("bull", True) and not row.get("bull", True):
                 if row.get("body", 0) > prev.get("body", 0):
                     rev += 2
-            if not pd.isna(row.get("macd_l")) and not pd.isna(prev.get("macd_l")):
-                if prev["macd_l"] > prev["macd_s"] and row["macd_l"] < row["macd_s"]:
+            if not pd.isna(row.get("macd_l")) and not pd.isna(
+                prev.get("macd_l")
+            ):
+                if (
+                    prev["macd_l"] > prev["macd_s"]
+                    and row["macd_l"] < row["macd_s"]
+                ):
                     rev += 2
         else:
-            if not pd.isna(row.get("st_dir")) and not pd.isna(prev.get("st_dir")):
+            if not pd.isna(row.get("st_dir")) and not pd.isna(
+                prev.get("st_dir")
+            ):
                 if prev["st_dir"] == -1 and row["st_dir"] == 1:
                     rev += 3
             if not prev.get("bull", False) and row.get("bull", False):
                 if row.get("body", 0) > prev.get("body", 0):
                     rev += 2
-            if not pd.isna(row.get("macd_l")) and not pd.isna(prev.get("macd_l")):
-                if prev["macd_l"] < prev["macd_s"] and row["macd_l"] > row["macd_s"]:
+            if not pd.isna(row.get("macd_l")) and not pd.isna(
+                prev.get("macd_l")
+            ):
+                if (
+                    prev["macd_l"] < prev["macd_s"]
+                    and row["macd_l"] > row["macd_s"]
+                ):
                     rev += 2
 
         return rev >= 3

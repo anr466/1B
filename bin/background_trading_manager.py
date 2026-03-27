@@ -525,9 +525,41 @@ class BackgroundTradingManager:
 
         return self._user_systems[context_key]
 
+    def _get_system_trading_state(self) -> str:
+        """جلب حالة التداول العامة من النظام."""
+        try:
+            with self.db_manager.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT trading_state FROM system_status WHERE id = 1"
+                ).fetchone()
+                if row and row[0]:
+                    return str(row[0]).upper()
+                return "STOPPED"
+        except Exception as e:
+            logger.warning(f"⚠️ فشل جلب حالة النظام: {e}")
+            return "STOPPED"
+
     def _execute_group_b(self):
         """تنفيذ Group B (التداول الآلي لجميع المستخدمين النشطين)"""
         try:
+            # ✅ التحقق من حالة النظام العامة قبل تنفيذ أي تداول
+            system_state = self._get_system_trading_state()
+            if system_state != "RUNNING":
+                if system_state == "STOPPED":
+                    logger.debug("⚠️ النظام متوقف - لا يتم التداول")
+                elif system_state == "STOPPING":
+                    logger.debug("⚠️ النظام يتوقف - لا يتم فتح صفقات جديدة")
+                elif system_state == "HALTING":
+                    logger.debug("⚠️ النظام يصفق - لا يتم فتح صفقات جديدة")
+                elif system_state == "ERROR":
+                    logger.warning("⚠️ النظام في حالة خطأ - لا يتم التداول")
+                elif system_state == "STARTING":
+                    logger.debug("⚠️ النظام يبدأ - انتظار...")
+                else:
+                    logger.debug(f"⚠️ النظام في حالة {system_state} - لا يتم التداول")
+                self._update_group_b_activity(self._group_b_cycles, 0)
+                return
+
             # ✅ دائماً زيادة عداد الدورات (يعكس عدد مرات المسح الفعلية)
             self._group_b_cycles += 1
 
