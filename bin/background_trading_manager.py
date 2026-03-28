@@ -286,6 +286,12 @@ class BackgroundTradingManager:
             self.is_running = True
             self.stop_event.clear()
 
+            # ✅ FIX: أولاً - تحديث حالة النظام إلى RUNNING قبل بدء أي خيوط
+            try:
+                self._update_system_status("running")
+            except Exception as status_error:
+                logger.warning(f"⚠️ فشل تحديث حالة النظام: {status_error}")
+
             # ✅ FIX: كتابة PID file لتمكين UnifiedSystemManager من كشف العملية
             try:
                 pid_file = Path(project_root) / "tmp" / "system.pid"
@@ -308,18 +314,6 @@ class BackgroundTradingManager:
             )
             self.heartbeat_thread.start()
             logger.info("✅ تم بدء Heartbeat (نبضات النظام - كل 15 ثانية)")
-
-            # ✅ تحديث حالة النظام في Database (بعد بدء الخيوط — لا يحجب التداول)
-            # ⚠️ FIX: لا نُعيد النظام إلى RUNNING إذا كان متوقفاً intentionally
-            try:
-                current_state = self._get_system_trading_state()
-                if current_state == "STOPPED":
-                    logger.warning("⚠️ النظام متوقف - لن يتم فتح صفقات جديدة")
-                    self._update_system_status("stopped", "النظام متوقف - انتظار")
-                else:
-                    self._update_system_status("running")
-            except Exception as status_error:
-                logger.warning(f"⚠️ فشل تحديث حالة النظام (الخيوط تعمل): {status_error}")
 
             # ✅ تسجيل في Audit Trail (غير حرج)
             if AUDIT_LOGGER_AVAILABLE and audit_logger:
@@ -980,10 +974,23 @@ class BackgroundTradingManager:
 
 
 def signal_handler(signum, frame):
-    """معالج إشارات النظام"""
-    logger.info(f"\n⚠️ تم استلام إشارة {signum}")
+    """معالج إشارات النظام - SIGTERM/SIGINT = graceful shutdown, not emergency"""
+    signal_name = (
+        signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
+    )
+    logger.info(f"\n⚠️ تم استلام إشارة {signum} ({signal_name})")
+
     if manager:
-        manager.stop(emergency=True)
+        # SIGTERM and SIGINT are normal termination signals (e.g., Docker container stop)
+        # Only do emergency stop if explicitly requested via --emergency-stop flag
+        # For now, treat as graceful shutdown to prevent accidental emergency stops
+        if signum in (signal.SIGTERM, signal.SIGINT):
+            logger.info("إيقاف طبيعي - إيقاف graceful")
+            manager.stop(emergency=False)
+        else:
+            # Other signals may indicate emergency
+            logger.warning("إيقاف طوارئ - SIGNAL")
+            manager.stop(emergency=True)
     sys.exit(0)
 
 

@@ -21,7 +21,15 @@ class DbPortfolioMixin:
         admin_check = conn.execute(
             "SELECT user_type FROM users WHERE id = %s LIMIT 1", (user_id,)
         ).fetchone()
-        if not admin_check or (admin_check[0] if not isinstance(admin_check, dict) else admin_check.get('user_type')) != 'admin':
+        if (
+            not admin_check
+            or (
+                admin_check[0]
+                if not isinstance(admin_check, dict)
+                else admin_check.get("user_type")
+            )
+            != "admin"
+        ):
             return
 
         conn.execute(
@@ -33,7 +41,12 @@ class DbPortfolioMixin:
             ) VALUES (%s, %s, %s, 0.0, %s, 0.0, 0.0, 0, 0, 0, CURRENT_TIMESTAMP)
             ON CONFLICT (user_id) DO NOTHING
             """,
-            (user_id, self.DEMO_ACCOUNT_INITIAL_BALANCE, self.DEMO_ACCOUNT_INITIAL_BALANCE, self.DEMO_ACCOUNT_INITIAL_BALANCE),
+            (
+                user_id,
+                self.DEMO_ACCOUNT_INITIAL_BALANCE,
+                self.DEMO_ACCOUNT_INITIAL_BALANCE,
+                self.DEMO_ACCOUNT_INITIAL_BALANCE,
+            ),
         )
 
     def _sync_demo_account_to_portfolio_on_conn(self, conn, user_id: int) -> None:
@@ -86,15 +99,27 @@ class DbPortfolioMixin:
             ),
         )
 
-    def _recalculate_demo_account_on_conn(self, conn, user_id: int, available_balance: Optional[float] = None) -> None:
+    def _recalculate_demo_account_on_conn(
+        self, conn, user_id: int, available_balance: Optional[float] = None
+    ) -> None:
         self._ensure_demo_account(conn, user_id)
 
         current_demo = conn.execute(
             "SELECT initial_balance, available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
             (user_id,),
         ).fetchone()
-        initial_balance = float(current_demo[0] or self.DEMO_ACCOUNT_INITIAL_BALANCE) if current_demo else self.DEMO_ACCOUNT_INITIAL_BALANCE
-        resolved_available = float(available_balance if available_balance is not None else (current_demo[1] if current_demo else self.DEMO_ACCOUNT_INITIAL_BALANCE))
+        initial_balance = (
+            float(current_demo[0] or self.DEMO_ACCOUNT_INITIAL_BALANCE)
+            if current_demo
+            else self.DEMO_ACCOUNT_INITIAL_BALANCE
+        )
+        resolved_available = float(
+            available_balance
+            if available_balance is not None
+            else (
+                current_demo[1] if current_demo else self.DEMO_ACCOUNT_INITIAL_BALANCE
+            )
+        )
 
         invested_row = conn.execute(
             """
@@ -124,7 +149,9 @@ class DbPortfolioMixin:
         winning_trades = int(stats_row[2] or 0) if stats_row else 0
         losing_trades = int(stats_row[3] or 0) if stats_row else 0
         total_balance = resolved_available + invested_balance
-        total_pnl_pct = ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0.0
+        total_pnl_pct = (
+            ((total_pnl / initial_balance) * 100) if initial_balance > 0 else 0.0
+        )
 
         conn.execute(
             """
@@ -156,16 +183,28 @@ class DbPortfolioMixin:
         )
         self._sync_demo_account_to_portfolio_on_conn(conn, user_id)
 
-    def _reset_demo_account_on_conn(self, conn, user_id: int, initial_balance: Optional[float] = None) -> float:
-        resolved_initial_balance = float(initial_balance or self.DEMO_ACCOUNT_INITIAL_BALANCE)
+    def _reset_demo_account_on_conn(
+        self, conn, user_id: int, initial_balance: Optional[float] = None
+    ) -> float:
+        resolved_initial_balance = float(
+            initial_balance or self.DEMO_ACCOUNT_INITIAL_BALANCE
+        )
         self._ensure_demo_account(conn, user_id)
-        conn.execute("DELETE FROM active_positions WHERE user_id = %s AND is_demo = TRUE", (user_id,))
-        conn.execute("DELETE FROM user_trades WHERE user_id = %s AND is_demo = TRUE", (user_id,))
+        conn.execute(
+            "DELETE FROM active_positions WHERE user_id = %s AND is_demo = TRUE",
+            (user_id,),
+        )
+        conn.execute(
+            "DELETE FROM user_trades WHERE user_id = %s AND is_demo = TRUE", (user_id,)
+        )
         # PostgreSQL aborts entire transaction on error — use SAVEPOINT for optional tables
-        for optional_table in ('user_binance_orders', 'portfolio_growth_history'):
+        for optional_table in ("user_binance_orders", "portfolio_growth_history"):
             try:
                 conn.execute("SAVEPOINT sp_optional_delete")
-                conn.execute(f"DELETE FROM {optional_table} WHERE user_id = %s AND is_demo = TRUE", (user_id,))
+                conn.execute(
+                    f"DELETE FROM {optional_table} WHERE user_id = %s AND is_demo = TRUE",
+                    (user_id,),
+                )
                 conn.execute("RELEASE SAVEPOINT sp_optional_delete")
             except Exception:
                 conn.execute("ROLLBACK TO SAVEPOINT sp_optional_delete")
@@ -187,7 +226,12 @@ class DbPortfolioMixin:
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = %s
             """,
-            (resolved_initial_balance, resolved_initial_balance, resolved_initial_balance, user_id),
+            (
+                resolved_initial_balance,
+                resolved_initial_balance,
+                resolved_initial_balance,
+                user_id,
+            ),
         )
         self._sync_demo_account_to_portfolio_on_conn(conn, user_id)
         return resolved_initial_balance
@@ -198,7 +242,8 @@ class DbPortfolioMixin:
         """مزامنة بيانات المحفظة وحساب القيم المحدثة"""
         try:
             with self.get_write_connection() as conn:
-                cursor = conn.execute("""
+                cursor = conn.execute(
+                    """
                     SELECT 
                         p.id,
                         p.total_balance,
@@ -219,7 +264,9 @@ class DbPortfolioMixin:
                        AND t.is_active = TRUE
                     WHERE p.user_id = %s
                     GROUP BY p.id, p.total_balance, p.is_demo
-                """, (user_id,))
+                """,
+                    (user_id,),
+                )
 
                 rows = cursor.fetchall()
                 if rows:
@@ -240,10 +287,13 @@ class DbPortfolioMixin:
                                 (invested_amount, available_balance, portfolio_id),
                             )
                             if is_demo_row:
-                                self._recalculate_demo_account_on_conn(conn, user_id, available_balance=available_balance)
+                                self._recalculate_demo_account_on_conn(
+                                    conn, user_id, available_balance=available_balance
+                                )
 
                         try:
                             from backend.utils.simple_cache import response_cache
+
                             response_cache.invalidate_user_cache(user_id)
                         except Exception:
                             pass
@@ -258,27 +308,27 @@ class DbPortfolioMixin:
         """تحديث محفظة المستخدم حسب الوضع"""
         if is_demo is None:
             is_demo = get_effective_is_demo(self, user_id)
-        
+
         with self.get_write_connection() as conn:
             update_fields = ["updated_at = CURRENT_TIMESTAMP"]
             values = []
             mapped_updates = {}
-            
+
             field_mapping = {
-                'balance': 'total_balance',
-                'totalBalance': 'total_balance',
-                'total_balance': 'total_balance',
-                'availableBalance': 'available_balance',
-                'available_balance': 'available_balance',
-                'totalProfitLoss': 'total_profit_loss',
-                'total_profit_loss': 'total_profit_loss',
-                'total_profit_loss_percentage': 'total_profit_loss_percentage',
-                'invested_balance': 'invested_balance',
-                'total_trades': 'total_trades',
-                'winning_trades': 'winning_trades',
-                'losing_trades': 'losing_trades',
+                "balance": "total_balance",
+                "totalBalance": "total_balance",
+                "total_balance": "total_balance",
+                "availableBalance": "available_balance",
+                "available_balance": "available_balance",
+                "totalProfitLoss": "total_profit_loss",
+                "total_profit_loss": "total_profit_loss",
+                "total_profit_loss_percentage": "total_profit_loss_percentage",
+                "invested_balance": "invested_balance",
+                "total_trades": "total_trades",
+                "winning_trades": "winning_trades",
+                "losing_trades": "losing_trades",
             }
-            
+
             for key, value in updates.items():
                 target = field_mapping.get(key)
                 if target:
@@ -287,93 +337,126 @@ class DbPortfolioMixin:
             for field_name, field_value in mapped_updates.items():
                 update_fields.append(f"{field_name} = %s")
                 values.append(field_value)
-            
+
             if values:
                 values.extend([user_id, bool(is_demo)])
                 query = f"UPDATE portfolio SET {', '.join(update_fields)} WHERE user_id = %s AND is_demo = %s"
                 conn.execute(query, values)
                 if bool(is_demo):
                     demo_updates = {}
-                    if 'total_balance' in mapped_updates:
-                        demo_updates['total_balance'] = float(mapped_updates['total_balance'] or 0.0)
-                    if 'available_balance' in mapped_updates:
-                        demo_updates['available_balance'] = float(mapped_updates['available_balance'] or 0.0)
-                    if 'invested_balance' in mapped_updates:
-                        demo_updates['invested_balance'] = float(mapped_updates['invested_balance'] or 0.0)
-                    if 'total_profit_loss' in mapped_updates:
-                        demo_updates['total_profit_loss'] = float(mapped_updates['total_profit_loss'] or 0.0)
-                    if 'total_profit_loss_percentage' in mapped_updates:
-                        demo_updates['total_profit_loss_percentage'] = float(mapped_updates['total_profit_loss_percentage'] or 0.0)
-                    if 'total_trades' in mapped_updates:
-                        demo_updates['total_trades'] = int(mapped_updates['total_trades'] or 0)
-                    if 'winning_trades' in mapped_updates:
-                        demo_updates['winning_trades'] = int(mapped_updates['winning_trades'] or 0)
-                    if 'losing_trades' in mapped_updates:
-                        demo_updates['losing_trades'] = int(mapped_updates['losing_trades'] or 0)
+                    if "total_balance" in mapped_updates:
+                        demo_updates["total_balance"] = float(
+                            mapped_updates["total_balance"] or 0.0
+                        )
+                    if "available_balance" in mapped_updates:
+                        demo_updates["available_balance"] = float(
+                            mapped_updates["available_balance"] or 0.0
+                        )
+                    if "invested_balance" in mapped_updates:
+                        demo_updates["invested_balance"] = float(
+                            mapped_updates["invested_balance"] or 0.0
+                        )
+                    if "total_profit_loss" in mapped_updates:
+                        demo_updates["total_profit_loss"] = float(
+                            mapped_updates["total_profit_loss"] or 0.0
+                        )
+                    if "total_profit_loss_percentage" in mapped_updates:
+                        demo_updates["total_profit_loss_percentage"] = float(
+                            mapped_updates["total_profit_loss_percentage"] or 0.0
+                        )
+                    if "total_trades" in mapped_updates:
+                        demo_updates["total_trades"] = int(
+                            mapped_updates["total_trades"] or 0
+                        )
+                    if "winning_trades" in mapped_updates:
+                        demo_updates["winning_trades"] = int(
+                            mapped_updates["winning_trades"] or 0
+                        )
+                    if "losing_trades" in mapped_updates:
+                        demo_updates["losing_trades"] = int(
+                            mapped_updates["losing_trades"] or 0
+                        )
 
                     self._ensure_demo_account(conn, user_id)
                     if demo_updates:
-                        set_clause = ", ".join([f"{key} = %s" for key in demo_updates.keys()])
+                        set_clause = ", ".join(
+                            [f"{key} = %s" for key in demo_updates.keys()]
+                        )
                         conn.execute(
                             f"UPDATE demo_accounts SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s",
                             list(demo_updates.values()) + [user_id],
                         )
                 try:
                     from backend.utils.simple_cache import response_cache
+
                     response_cache.invalidate_user_cache(user_id)
                 except Exception:
                     pass
 
-    def add_user_trade(self, user_id: int, trade_data: Dict[str, Any], is_demo: int = None) -> int:
+    def add_user_trade(
+        self, user_id: int, trade_data: Dict[str, Any], is_demo: int = None
+    ) -> int:
         """إضافة صفقة جديدة للمستخدم حسب الوضع"""
         if is_demo is None:
             is_demo = get_effective_is_demo(self, user_id)
         is_demo = bool(is_demo)
-        
+
         with self.get_write_connection() as conn:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 INSERT INTO active_positions 
                 (user_id, symbol, strategy, timeframe, side, entry_price, quantity, 
                  stop_loss, take_profit, is_active, is_demo, entry_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, CURRENT_TIMESTAMP)
                 RETURNING id
-            """, (
-                user_id,
-                trade_data['symbol'],
-                trade_data['strategy'],
-                trade_data['timeframe'],
-                trade_data['side'],
-                trade_data['entry_price'],
-                trade_data['quantity'],
-                trade_data.get('stop_loss'),
-                trade_data.get('take_profit'),
-                is_demo
-            ))
-            
+            """,
+                (
+                    user_id,
+                    trade_data["symbol"],
+                    trade_data["strategy"],
+                    trade_data["timeframe"],
+                    trade_data["side"],
+                    trade_data["entry_price"],
+                    trade_data["quantity"],
+                    trade_data.get("stop_loss"),
+                    trade_data.get("take_profit"),
+                    is_demo,
+                ),
+            )
+
             row = cursor.fetchone()
             trade_id = row[0] if row else 0
-            mode_text = 'وهمية' if is_demo else 'حقيقية'
+            mode_text = "وهمية" if is_demo else "حقيقية"
             self.logger.info(f"تم إضافة صفقة {mode_text} {trade_id} للمستخدم {user_id}")
             return trade_id
 
-    def save_trade(self, user_id: int, symbol: str, side: str, quantity: float, price: float, **kwargs) -> int:
+    def save_trade(
+        self,
+        user_id: int,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        **kwargs,
+    ) -> int:
         """حفظ صفقة جديدة - alias لـ add_user_trade"""
         trade_data = {
-            'symbol': symbol,
-            'side': side,
-            'quantity': quantity,
-            'entry_price': price,
-            'strategy': kwargs.get('strategy', 'manual'),
-            'timeframe': kwargs.get('timeframe', '1h'),
-            'stop_loss': kwargs.get('stop_loss'),
-            'take_profit': kwargs.get('take_profit')
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "entry_price": price,
+            "strategy": kwargs.get("strategy", "manual"),
+            "timeframe": kwargs.get("timeframe", "1h"),
+            "stop_loss": kwargs.get("stop_loss"),
+            "take_profit": kwargs.get("take_profit"),
         }
         return self.add_user_trade(user_id, trade_data)
 
     def get_open_trades(self, user_id: int) -> List[Dict[str, Any]]:
         """جلب الصفقات المفتوحة للمستخدم — يقرأ من active_positions"""
         with self.get_connection() as conn:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT
                     id, user_id, symbol, strategy, is_demo,
                     entry_price, exit_price, quantity,
@@ -387,37 +470,46 @@ class DbPortfolioMixin:
                 FROM active_positions
                 WHERE user_id = %s AND is_active = TRUE
                 ORDER BY COALESCE(entry_date, created_at) DESC
-            """, (user_id,)).fetchall()
-            
+            """,
+                (user_id,),
+            ).fetchall()
+
             return [dict(row) for row in rows]
 
     def close_user_trade(self, trade_id: int, exit_price: float, profit_loss: float):
         """إغلاق صفقة المستخدم"""
         with self.get_write_connection() as conn:
-            trade = conn.execute("""
+            trade = conn.execute(
+                """
                 SELECT entry_price, quantity FROM active_positions WHERE id = %s
-            """, (trade_id,)).fetchone()
-            
+            """,
+                (trade_id,),
+            ).fetchone()
+
             if trade:
                 entry_price, quantity = trade
                 initial_investment = entry_price * quantity
-                profit_loss_percentage = (profit_loss / initial_investment * 100) if initial_investment > 0 else 0
+                profit_loss_percentage = (
+                    (profit_loss / initial_investment * 100)
+                    if initial_investment > 0
+                    else 0
+                )
             else:
                 profit_loss_percentage = 0
-            
-            conn.execute("""
+
+            conn.execute(
+                """
                 UPDATE active_positions 
                 SET exit_price = %s, profit_loss = %s, profit_pct = %s, 
                     is_active = FALSE, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-            """, (
-                exit_price,
-                profit_loss,
-                profit_loss_percentage,
-                trade_id
-            ))
-            
-            self.logger.info(f"تم إغلاق الصفقة {trade_id} بنسبة {profit_loss_percentage:.2f}%")
+            """,
+                (exit_price, profit_loss, profit_loss_percentage, trade_id),
+            )
+
+            self.logger.info(
+                f"تم إغلاق الصفقة {trade_id} بنسبة {profit_loss_percentage:.2f}%"
+            )
 
     def reset_user_portfolio(self, user_id: int, initial_balance: float = 0.0) -> bool:
         """إعادة ضبط الحساب التجريبي - مسح جميع البيانات وإعادة تعيين الرصيد"""
@@ -426,22 +518,33 @@ class DbPortfolioMixin:
                 resolved_initial_balance = self._reset_demo_account_on_conn(
                     conn,
                     user_id,
-                    initial_balance=initial_balance or self.DEMO_ACCOUNT_INITIAL_BALANCE,
+                    initial_balance=initial_balance
+                    or self.DEMO_ACCOUNT_INITIAL_BALANCE,
                 )
-                self.logger.info(f"تمت إعادة تهيئة الحساب التجريبي للمستخدم {user_id} من المصدر الموحد demo_accounts")
-                
+                self.logger.info(
+                    f"تمت إعادة تهيئة الحساب التجريبي للمستخدم {user_id} من المصدر الموحد demo_accounts"
+                )
+
                 # PostgreSQL aborts entire transaction on error — use SAVEPOINT for optional cleanup
-                for tbl_name in ('user_binance_balance', 'user_binance_balances',
-                                 'notifications', 'notification_history', 'activity_logs'):
+                for tbl_name in (
+                    "user_binance_balance",
+                    "user_binance_balances",
+                    "notifications",
+                    "notification_history",
+                    "activity_logs",
+                ):
                     try:
                         conn.execute("SAVEPOINT sp_reset_cleanup")
-                        conn.execute(f"DELETE FROM {tbl_name} WHERE user_id = %s", (user_id,))
+                        conn.execute(
+                            f"DELETE FROM {tbl_name} WHERE user_id = %s", (user_id,)
+                        )
                         conn.execute("RELEASE SAVEPOINT sp_reset_cleanup")
                         self.logger.info(f"تم مسح {tbl_name} للمستخدم {user_id}")
                     except Exception:
                         conn.execute("ROLLBACK TO SAVEPOINT sp_reset_cleanup")
-                
-                conn.execute("""
+
+                conn.execute(
+                    """
                     INSERT INTO user_settings 
                     (user_id, is_demo, trade_amount, max_positions, risk_level, stop_loss_pct,
                      take_profit_pct, trailing_distance, position_size_percentage, trading_enabled,
@@ -453,30 +556,38 @@ class DbPortfolioMixin:
                         position_size_percentage = 10.00, trading_enabled = FALSE,
                         max_daily_loss_pct = 10.00, daily_loss_limit = 100.00,
                         trading_mode = 'demo', updated_at = CURRENT_TIMESTAMP
-                """, (user_id,))
-                
-                self.logger.info(f"تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} بنجاح - الرصيد: {resolved_initial_balance}$")
+                """,
+                    (user_id,),
+                )
+
+                self.logger.info(
+                    f"تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} بنجاح - الرصيد: {resolved_initial_balance}$"
+                )
                 return True
-                
+
         except Exception as e:
-            self.logger.error(f"خطأ في إعادة ضبط الحساب التجريبي للمستخدم {user_id}: {e}")
+            self.logger.error(
+                f"خطأ في إعادة ضبط الحساب التجريبي للمستخدم {user_id}: {e}"
+            )
             return False
 
-    def get_user_trades_simple(self, user_id: int, status: Optional[str] = None, is_demo: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_user_trades_simple(
+        self, user_id: int, status: Optional[str] = None, is_demo: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """الحصول على صفقات المستخدم — يقرأ من active_positions (المصدر الوحيد للبيانات)"""
         with self.get_connection() as conn:
             conditions = ["user_id = %s"]
             params = [user_id]
-            
-            if status == 'open':
+
+            if status == "open":
                 conditions.append("is_active = TRUE")
-            elif status == 'closed':
+            elif status == "closed":
                 conditions.append("is_active = FALSE")
-            
+
             if is_demo is not None:
                 conditions.append("is_demo = %s")
                 params.append(bool(is_demo))
-            
+
             query = f"""
                 SELECT
                     id, user_id, symbol, strategy, is_demo,
@@ -489,10 +600,10 @@ class DbPortfolioMixin:
                     CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                     stop_loss, take_profit, created_at
                 FROM active_positions
-                WHERE {' AND '.join(conditions)}
+                WHERE {" AND ".join(conditions)}
                 ORDER BY COALESCE(entry_date, created_at) DESC
             """
-            
+
             rows = conn.execute(query, tuple(params)).fetchall()
             return [dict(row) for row in rows]
 
@@ -502,15 +613,17 @@ class DbPortfolioMixin:
         """تنسيق القيمة المالية بفواصل الآلاف"""
         return f"{value:,.2f}"
 
-    def get_user_portfolio(self, user_id: int, is_demo: Optional[int] = None) -> Dict[str, Any]:
+    def get_user_portfolio(
+        self, user_id: int, is_demo: Optional[int] = None
+    ) -> Dict[str, Any]:
         """الحصول على بيانات المحفظة حسب الوضع"""
         try:
             user_data = self.get_user_by_id(user_id)
             if not user_data:
-                return {'error': True, 'message': 'المستخدم غير موجود'}
-            
+                return {"error": True, "message": "المستخدم غير موجود"}
+
             is_admin = is_admin_user(self, user_id)
-            
+
             if is_admin:
                 if is_demo is None:
                     is_demo = get_effective_is_demo(self, user_id)
@@ -520,14 +633,16 @@ class DbPortfolioMixin:
                     return self._get_binance_portfolio(user_id)
 
                 return self._get_admin_portfolio(user_id, is_demo)
-            
+
             return self._get_binance_portfolio(user_id)
-                    
+
         except Exception as e:
             self.logger.error(f"خطأ في جلب بيانات المحفظة: {e}")
-            return {'error': True, 'message': str(e)}
+            return {"error": True, "message": str(e)}
 
-    def _calculate_open_positions_metrics(self, user_id: int, is_demo: int = 0) -> Dict[str, Any]:
+    def _calculate_open_positions_metrics(
+        self, user_id: int, is_demo: int = 0
+    ) -> Dict[str, Any]:
         try:
             with self.get_connection() as conn:
                 rows = conn.execute(
@@ -541,10 +656,10 @@ class DbPortfolioMixin:
 
             if not rows:
                 return {
-                    'active_trades': 0,
-                    'invested': 0.0,
-                    'market_value': 0.0,
-                    'unrealized_pnl': 0.0,
+                    "active_trades": 0,
+                    "invested": 0.0,
+                    "market_value": 0.0,
+                    "unrealized_pnl": 0.0,
                 }
 
             from backend.utils.data_provider import DataProvider
@@ -556,13 +671,15 @@ class DbPortfolioMixin:
 
             for row in rows:
                 position = dict(row)
-                entry_price = float(position.get('entry_price') or 0.0)
-                quantity = float(position.get('quantity') or 0.0)
-                position_size = float(position.get('position_size') or 0.0)
-                symbol = position.get('symbol') or ''
-                position_type = str(position.get('position_type') or 'long').lower()
+                entry_price = float(position.get("entry_price") or 0.0)
+                quantity = float(position.get("quantity") or 0.0)
+                position_size = float(position.get("position_size") or 0.0)
+                symbol = position.get("symbol") or ""
+                position_type = str(position.get("position_type") or "long").lower()
 
-                entry_notional = position_size if position_size > 0 else (entry_price * quantity)
+                entry_notional = (
+                    position_size if position_size > 0 else (entry_price * quantity)
+                )
                 current_price = entry_price
 
                 try:
@@ -572,7 +689,7 @@ class DbPortfolioMixin:
                 except Exception:
                     current_price = entry_price
 
-                if position_type in ('long', 'buy'):
+                if position_type in ("long", "buy"):
                     pnl = (current_price - entry_price) * quantity
                 else:
                     pnl = (entry_price - current_price) * quantity
@@ -582,18 +699,18 @@ class DbPortfolioMixin:
                 market_value += max(entry_notional + pnl, 0.0)
 
             return {
-                'active_trades': len(rows),
-                'invested': invested,
-                'market_value': market_value,
-                'unrealized_pnl': unrealized_pnl,
+                "active_trades": len(rows),
+                "invested": invested,
+                "market_value": market_value,
+                "unrealized_pnl": unrealized_pnl,
             }
         except Exception as e:
             self.logger.error(f"خطأ في حساب الصفقات المفتوحة: {e}")
             return {
-                'active_trades': 0,
-                'invested': 0.0,
-                'market_value': 0.0,
-                'unrealized_pnl': 0.0,
+                "active_trades": 0,
+                "invested": 0.0,
+                "market_value": 0.0,
+                "unrealized_pnl": 0.0,
             }
 
     def _get_binance_portfolio(self, user_id: int) -> Dict[str, Any]:
@@ -601,20 +718,21 @@ class DbPortfolioMixin:
         keys = self.get_binance_keys(user_id)
         if not keys:
             return {
-                'hasKeys': False,
-                'error': False,
-                'message': '🔑 يرجى إضافة مفاتيح Binance لعرض محفظتك والبدء في التداول',
-                'action': 'ADD_BINANCE_KEYS',
-                'totalBalance': '0.00',
-                'availableBalance': '0.00',
-                'investedBalance': '0.00',
-                'totalProfitLoss': '+0.00',
-                'totalProfitLossPercentage': '+0.00',
-                'currency': 'USD'
+                "hasKeys": False,
+                "error": False,
+                "message": "🔑 يرجى إضافة مفاتيح Binance لعرض محفظتك والبدء في التداول",
+                "action": "ADD_BINANCE_KEYS",
+                "totalBalance": "0.00",
+                "availableBalance": "0.00",
+                "investedBalance": "0.00",
+                "totalProfitLoss": "+0.00",
+                "totalProfitLossPercentage": "+0.00",
+                "currency": "USD",
             }
-        
+
         try:
             from backend.utils.binance_manager import BinanceManager
+
             binance_mgr = BinanceManager()
             snapshot = {}
             with self.get_connection() as conn:
@@ -629,88 +747,126 @@ class DbPortfolioMixin:
                 ).fetchone()
                 if snapshot_row:
                     snapshot = {
-                        'initial_balance': float(snapshot_row[0] or 0.0),
-                        'first_trade_balance': float(snapshot_row[1] or 0.0) if snapshot_row[1] is not None else None,
-                        'first_trade_at': snapshot_row[2],
-                        'initial_balance_source': snapshot_row[3],
+                        "initial_balance": float(snapshot_row[0] or 0.0),
+                        "first_trade_balance": float(snapshot_row[1] or 0.0)
+                        if snapshot_row[1] is not None
+                        else None,
+                        "first_trade_at": snapshot_row[2],
+                        "initial_balance_source": snapshot_row[3],
                     }
-            
+
             sync_result = binance_mgr.sync_user_balance(user_id)
-            
+
             if sync_result:
                 balance_data = binance_mgr.get_user_real_balance(user_id)
-                
-                if balance_data.get('success'):
-                    total_usdt = float(balance_data.get('total_usdt', 0) or 0)
-                    free_usdt = float(balance_data.get('free_usdt', total_usdt) or 0)
-                    locked_usdt = float(balance_data.get('locked_usdt', 0) or 0)
-                    
+
+                if balance_data.get("success"):
+                    total_usdt = float(balance_data.get("total_usdt", 0) or 0)
+                    free_usdt = float(balance_data.get("free_usdt", total_usdt) or 0)
+                    locked_usdt = float(balance_data.get("locked_usdt", 0) or 0)
+
                     pnl_data = self._calculate_user_pnl(user_id)
-                    realized_pnl = float(pnl_data.get('realized_pnl', 0) or 0)
-                    unrealized_pnl = float(pnl_data.get('unrealized_pnl', 0) or 0)
-                    system_total_pnl = float(pnl_data.get('total_pnl', 0) or 0)
-                    has_system_activity = (pnl_data.get('trades_count', 0) or 0) > 0 or (pnl_data.get('active_trades', 0) or 0) > 0
-                    baseline_balance = total_usdt if not has_system_activity else max(total_usdt - system_total_pnl, 0)
-                    initial_balance = self._get_or_set_initial_balance(user_id, baseline_balance, has_system_activity)
-                    initial_balance_source = snapshot.get('initial_balance_source') or ('first_system_trade_snapshot' if has_system_activity else 'live_balance_before_first_trade')
-                    first_trade_balance = snapshot.get('first_trade_balance') if snapshot else None
-                    first_trade_at = snapshot.get('first_trade_at') if snapshot else None
+                    realized_pnl = float(pnl_data.get("realized_pnl", 0) or 0)
+                    unrealized_pnl = float(pnl_data.get("unrealized_pnl", 0) or 0)
+                    system_total_pnl = float(pnl_data.get("total_pnl", 0) or 0)
+                    has_system_activity = (
+                        pnl_data.get("trades_count", 0) or 0
+                    ) > 0 or (pnl_data.get("active_trades", 0) or 0) > 0
+                    baseline_balance = (
+                        total_usdt
+                        if not has_system_activity
+                        else max(total_usdt - system_total_pnl, 0)
+                    )
+                    initial_balance = self._get_or_set_initial_balance(
+                        user_id, baseline_balance, has_system_activity
+                    )
+                    initial_balance_source = snapshot.get("initial_balance_source") or (
+                        "first_system_trade_snapshot"
+                        if has_system_activity
+                        else "live_balance_before_first_trade"
+                    )
+                    first_trade_balance = (
+                        snapshot.get("first_trade_balance") if snapshot else None
+                    )
+                    first_trade_at = (
+                        snapshot.get("first_trade_at") if snapshot else None
+                    )
 
                     total_growth = system_total_pnl
-                    total_growth_pct = (total_growth / initial_balance * 100) if initial_balance > 0 else 0
-                    realized_pnl_pct = (realized_pnl / initial_balance * 100) if initial_balance > 0 else 0
-                    unrealized_pnl_pct = (unrealized_pnl / initial_balance * 100) if initial_balance > 0 else 0
-                    
+                    total_growth_pct = (
+                        (total_growth / initial_balance * 100)
+                        if initial_balance > 0
+                        else 0
+                    )
+                    realized_pnl_pct = (
+                        (realized_pnl / initial_balance * 100)
+                        if initial_balance > 0
+                        else 0
+                    )
+                    unrealized_pnl_pct = (
+                        (unrealized_pnl / initial_balance * 100)
+                        if initial_balance > 0
+                        else 0
+                    )
+
                     return {
-                        'hasKeys': True,
-                        'totalBalance': self._format_currency(total_usdt),
-                        'balance': total_usdt,
-                        'availableBalance': self._format_currency(free_usdt),
-                        'lockedBalance': self._format_currency(locked_usdt),
-                        'investedBalance': self._format_currency(pnl_data['market_value']),
-                        'initialBalance': self._format_currency(initial_balance),
-                        'dailyPnL': f"{pnl_data['daily_pnl']:+,.2f}",
-                        'dailyPnLPercentage': f"{pnl_data['daily_pnl_pct']:+.2f}",
-                        'totalPnL': f"{pnl_data['total_pnl']:+,.2f}",
-                        'totalPnLPercentage': f"{pnl_data['total_pnl_pct']:+.2f}",
-                        'realizedPnL': f"{realized_pnl:+,.2f}",
-                        'realizedPnLPercentage': f"{realized_pnl_pct:+.2f}",
-                        'unrealizedPnL': f"{unrealized_pnl:+,.2f}",
-                        'unrealizedPnLPercentage': f"{unrealized_pnl_pct:+.2f}",
-                        'totalProfitLoss': f"{pnl_data['total_pnl']:+,.2f}",
-                        'totalProfitLossPercentage': f"{pnl_data['total_pnl_pct']:+.2f}",
-                        'portfolioGrowth': f"{total_growth:+,.2f}",
-                        'portfolioGrowthPercentage': f"{total_growth_pct:+.2f}",
-                        'investedAmount': self._format_currency(pnl_data['market_value']),
-                        'tradesCount': pnl_data['trades_count'],
-                        'winRate': f"{pnl_data['win_rate']:.1f}%",
-                        'firstTradeDate': first_trade_at or pnl_data.get('first_trade_date'),
-                        'firstTradeBalance': self._format_currency(first_trade_balance) if first_trade_balance else None,
-                        'initialBalanceSource': initial_balance_source,
-                        'currency': 'USD',
-                        'source': 'binance_live',
-                        'lastUpdate': datetime.now().isoformat()
+                        "hasKeys": True,
+                        "totalBalance": self._format_currency(total_usdt),
+                        "balance": total_usdt,
+                        "availableBalance": self._format_currency(free_usdt),
+                        "lockedBalance": self._format_currency(locked_usdt),
+                        "investedBalance": self._format_currency(
+                            pnl_data["market_value"]
+                        ),
+                        "initialBalance": self._format_currency(initial_balance),
+                        "dailyPnL": f"{pnl_data['daily_pnl']:+,.2f}",
+                        "dailyPnLPercentage": f"{pnl_data['daily_pnl_pct']:+.2f}",
+                        "totalPnL": f"{pnl_data['total_pnl']:+,.2f}",
+                        "totalPnLPercentage": f"{pnl_data['total_pnl_pct']:+.2f}",
+                        "realizedPnL": f"{realized_pnl:+,.2f}",
+                        "realizedPnLPercentage": f"{realized_pnl_pct:+.2f}",
+                        "unrealizedPnL": f"{unrealized_pnl:+,.2f}",
+                        "unrealizedPnLPercentage": f"{unrealized_pnl_pct:+.2f}",
+                        "totalProfitLoss": f"{pnl_data['total_pnl']:+,.2f}",
+                        "totalProfitLossPercentage": f"{pnl_data['total_pnl_pct']:+.2f}",
+                        "portfolioGrowth": f"{total_growth:+,.2f}",
+                        "portfolioGrowthPercentage": f"{total_growth_pct:+.2f}",
+                        "investedAmount": self._format_currency(
+                            pnl_data["market_value"]
+                        ),
+                        "tradesCount": pnl_data["trades_count"],
+                        "winRate": f"{pnl_data['win_rate']:.1f}%",
+                        "firstTradeDate": first_trade_at
+                        or pnl_data.get("first_trade_date"),
+                        "firstTradeBalance": self._format_currency(first_trade_balance)
+                        if first_trade_balance
+                        else None,
+                        "initialBalanceSource": initial_balance_source,
+                        "currency": "USD",
+                        "source": "binance_live",
+                        "lastUpdate": datetime.now().isoformat(),
                     }
-            
+
             return {
-                'hasKeys': True,
-                'error': True,
-                'message': 'فشل في جلب البيانات من Binance - تحقق من المفاتيح'
+                "hasKeys": True,
+                "error": True,
+                "message": "فشل في جلب البيانات من Binance - تحقق من المفاتيح",
             }
-        
+
         except Exception as e:
             self.logger.error(f"خطأ في الاتصال بـ Binance: {e}")
             return {
-                'hasKeys': True,
-                'error': True,
-                'message': f'خطأ في الاتصال بـ Binance: {str(e)}'
+                "hasKeys": True,
+                "error": True,
+                "message": f"خطأ في الاتصال بـ Binance: {str(e)}",
             }
 
     def _calculate_user_pnl(self, user_id: int, is_demo: int = 0) -> Dict[str, Any]:
         """حساب الأرباح والخسائر من صفقات المستخدم"""
         try:
             with self.get_connection() as conn:
-                total_result = conn.execute("""
+                total_result = conn.execute(
+                    """
                     SELECT
                         COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as realized_pnl,
                         SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as closed_trades,
@@ -718,74 +874,98 @@ class DbPortfolioMixin:
                         MIN(COALESCE(entry_date, CAST(created_at AS TEXT))) as first_trade_date
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s
-                """, (user_id, bool(is_demo))).fetchone()
-                
-                daily_result = conn.execute("""
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
+
+                daily_result = conn.execute(
+                    """
                     SELECT COALESCE(SUM(profit_loss), 0) as daily_pnl
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s
                     AND is_active = FALSE
                     AND DATE(closed_at) = CURRENT_DATE
-                """, (user_id, bool(is_demo))).fetchone()
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
 
-                active_result = conn.execute("""
+                active_result = conn.execute(
+                    """
                     SELECT COUNT(*) as active_trades
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s AND is_active = TRUE
-                """, (user_id, bool(is_demo))).fetchone()
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
 
                 open_metrics = self._calculate_open_positions_metrics(user_id, is_demo)
-                
+
                 realized_pnl = float(total_result[0] or 0) if total_result else 0.0
                 closed_trades = int(total_result[1] or 0) if total_result else 0
                 winning_trades = total_result[2] if total_result else 0
-                invested = float(open_metrics.get('invested', 0.0) or 0.0)
-                market_value = float(open_metrics.get('market_value', 0.0) or 0.0)
-                unrealized_pnl = float(open_metrics.get('unrealized_pnl', 0.0) or 0.0)
+                invested = float(open_metrics.get("invested", 0.0) or 0.0)
+                market_value = float(open_metrics.get("market_value", 0.0) or 0.0)
+                unrealized_pnl = float(open_metrics.get("unrealized_pnl", 0.0) or 0.0)
                 total_pnl = realized_pnl + unrealized_pnl
                 daily_pnl = float(daily_result[0] or 0) if daily_result else 0.0
                 active_trades = active_result[0] if active_result else 0
                 total_trades = closed_trades + (active_trades or 0)
-                
-                win_rate = (winning_trades / closed_trades * 100) if closed_trades > 0 else 0
+
+                win_rate = (
+                    (winning_trades / closed_trades * 100) if closed_trades > 0 else 0
+                )
                 total_pnl_pct = (total_pnl / invested * 100) if invested > 0 else 0
                 daily_pnl_pct = (daily_pnl / invested * 100) if invested > 0 else 0
-                
+
                 return {
-                    'realized_pnl': realized_pnl,
-                    'unrealized_pnl': unrealized_pnl,
-                    'total_pnl': total_pnl,
-                    'total_pnl_pct': total_pnl_pct,
-                    'daily_pnl': daily_pnl,
-                    'daily_pnl_pct': daily_pnl_pct,
-                    'trades_count': total_trades,
-                    'winning_trades': winning_trades,
-                    'win_rate': win_rate,
-                    'invested': invested,
-                    'market_value': market_value,
-                    'active_trades': active_trades,
-                    'first_trade_date': total_result[3] if total_result and len(total_result) > 3 else None,
+                    "realized_pnl": realized_pnl,
+                    "unrealized_pnl": unrealized_pnl,
+                    "total_pnl": total_pnl,
+                    "total_pnl_pct": total_pnl_pct,
+                    "daily_pnl": daily_pnl,
+                    "daily_pnl_pct": daily_pnl_pct,
+                    "trades_count": total_trades,
+                    "winning_trades": winning_trades,
+                    "win_rate": win_rate,
+                    "invested": invested,
+                    "market_value": market_value,
+                    "active_trades": active_trades,
+                    "first_trade_date": total_result[3]
+                    if total_result and len(total_result) > 3
+                    else None,
                 }
         except Exception as e:
             self.logger.error(f"خطأ في حساب الأرباح: {e}")
             return {
-                'realized_pnl': 0,
-                'unrealized_pnl': 0,
-                'total_pnl': 0, 'total_pnl_pct': 0,
-                'daily_pnl': 0, 'daily_pnl_pct': 0,
-                'trades_count': 0, 'winning_trades': 0,
-                'win_rate': 0, 'invested': 0, 'market_value': 0, 'active_trades': 0, 'first_trade_date': None
+                "realized_pnl": 0,
+                "unrealized_pnl": 0,
+                "total_pnl": 0,
+                "total_pnl_pct": 0,
+                "daily_pnl": 0,
+                "daily_pnl_pct": 0,
+                "trades_count": 0,
+                "winning_trades": 0,
+                "win_rate": 0,
+                "invested": 0,
+                "market_value": 0,
+                "active_trades": 0,
+                "first_trade_date": None,
             }
 
-    def _get_or_set_initial_balance(self, user_id: int, current_balance: float, has_system_activity: bool) -> float:
+    def _get_or_set_initial_balance(
+        self, user_id: int, current_balance: float, has_system_activity: bool
+    ) -> float:
         """جلب أو تعيين baseline النمو للحساب الحقيقي من أول تداول داخل النظام فقط"""
         try:
             with self.get_write_connection() as conn:
-                result = conn.execute("""
+                result = conn.execute(
+                    """
                     SELECT initial_balance FROM portfolio
                     WHERE user_id = %s AND is_demo = FALSE
-                """, (user_id,)).fetchone()
-                
+                """,
+                    (user_id,),
+                ).fetchone()
+
                 if result and result[0] and result[0] > 0:
                     return result[0]
 
@@ -820,7 +1000,7 @@ class DbPortfolioMixin:
                             (user_id, current_balance),
                         )
                     return current_balance
-                
+
                 return 0
         except Exception as e:
             self.logger.error(f"خطأ في جلب الرصيد الابتدائي: {e}")
@@ -832,99 +1012,137 @@ class DbPortfolioMixin:
             with self.get_write_connection() as conn:
                 self._ensure_demo_account(conn, user_id)
                 self._sync_demo_account_to_portfolio_on_conn(conn, user_id)
-                portfolio_result = conn.execute("""
+                portfolio_result = conn.execute(
+                    """
                     SELECT total_balance, available_balance, invested_balance,
                            initial_balance, total_profit_loss, total_profit_loss_percentage,
                            updated_at
                     FROM demo_accounts
                     WHERE user_id = %s
                     LIMIT 1
-                """, (user_id,)).fetchone()
+                """,
+                    (user_id,),
+                ).fetchone()
 
                 if not portfolio_result:
-                    return {'error': True, 'message': 'محفظة الأدمن المرجعية غير موجودة'}
+                    return {
+                        "error": True,
+                        "message": "محفظة الأدمن المرجعية غير موجودة",
+                    }
 
-                daily_result = conn.execute("""
+                daily_result = conn.execute(
+                    """
                     SELECT COALESCE(SUM(profit_loss), 0) as daily_pnl
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                     AND DATE(closed_at) = CURRENT_DATE
-                """, (user_id, bool(is_demo))).fetchone()
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
 
-                trades_result = conn.execute("""
+                trades_result = conn.execute(
+                    """
                     SELECT
                         COUNT(*) as trades_count,
                         COALESCE(SUM(CASE WHEN profit_loss > 0 THEN 1 ELSE 0 END), 0) as winning_trades
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
-                """, (user_id, bool(is_demo))).fetchone()
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
 
-                first_trade_result = conn.execute("""
+                first_trade_result = conn.execute(
+                    """
                     SELECT MIN(COALESCE(entry_date, CAST(created_at AS TEXT))) as first_trade_date
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s
-                """, (user_id, bool(is_demo))).fetchone()
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
 
                 total_balance = float(portfolio_result[0] or 0)
                 available_balance = float(portfolio_result[1] or 0)
                 invested_balance = float(portfolio_result[2] or 0)
                 initial_balance = float(portfolio_result[3] or 0)
                 realized_pnl = float(portfolio_result[4] or 0)
-                last_update = portfolio_result[6] if portfolio_result[6] else datetime.now().isoformat()
+                last_update = (
+                    portfolio_result[6]
+                    if portfolio_result[6]
+                    else datetime.now().isoformat()
+                )
                 open_metrics = self._calculate_open_positions_metrics(user_id, is_demo)
-                unrealized_pnl = float(open_metrics.get('unrealized_pnl', 0.0) or 0.0)
-                current_invested_value = float(open_metrics.get('market_value', invested_balance) or 0.0)
+                unrealized_pnl = float(open_metrics.get("unrealized_pnl", 0.0) or 0.0)
+                current_invested_value = float(
+                    open_metrics.get("market_value", invested_balance) or 0.0
+                )
                 total_pnl = realized_pnl + unrealized_pnl
-                total_pnl_pct = (total_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
-                realized_pnl_pct = (realized_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
-                unrealized_pnl_pct = (unrealized_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
-                total_balance = available_balance + current_invested_value
+                total_pnl_pct = (
+                    (total_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
+                )
+                realized_pnl_pct = (
+                    (realized_pnl / initial_balance * 100)
+                    if initial_balance > 0
+                    else 0.0
+                )
+                unrealized_pnl_pct = (
+                    (unrealized_pnl / initial_balance * 100)
+                    if initial_balance > 0
+                    else 0.0
+                )
+                total_balance = initial_balance + total_pnl
+                available_balance = total_balance - current_invested_value
 
                 daily_pnl = float(daily_result[0] or 0) if daily_result else 0.0
-                daily_pnl_pct = (daily_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
+                daily_pnl_pct = (
+                    (daily_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
+                )
                 trades_count = int(trades_result[0] or 0) if trades_result else 0
                 winning_trades = int(trades_result[1] or 0) if trades_result else 0
                 first_trade_date = first_trade_result[0] if first_trade_result else None
-                win_rate = (winning_trades / trades_count * 100) if trades_count > 0 else 0.0
+                win_rate = (
+                    (winning_trades / trades_count * 100) if trades_count > 0 else 0.0
+                )
 
                 return {
-                    'balance': available_balance,
-                    'totalBalance': self._format_currency(total_balance),
-                    'availableBalance': self._format_currency(available_balance),
-                    'lockedBalance': self._format_currency(current_invested_value),
-                    'investedBalance': self._format_currency(current_invested_value),
-                    'initialBalance': self._format_currency(initial_balance),
-                    'totalPnL': f"{total_pnl:+,.2f}",
-                    'totalPnLPercentage': f"{total_pnl_pct:+.2f}",
-                    'realizedPnL': f"{realized_pnl:+,.2f}",
-                    'realizedPnLPercentage': f"{realized_pnl_pct:+.2f}",
-                    'unrealizedPnL': f"{unrealized_pnl:+,.2f}",
-                    'unrealizedPnLPercentage': f"{unrealized_pnl_pct:+.2f}",
-                    'totalProfitLoss': f"{total_pnl:+,.2f}",
-                    'totalProfitLossPercentage': f"{total_pnl_pct:+.2f}%",
-                    'dailyPnL': f"{daily_pnl:+,.2f}",
-                    'dailyPnLPercentage': f"{daily_pnl_pct:+.2f}",
-                    'investedAmount': self._format_currency(current_invested_value),
-                    'tradesCount': trades_count,
-                    'winRate': f"{win_rate:.1f}%",
-                    'firstTradeDate': first_trade_date,
-                    'initialBalanceSource': 'demo_account_seed',
-                    'hasKeys': False,
-                    'currency': 'USD',
-                    'mode': 'demo' if is_demo else 'real',
-                    'source': 'demo_accounts',
-                    'lastUpdate': last_update
+                    "balance": available_balance,
+                    "totalBalance": self._format_currency(total_balance),
+                    "availableBalance": self._format_currency(available_balance),
+                    "lockedBalance": self._format_currency(current_invested_value),
+                    "investedBalance": self._format_currency(current_invested_value),
+                    "initialBalance": self._format_currency(initial_balance),
+                    "totalPnL": f"{total_pnl:+,.2f}",
+                    "totalPnLPercentage": f"{total_pnl_pct:+.2f}",
+                    "realizedPnL": f"{realized_pnl:+,.2f}",
+                    "realizedPnLPercentage": f"{realized_pnl_pct:+.2f}",
+                    "unrealizedPnL": f"{unrealized_pnl:+,.2f}",
+                    "unrealizedPnLPercentage": f"{unrealized_pnl_pct:+.2f}",
+                    "totalProfitLoss": f"{total_pnl:+,.2f}",
+                    "totalProfitLossPercentage": f"{total_pnl_pct:+.2f}%",
+                    "dailyPnL": f"{daily_pnl:+,.2f}",
+                    "dailyPnLPercentage": f"{daily_pnl_pct:+.2f}",
+                    "investedAmount": self._format_currency(current_invested_value),
+                    "tradesCount": trades_count,
+                    "winRate": f"{win_rate:.1f}%",
+                    "firstTradeDate": first_trade_date,
+                    "initialBalanceSource": "demo_account_seed",
+                    "hasKeys": False,
+                    "currency": "USD",
+                    "mode": "demo" if is_demo else "real",
+                    "source": "demo_accounts",
+                    "lastUpdate": last_update,
                 }
         except Exception as e:
             self.logger.error(f"خطأ في جلب محفظة الأدمن: {e}")
-            return {'error': True, 'message': str(e)}
+            return {"error": True, "message": str(e)}
 
-    def get_user_trading_stats(self, user_id: int, is_demo: bool = False) -> Dict[str, Any]:
+    def get_user_trading_stats(
+        self, user_id: int, is_demo: bool = False
+    ) -> Dict[str, Any]:
         """الحصول على إحصائيات التداول للمستخدم"""
         try:
             with self.get_connection() as conn:
-                
-                stats_row = conn.execute("""
+                stats_row = conn.execute(
+                    """
                     SELECT
                         SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as closed_trades,
                         SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
@@ -933,38 +1151,51 @@ class DbPortfolioMixin:
                         MAX(CASE WHEN is_active = FALSE THEN closed_at ELSE NULL END) as last_trade_date
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s
-                """, (user_id, bool(is_demo))).fetchone()
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
 
-                active_row = conn.execute("""
+                active_row = conn.execute(
+                    """
                     SELECT COUNT(*) as active_trades
                     FROM active_positions
                     WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
-                """, (user_id, bool(is_demo))).fetchone()
-                
+                """,
+                    (user_id, bool(is_demo)),
+                ).fetchone()
+
                 if stats_row:
                     stats = dict(stats_row)
-                    closed_trades = int(stats.get('closed_trades', 0) or 0)
-                    active_trades = int((dict(active_row).get('active_trades', 0) if active_row else 0) or 0)
+                    closed_trades = int(stats.get("closed_trades", 0) or 0)
+                    active_trades = int(
+                        (dict(active_row).get("active_trades", 0) if active_row else 0)
+                        or 0
+                    )
                     total_trades = closed_trades + active_trades
-                    winning_trades = stats.get('winning_trades', 0)
-                    win_rate = (winning_trades / closed_trades * 100) if closed_trades > 0 else 0
-                    
+                    winning_trades = stats.get("winning_trades", 0)
+                    win_rate = (
+                        (winning_trades / closed_trades * 100)
+                        if closed_trades > 0
+                        else 0
+                    )
+
                     return {
-                        'activeTrades': active_trades,
-                        'totalTrades': total_trades,
-                        'winRate': round(win_rate, 1),
-                        'avgProfit': round(stats.get('avg_profit', 0) or 0, 2),
-                        'avgLoss': round(stats.get('avg_loss', 0) or 0, 2),
-                        'profitFactor': 1.25,
-                        'maxDrawdown': 8.2,
-                        'sharpeRatio': 1.45,
-                        'totalDays': 30,
-                        'tradingDays': 22,
-                        'lastTradeDate': stats.get('last_trade_date') or datetime.now().isoformat()
+                        "activeTrades": active_trades,
+                        "totalTrades": total_trades,
+                        "winRate": round(win_rate, 1),
+                        "avgProfit": round(stats.get("avg_profit", 0) or 0, 2),
+                        "avgLoss": round(stats.get("avg_loss", 0) or 0, 2),
+                        "profitFactor": 1.25,
+                        "maxDrawdown": 8.2,
+                        "sharpeRatio": 1.45,
+                        "totalDays": 30,
+                        "tradingDays": 22,
+                        "lastTradeDate": stats.get("last_trade_date")
+                        or datetime.now().isoformat(),
                     }
                 else:
                     return self._get_default_trading_stats()
-                    
+
         except Exception as e:
             self.logger.error(f"خطأ في جلب إحصائيات التداول: {e}")
             return self._get_default_trading_stats()
@@ -972,31 +1203,33 @@ class DbPortfolioMixin:
     def _get_default_trading_stats(self) -> Dict[str, Any]:
         """إحصائيات تداول افتراضية"""
         return {
-            'activeTrades': 0,
-            'totalTrades': 0,
-            'winRate': 0.0,
-            'avgProfit': 0.0,
-            'avgLoss': 0.0,
-            'profitFactor': 0.0,
-            'maxDrawdown': 0.0,
-            'sharpeRatio': 0.0,
-            'totalDays': 0,
-            'tradingDays': 0,
-            'lastTradeDate': datetime.now().isoformat()
+            "activeTrades": 0,
+            "totalTrades": 0,
+            "winRate": 0.0,
+            "avgProfit": 0.0,
+            "avgLoss": 0.0,
+            "profitFactor": 0.0,
+            "maxDrawdown": 0.0,
+            "sharpeRatio": 0.0,
+            "totalDays": 0,
+            "tradingDays": 0,
+            "lastTradeDate": datetime.now().isoformat(),
         }
 
-    def get_user_trades(self, user_id: int, limit: int = 50, is_demo: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_user_trades(
+        self, user_id: int, limit: int = 50, is_demo: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """الحصول على سجل الصفقات للمستخدم — يقرأ من active_positions (المصدر الوحيد للبيانات)"""
         try:
             is_admin = is_admin_user(self, user_id)
-            
+
             if is_admin and is_demo is None:
                 is_demo = get_effective_is_demo(self, user_id)
-            
+
             with self.get_connection() as conn:
-                
                 if is_demo is not None:
-                    rows = conn.execute("""
+                    rows = conn.execute(
+                        """
                         SELECT
                             id, user_id, symbol, strategy, is_demo,
                             entry_price, exit_price, quantity,
@@ -1011,9 +1244,12 @@ class DbPortfolioMixin:
                         WHERE user_id = %s AND is_demo = %s
                         ORDER BY COALESCE(entry_date, created_at) DESC
                         LIMIT %s
-                    """, (user_id, bool(is_demo), limit)).fetchall()
+                    """,
+                        (user_id, bool(is_demo), limit),
+                    ).fetchall()
                 else:
-                    rows = conn.execute("""
+                    rows = conn.execute(
+                        """
                         SELECT
                             id, user_id, symbol, strategy, is_demo,
                             entry_price, exit_price, quantity,
@@ -1028,28 +1264,33 @@ class DbPortfolioMixin:
                         WHERE user_id = %s
                         ORDER BY COALESCE(entry_date, created_at) DESC
                         LIMIT %s
-                    """, (user_id, limit)).fetchall()
-                
+                    """,
+                        (user_id, limit),
+                    ).fetchall()
+
                 trades = []
                 for row in rows:
                     trade = dict(row)
-                    trades.append({
-                        'id': f"trade_{trade['id']}",
-                        'symbol': trade.get('symbol', 'UNKNOWN'),
-                        'side': trade.get('side', 'BUY'),
-                        'amount': trade.get('quantity', 0.0),
-                        'price': trade.get('entry_price', 0.0),
-                        'pnl': trade.get('profit_loss', 0.0),
-                        'pnlPercentage': trade.get('profit_loss_percentage', 0.0),
-                        'status': trade.get('status', 'UNKNOWN'),
-                        'openTime': trade.get('entry_time') or trade.get('created_at'),
-                        'closeTime': trade.get('exit_time'),
-                        'strategy': trade.get('strategy', 'Manual'),
-                        'timeframe': trade.get('timeframe', '1h')
-                    })
-                
+                    trades.append(
+                        {
+                            "id": f"trade_{trade['id']}",
+                            "symbol": trade.get("symbol", "UNKNOWN"),
+                            "side": trade.get("side", "BUY"),
+                            "amount": trade.get("quantity", 0.0),
+                            "price": trade.get("entry_price", 0.0),
+                            "pnl": trade.get("profit_loss", 0.0),
+                            "pnlPercentage": trade.get("profit_loss_percentage", 0.0),
+                            "status": trade.get("status", "UNKNOWN"),
+                            "openTime": trade.get("entry_time")
+                            or trade.get("created_at"),
+                            "closeTime": trade.get("exit_time"),
+                            "strategy": trade.get("strategy", "Manual"),
+                            "timeframe": trade.get("timeframe", "1h"),
+                        }
+                    )
+
                 return trades
-                
+
         except Exception as e:
             self.logger.error(f"خطأ في جلب سجل الصفقات: {e}")
             return []
@@ -1060,52 +1301,63 @@ class DbPortfolioMixin:
         """الحصول على مفاتيح Binance للمستخدم (الدالة الرئيسية)"""
         try:
             from backend.utils.encryption_utils import encrypt_key, decrypt_key
+
             ENCRYPTION_AVAILABLE = True
         except ImportError:
             ENCRYPTION_AVAILABLE = False
-            
+
         try:
             with self.get_connection() as conn:
-                
-                row = conn.execute("""
+                row = conn.execute(
+                    """
                     SELECT api_key, api_secret, is_active, created_at 
                     FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE
                     ORDER BY created_at DESC LIMIT 1
-                """, (user_id,)).fetchone()
-                
-                if row and row['api_key']:
-                    api_key = row['api_key']
-                    api_secret = row['api_secret']
-                    
+                """,
+                    (user_id,),
+                ).fetchone()
+
+                if row and row["api_key"]:
+                    api_key = row["api_key"]
+                    api_secret = row["api_secret"]
+
                     if ENCRYPTION_AVAILABLE:
                         try:
                             api_key = decrypt_key(api_key)
                             api_secret = decrypt_key(api_secret)
-                            self.logger.debug(f"✅ تم فك تشفير مفاتيح Binance للمستخدم {user_id}")
+                            self.logger.debug(
+                                f"✅ تم فك تشفير مفاتيح Binance للمستخدم {user_id}"
+                            )
                         except Exception as e:
-                            self.logger.warning(f"⚠️ فشل فك تشفير المفاتيح: {e} - سيتم استخدام المفاتيح كما هي")
-                    
+                            self.logger.warning(
+                                f"⚠️ فشل فك تشفير المفاتيح: {e} - سيتم استخدام المفاتيح كما هي"
+                            )
+
                     return {
-                        'api_key': api_key,
-                        'secret_key': api_secret,
-                        'is_active': row['is_active'],
-                        'created_at': row['created_at']
+                        "api_key": api_key,
+                        "secret_key": api_secret,
+                        "is_active": row["is_active"],
+                        "created_at": row["created_at"],
                     }
 
-                allow_env_keys = (os.getenv('ALLOW_ENV_BINANCE_KEYS_FOR_TESTING') or '').strip().lower() in ('1', 'true', 'yes', 'on')
-                env_api_key = (os.getenv('BINANCE_BACKEND_API_KEY') or '').strip()
-                env_api_secret = (os.getenv('BINANCE_BACKEND_API_SECRET') or '').strip()
+                allow_env_keys = (
+                    os.getenv("ALLOW_ENV_BINANCE_KEYS_FOR_TESTING") or ""
+                ).strip().lower() in ("1", "true", "yes", "on")
+                env_api_key = (os.getenv("BINANCE_BACKEND_API_KEY") or "").strip()
+                env_api_secret = (os.getenv("BINANCE_BACKEND_API_SECRET") or "").strip()
                 if allow_env_keys and env_api_key and env_api_secret:
-                    self.logger.info(f"✅ استخدام مفاتيح Binance من البيئة للمستخدم {user_id} في وضع الاختبار")
+                    self.logger.info(
+                        f"✅ استخدام مفاتيح Binance من البيئة للمستخدم {user_id} في وضع الاختبار"
+                    )
                     return {
-                        'api_key': env_api_key,
-                        'secret_key': env_api_secret,
-                        'is_active': True,
-                        'created_at': None,
+                        "api_key": env_api_key,
+                        "secret_key": env_api_secret,
+                        "is_active": True,
+                        "created_at": None,
                     }
 
                 return None
-                    
+
         except Exception as e:
             self.logger.error(f"❌ خطأ في جلب مفاتيح Binance: {e}")
             return None
@@ -1116,41 +1368,50 @@ class DbPortfolioMixin:
         if keys:
             return keys
         else:
-            return {
-                'api_key': '',
-                'is_active': False,
-                'created_at': None
-            }
+            return {"api_key": "", "is_active": False, "created_at": None}
 
-    def save_user_binance_keys(self, user_id: int, api_key: str, secret_key: str) -> bool:
+    def save_user_binance_keys(
+        self, user_id: int, api_key: str, secret_key: str
+    ) -> bool:
         """حفظ مفاتيح Binance للمستخدم مع حذف المفاتيح القديمة وتشفيرها"""
         try:
             encrypted_api_key = api_key
             encrypted_secret_key = secret_key
-            
+
             try:
                 from backend.utils.encryption_utils import encrypt_key
+
                 encrypted_api_key = encrypt_key(api_key)
                 encrypted_secret_key = encrypt_key(secret_key)
                 self.logger.info(f"✅ تم تشفير مفاتيح Binance للمستخدم {user_id}")
             except ImportError:
                 self.logger.warning("⚠️ مدير التشفير غير متاح - سيتم الحفظ بدون تشفير")
             except Exception as e:
-                self.logger.warning(f"⚠️ فشل تشفير المفاتيح: {e} - سيتم الحفظ بدون تشفير")
-            
+                self.logger.warning(
+                    f"⚠️ فشل تشفير المفاتيح: {e} - سيتم الحفظ بدون تشفير"
+                )
+
             with self.get_write_connection() as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     DELETE FROM user_binance_keys WHERE user_id = %s
-                """, (user_id,))
-                
-                conn.execute("""
+                """,
+                    (user_id,),
+                )
+
+                conn.execute(
+                    """
                     INSERT INTO user_binance_keys 
                     (user_id, api_key, api_secret, is_active)
                     VALUES (%s, %s, %s, TRUE)
-                """, (user_id, encrypted_api_key, encrypted_secret_key))
-                self.logger.info(f"✅ تم تحديث مفاتيح Binance للمستخدم {user_id} (مشفرة)")
+                """,
+                    (user_id, encrypted_api_key, encrypted_secret_key),
+                )
+                self.logger.info(
+                    f"✅ تم تحديث مفاتيح Binance للمستخدم {user_id} (مشفرة)"
+                )
                 return True
-                
+
         except Exception as e:
             self.logger.error(f"❌ خطأ في حفظ مفاتيح Binance: {e}")
             return False
@@ -1159,10 +1420,12 @@ class DbPortfolioMixin:
         """حذف مفاتيح Binance للمستخدم"""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("DELETE FROM user_binance_keys WHERE user_id = %s", (user_id,))
+                conn.execute(
+                    "DELETE FROM user_binance_keys WHERE user_id = %s", (user_id,)
+                )
                 self.logger.info(f"تم حذف مفاتيح Binance للمستخدم {user_id}")
                 return True
-                
+
         except Exception as e:
             self.logger.error(f"خطأ في حذف مفاتيح Binance: {e}")
             return False
@@ -1171,69 +1434,88 @@ class DbPortfolioMixin:
         """إعادة ضبط بيانات الحساب للأدمن - مسح جميع البيانات وإعادة الرصيد إلى 1000$"""
         try:
             with self.get_write_connection() as conn:
-                admin_user = conn.execute("""
+                admin_user = conn.execute(
+                    """
                     SELECT id, username, user_type FROM users 
                     WHERE id = %s AND (user_type = 'admin' OR username = 'admin')
-                """, (user_id,)).fetchone()
-                
+                """,
+                    (user_id,),
+                ).fetchone()
+
                 if not admin_user:
-                    self.logger.warning(f"محاولة إعادة ضبط بيانات حساب لمستخدم غير مخول: {user_id}")
+                    self.logger.warning(
+                        f"محاولة إعادة ضبط بيانات حساب لمستخدم غير مخول: {user_id}"
+                    )
                     return False
-                
+
                 self.logger.info(f"بدء إعادة ضبط بيانات الحساب للأدمن {user_id}")
-                
+
                 try:
                     conn.execute("DELETE FROM trades WHERE user_id = %s", (user_id,))
                     self.logger.info(f"تم مسح جميع الصفقات للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول trades غير موجود: {e}")
-                
-                resolved_initial_balance = self._reset_demo_account_on_conn(conn, user_id, self.DEMO_ACCOUNT_INITIAL_BALANCE)
-                
+
+                resolved_initial_balance = self._reset_demo_account_on_conn(
+                    conn, user_id, self.DEMO_ACCOUNT_INITIAL_BALANCE
+                )
+
                 try:
-                    conn.execute("DELETE FROM user_orders WHERE user_id = %s", (user_id,))
+                    conn.execute(
+                        "DELETE FROM user_orders WHERE user_id = %s", (user_id,)
+                    )
                     self.logger.info(f"تم مسح الأوامر المعلقة للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول user_orders غير موجود: {e}")
-                
+
                 try:
-                    conn.execute("DELETE FROM notification_history WHERE user_id = %s", (user_id,))
+                    conn.execute(
+                        "DELETE FROM notification_history WHERE user_id = %s",
+                        (user_id,),
+                    )
                     self.logger.info(f"تم مسح سجل الإشعارات للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"جدول notification_history غير موجود: {e}")
-                
+
                 try:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         INSERT OR REPLACE INTO user_settings 
                         (user_id, is_demo, risk_level, max_positions, stop_loss_pct,
                          take_profit_pct, trade_amount, position_size_percentage,
                          trailing_distance, trading_enabled, max_daily_loss_pct,
                          daily_loss_limit, trading_mode, updated_at)
                         VALUES (%s, TRUE, 'medium', 5, 2.0, 6.0, 100.0, 10.0, 3.0, FALSE, 10.0, 100.0, 'demo', CURRENT_TIMESTAMP)
-                    """, (user_id,))
-                    
+                    """,
+                        (user_id,),
+                    )
+
                     self.logger.info(f"تم إعادة ضبط إعدادات التداول للمستخدم {user_id}")
                 except Exception as e:
                     self.logger.warning(f"خطأ في إعادة ضبط الإعدادات: {e}")
-                
+
                 conn.commit()
-                self.logger.info(f"تم إكمال إعادة ضبط الحساب التجريبي للأدمن {user_id} بنجاح")
+                self.logger.info(
+                    f"تم إكمال إعادة ضبط الحساب التجريبي للأدمن {user_id} بنجاح"
+                )
                 return True
-                
+
         except Exception as e:
-            self.logger.error(f"خطأ في إعادة ضبط الحساب التجريبي للمستخدم {user_id}: {e}")
+            self.logger.error(
+                f"خطأ في إعادة ضبط الحساب التجريبي للمستخدم {user_id}: {e}"
+            )
             return False
 
     def record_portfolio_snapshot(self, user_id: int, is_demo: int = 0) -> bool:
         """تسجيل لقطة يومية من بيانات المحفظة في portfolio_growth_history"""
         try:
-            today = datetime.now().strftime('%Y-%m-%d')
+            today = datetime.now().strftime("%Y-%m-%d")
             is_demo = bool(is_demo)
             with self.get_connection() as conn:
                 # جلب بيانات المحفظة الحالية
                 portfolio_row = conn.execute(
                     "SELECT total_balance, initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",
-                    (user_id, is_demo)
+                    (user_id, is_demo),
                 ).fetchone()
 
                 if not portfolio_row:
@@ -1243,22 +1525,30 @@ class DbPortfolioMixin:
                 initial_balance = float(portfolio_row[1] or total_balance or 1)
 
                 # حساب PnL اليوم من الصفقات المغلقة اليوم
-                daily_pnl = conn.execute(
-                    """SELECT COALESCE(SUM(profit_loss), 0)
+                daily_pnl = (
+                    conn.execute(
+                        """SELECT COALESCE(SUM(profit_loss), 0)
                        FROM active_positions
                        WHERE user_id = %s AND is_demo = %s AND is_active = FALSE
                        AND DATE(COALESCE(closed_at, updated_at)) = %s""",
-                    (user_id, is_demo, today)
-                ).fetchone()[0] or 0
+                        (user_id, is_demo, today),
+                    ).fetchone()[0]
+                    or 0
+                )
                 daily_pnl = float(daily_pnl)
 
-                daily_pnl_pct = (daily_pnl / initial_balance * 100) if initial_balance > 0 else 0
+                daily_pnl_pct = (
+                    (daily_pnl / initial_balance * 100) if initial_balance > 0 else 0
+                )
 
                 # عدد الصفقات المفتوحة
-                active_count = conn.execute(
-                    "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_demo = %s AND is_active = TRUE",
-                    (user_id, is_demo)
-                ).fetchone()[0] or 0
+                active_count = (
+                    conn.execute(
+                        "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_demo = %s AND is_active = TRUE",
+                        (user_id, is_demo),
+                    ).fetchone()[0]
+                    or 0
+                )
 
             with self.get_write_connection() as conn:
                 conn.execute(
@@ -1272,26 +1562,36 @@ class DbPortfolioMixin:
                            daily_pnl = EXCLUDED.daily_pnl,
                            daily_pnl_percentage = EXCLUDED.daily_pnl_percentage,
                            active_trades_count = EXCLUDED.active_trades_count""",
-                    (user_id, today, total_balance, daily_pnl, daily_pnl_pct, active_count, is_demo)
+                    (
+                        user_id,
+                        today,
+                        total_balance,
+                        daily_pnl,
+                        daily_pnl_pct,
+                        active_count,
+                        is_demo,
+                    ),
                 )
                 conn.commit()
 
-            self.logger.info(f"✅ تم تسجيل snapshot المحفظة للمستخدم {user_id} (is_demo={is_demo}) بتاريخ {today}")
+            self.logger.info(
+                f"✅ تم تسجيل snapshot المحفظة للمستخدم {user_id} (is_demo={is_demo}) بتاريخ {today}"
+            )
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ خطأ في تسجيل snapshot المحفظة للمستخدم {user_id}: {e}")
+            self.logger.error(
+                f"❌ خطأ في تسجيل snapshot المحفظة للمستخدم {user_id}: {e}"
+            )
             return False
 
     def record_all_portfolios_snapshot(self) -> int:
         """تسجيل لقطة يومية لجميع المستخدمين النشطين"""
         try:
-            users = self.execute_query(
-                "SELECT id FROM users WHERE is_active = TRUE"
-            )
+            users = self.execute_query("SELECT id FROM users WHERE is_active = TRUE")
             count = 0
-            for user in (users or []):
-                uid = user['id']
+            for user in users or []:
+                uid = user["id"]
                 # demo و real كلاهما
                 for is_demo in [False, True]:
                     if self.record_portfolio_snapshot(uid, is_demo):

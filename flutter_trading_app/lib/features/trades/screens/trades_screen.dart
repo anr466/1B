@@ -316,6 +316,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                             PnlIndicator(
                               amount: trade.pnl!,
                               percentage: trade.pnlPct,
+                              priceChangePercentage: trade.priceChangePct,
                               compact: true,
                               fontSize: 13,
                             )

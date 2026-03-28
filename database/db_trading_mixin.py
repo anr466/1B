@@ -942,19 +942,8 @@ class DbTradingMixin:
     ) -> bool:
         """تحديث رصيد المحفظة على اتصال خارجي (للعمليات الذرية)"""
         is_demo_flag = bool(is_demo)
-        invested_row = conn.execute(
-            """
-            SELECT COALESCE(SUM(position_size), 0) as invested
-            FROM active_positions
-            WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
-        """,
-            (user_id, is_demo_flag),
-        ).fetchone()
-        invested_balance = invested_row[0] if invested_row else 0
 
-        total_balance = new_balance + invested_balance
-
-        # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط
+        # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط (يجب أن يكون أولاً)
         stats_row = conn.execute(
             """
             SELECT
@@ -973,7 +962,7 @@ class DbTradingMixin:
         winning_trades = stats_row[2] if stats_row else 0
         losing_trades = stats_row[3] if stats_row else 0
 
-        # حساب نسبة نمو المحفظة
+        # الحصول على الرصيد الأولي
         if is_demo_flag:
             initial_balance_row = conn.execute(
                 "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
@@ -989,6 +978,26 @@ class DbTradingMixin:
         initial_balance = (
             float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
         )
+
+        # حساب الرصيد المستثمر من الصفقات المفتوحة
+        invested_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(position_size), 0) as invested
+            FROM active_positions
+            WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
+        """,
+            (user_id, is_demo_flag),
+        ).fetchone()
+        invested_balance = invested_row[0] if invested_row else 0
+
+        # total_balance = initial_balance + total_pnl (من الصفقات المغلقة)
+        # هذا يضمن أن total_balance يعكس الأداء الحقيقي
+        total_balance = initial_balance + total_pnl
+
+        # available_balance = total_balance - invested_balance (ما يمكن سحبه)
+        available_for_withdrawal = total_balance - invested_balance
+
+        # التحقق من النشاط التجاري
         if (
             not is_demo_flag
             and initial_balance <= 0
@@ -1033,7 +1042,7 @@ class DbTradingMixin:
         """,
             (
                 total_balance,
-                new_balance,
+                available_for_withdrawal,
                 invested_balance,
                 total_pnl,
                 portfolio_growth_pct,
@@ -1074,7 +1083,7 @@ class DbTradingMixin:
                 (
                     user_id,
                     initial_balance,
-                    new_balance,
+                    available_for_withdrawal,
                     invested_balance,
                     total_balance,
                     total_pnl,
@@ -1094,19 +1103,7 @@ class DbTradingMixin:
         try:
             is_demo_flag = bool(is_demo)
             with self.get_write_connection() as conn:
-                invested_row = conn.execute(
-                    """
-                    SELECT COALESCE(SUM(position_size), 0) as invested
-                    FROM active_positions
-                    WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
-                """,
-                    (user_id, is_demo_flag),
-                ).fetchone()
-                invested_balance = invested_row[0] if invested_row else 0
-
-                total_balance = new_balance + invested_balance
-
-                # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط
+                # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط (يجب أن يكون أولاً)
                 stats_row = conn.execute(
                     """
                     SELECT
@@ -1125,7 +1122,7 @@ class DbTradingMixin:
                 winning_trades = stats_row[2] if stats_row else 0
                 losing_trades = stats_row[3] if stats_row else 0
 
-                # حساب نسبة نمو المحفظة
+                # الحصول على الرصيد الأولي
                 if is_demo_flag:
                     initial_balance_row = conn.execute(
                         "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
@@ -1141,6 +1138,23 @@ class DbTradingMixin:
                 initial_balance = (
                     float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
                 )
+
+                # حساب الرصيد المستثمر من الصفقات المفتوحة
+                invested_row = conn.execute(
+                    """
+                    SELECT COALESCE(SUM(position_size), 0) as invested
+                    FROM active_positions
+                    WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
+                """,
+                    (user_id, is_demo_flag),
+                ).fetchone()
+                invested_balance = invested_row[0] if invested_row else 0
+
+                # total_balance = initial_balance + total_pnl (من الصفقات المغلقة)
+                total_balance = initial_balance + total_pnl
+                # available_balance = total_balance - invested_balance
+                available_for_withdrawal = total_balance - invested_balance
+
                 if (
                     not is_demo_flag
                     and initial_balance <= 0
@@ -1185,7 +1199,7 @@ class DbTradingMixin:
                 """,
                     (
                         total_balance,
-                        new_balance,
+                        available_for_withdrawal,
                         invested_balance,
                         total_pnl,
                         portfolio_growth_pct,

@@ -54,7 +54,7 @@ def register_mobile_trades_routes(bp, shared):
                 cursor.execute(
                     """
                     SELECT
-                        id, user_id, symbol,
+                        id, user_id, symbol, position_type,
                         CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                         quantity,
                         entry_price,
@@ -64,7 +64,14 @@ def register_mobile_trades_routes(bp, shared):
                         profit_pct,
                         strategy,
                         COALESCE(entry_date, created_at::text) AS opened_at,
-                        closed_at
+                        closed_at,
+                        CASE 
+                            WHEN exit_price IS NOT NULL AND entry_price > 0 AND position_type IN ('long', 'LONG') 
+                                THEN (exit_price - entry_price) / entry_price * 100
+                            WHEN exit_price IS NOT NULL AND entry_price > 0 AND position_type IN ('short', 'SHORT') 
+                                THEN (entry_price - exit_price) / entry_price * 100
+                            ELSE NULL 
+                        END AS price_change_pct
                     FROM active_positions
                     WHERE id = %s AND user_id = %s
                 """,
@@ -83,19 +90,21 @@ def register_mobile_trades_routes(bp, shared):
                     "id": row[0],
                     "userId": row[1],
                     "symbol": row[2],
-                    "side": row[3],
-                    "quantity": float(row[4]) if row[4] else None,
-                    "entryPrice": float(row[5]) if row[5] else None,
-                    "exitPrice": float(row[6]) if row[6] else None,
-                    "pnl": float(row[8]) if row[8] else None,
-                    "pnlPercentage": float(row[9]) if row[9] else None,
-                    "status": row[7],
+                    "positionType": row[3],
+                    "side": row[4],
+                    "quantity": float(row[5]) if row[5] else None,
+                    "entryPrice": float(row[6]) if row[6] else None,
+                    "exitPrice": float(row[7]) if row[7] else None,
+                    "pnl": float(row[9]) if row[9] else None,
+                    "pnlPercentage": float(row[10]) if row[10] else None,
+                    "priceChangePct": float(row[14]) if row[14] else None,
+                    "status": row[8],
                     "orderType": None,
-                    "strategy": row[10],
-                    "openedAt": row[11],
-                    "closedAt": row[12],
-                    "createdAt": row[11],
-                    "updatedAt": row[12],
+                    "strategy": row[11],
+                    "openedAt": row[12],
+                    "closedAt": row[13],
+                    "createdAt": row[12],
+                    "updatedAt": row[13],
                 }
 
                 response_data, status_code = success_response(trade)
@@ -739,11 +748,18 @@ def register_mobile_trades_routes(bp, shared):
                 try:
                     cursor = conn.execute(
                         """
-                        SELECT id, symbol, entry_price, exit_price, quantity,
+                        SELECT id, symbol, position_type, entry_price, exit_price, quantity,
                                profit_loss, profit_pct AS profit_loss_percentage,
                                CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
                                COALESCE(entry_date, created_at::text) AS entry_time,
-                               closed_at AS exit_time, strategy, is_favorite
+                               closed_at AS exit_time, strategy, is_favorite,
+                               CASE 
+                                   WHEN exit_price IS NOT NULL AND entry_price > 0 AND position_type IN ('long', 'LONG') 
+                                       THEN (exit_price - entry_price) / entry_price * 100
+                                   WHEN exit_price IS NOT NULL AND entry_price > 0 AND position_type IN ('short', 'SHORT') 
+                                       THEN (entry_price - exit_price) / entry_price * 100
+                                   ELSE NULL 
+                               END AS price_change_pct
                         FROM active_positions
                         WHERE user_id = %s AND is_demo = %s AND is_favorite = TRUE
                         ORDER BY COALESCE(closed_at, updated_at) DESC
@@ -757,11 +773,18 @@ def register_mobile_trades_routes(bp, shared):
                         pass
                     cursor = conn.execute(
                         """
-                        SELECT id, symbol, entry_price, exit_price, quantity,
+                        SELECT id, symbol, position_type, entry_price, exit_price, quantity,
                                profit_loss, profit_pct AS profit_loss_percentage,
                                CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
                                COALESCE(entry_date, created_at::text) AS entry_time,
-                               closed_at AS exit_time, strategy, FALSE as is_favorite
+                               closed_at AS exit_time, strategy, FALSE as is_favorite,
+                               CASE 
+                                   WHEN exit_price IS NOT NULL AND entry_price > 0 AND position_type IN ('long', 'LONG') 
+                                       THEN (exit_price - entry_price) / entry_price * 100
+                                   WHEN exit_price IS NOT NULL AND entry_price > 0 AND position_type IN ('short', 'SHORT') 
+                                       THEN (entry_price - exit_price) / entry_price * 100
+                                   ELSE NULL 
+                               END AS price_change_pct
                         FROM active_positions
                         WHERE user_id = %s AND is_demo = %s
                         ORDER BY COALESCE(closed_at, updated_at) DESC

@@ -854,7 +854,15 @@ class PositionManagerMixin:
                         (self.user_id,),
                     ).fetchone()
 
-                current_balance = float(balance_row[0] or 0.0) if balance_row else 0.0
+                # Fix: properly check if balance_row has elements
+                if balance_row and len(balance_row) > 0:
+                    current_balance = float(balance_row[0] or 0.0)
+                else:
+                    current_balance = 0.0
+                    self.logger.warning(
+                        f"⚠️ No balance row found for user {self.user_id}, using 0"
+                    )
+
                 returned_amount = pnl
                 new_balance = current_balance + returned_amount
                 self.db.update_user_balance_on_conn(

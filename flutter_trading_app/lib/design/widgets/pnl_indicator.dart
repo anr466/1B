@@ -9,6 +9,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 class PnlIndicator extends StatelessWidget {
   final double amount;
   final double? percentage;
+  final double? priceChangePercentage;
   final double fontSize;
   final bool compact;
 
@@ -16,6 +17,7 @@ class PnlIndicator extends StatelessWidget {
     super.key,
     required this.amount,
     this.percentage,
+    this.priceChangePercentage,
     this.fontSize = 14,
     this.compact = false,
   });
@@ -31,13 +33,20 @@ class PnlIndicator extends StatelessWidget {
     final arrow = isPositive ? '▲' : '▼';
 
     final amountText = '$sign\$${formatter.format(amount.abs())}';
+
+    // Net PnL percentage (after commissions)
     final pctText = percentage != null
-        ? ' ($sign${percentage!.toStringAsFixed(1)}%)'
+        ? ' ($sign${percentage!.toStringAsFixed(2)}%)'
+        : '';
+
+    // Price change percentage (before commissions)
+    final pricePctText = priceChangePercentage != null
+        ? ' [${priceChangePercentage! >= 0 ? '+' : ''}${priceChangePercentage!.toStringAsFixed(2)}%]'
         : '';
 
     if (compact) {
       return Text(
-        '$arrow $amountText$pctText',
+        '$arrow $amountText$pctText$pricePctText',
         style: TypographyTokens.mono(color, fontSize: fontSize),
       );
     }
@@ -55,7 +64,7 @@ class PnlIndicator extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: AlignmentDirectional.centerStart,
             child: Text(
-              '$amountText$pctText',
+              '$amountText$pctText$pricePctText',
               style: TypographyTokens.mono(color, fontSize: fontSize),
             ),
           ),

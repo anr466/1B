@@ -108,6 +108,7 @@ class TradeDetailScreen extends ConsumerWidget {
                                     PnlIndicator(
                                       amount: t.pnl!,
                                       percentage: t.pnlPct,
+                                      priceChangePercentage: t.priceChangePct,
                                     ),
                                   ],
                                 ],

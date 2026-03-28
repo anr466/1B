@@ -892,6 +892,7 @@ class _HybridTradeTile extends StatelessWidget {
                           child: PnlIndicator(
                             amount: trade.pnl!,
                             percentage: trade.pnlPct,
+                            priceChangePercentage: trade.priceChangePct,
                             compact: true,
                             fontSize: 12,
                           ),

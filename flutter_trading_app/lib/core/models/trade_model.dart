@@ -15,6 +15,7 @@ class TradeModel {
   final double? positionSize;
   final double? pnl;
   final double? pnlPct;
+  final double? priceChangePct;
   final String? entryTime;
   final String? exitTime;
   final double? stopLoss;
@@ -38,6 +39,7 @@ class TradeModel {
     this.positionSize,
     this.pnl,
     this.pnlPct,
+    this.priceChangePct,
     this.entryTime,
     this.exitTime,
     this.stopLoss,
@@ -115,6 +117,9 @@ class TradeModel {
       ),
       pnl: ParsingService.asNullableDouble(pnlRaw),
       pnlPct: ParsingService.asNullableDouble(pnlPctRaw),
+      priceChangePct: ParsingService.asNullableDouble(
+        json['priceChangePct'] ?? json['price_change_pct'],
+      ),
       entryTime: entryTimeRaw?.toString(),
       exitTime: exitTimeRaw?.toString(),
       stopLoss: ParsingService.asNullableDouble(stopLossRaw),
