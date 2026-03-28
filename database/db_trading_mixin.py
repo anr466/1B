@@ -946,51 +946,86 @@ class DbTradingMixin:
         is_demo_flag = bool(is_demo)
 
         # حساب إجمالي الربح/الخسارة من الصفقات المغلقة فقط (يجب أن يكون أولاً)
-        stats_row = conn.execute(
-            """
-            SELECT
-                COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
-                SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as total_trades,
-                SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
-                SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
-            FROM active_positions
-            WHERE user_id = %s AND is_demo = %s
-        """,
-            (user_id, is_demo_flag),
-        ).fetchone()
+        try:
+            stats_cursor = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as total_pnl,
+                    SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as total_trades,
+                    SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
+                    SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN 1 ELSE 0 END) as losing_trades
+                FROM active_positions
+                WHERE user_id = %s AND is_demo = %s
+                """,
+                (user_id, is_demo_flag),
+            )
+            stats_row = stats_cursor.fetchone()
+        except Exception as e:
+            self.logger.error(f"❌ Error fetching stats: {e}")
+            stats_row = None
 
-        total_pnl = stats_row[0] if stats_row else 0
-        total_trades = int(stats_row[1] or 0) if stats_row else 0
-        winning_trades = stats_row[2] if stats_row else 0
-        losing_trades = stats_row[3] if stats_row else 0
+        # Fix: properly handle stats_row being None or invalid
+        if stats_row is None or not hasattr(stats_row, "__len__") or len(stats_row) < 4:
+            self.logger.warning(f"⚠️ Invalid stats_row, using defaults: {stats_row}")
+            total_pnl = 0
+            total_trades = 0
+            winning_trades = 0
+            losing_trades = 0
+        else:
+            total_pnl = stats_row[0] if stats_row[0] is not None else 0
+            total_trades = int(stats_row[1] or 0)
+            winning_trades = stats_row[2] if stats_row[2] is not None else 0
+            losing_trades = stats_row[3] if stats_row[3] is not None else 0
 
         # الحصول على الرصيد الأولي
-        if is_demo_flag:
-            initial_balance_row = conn.execute(
-                "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
-                (user_id,),
-            ).fetchone()
-        else:
-            initial_balance_row = conn.execute(
-                """
-                SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
-            """,
-                (user_id, is_demo_flag),
-            ).fetchone()
+        try:
+            if is_demo_flag:
+                init_cursor = conn.execute(
+                    "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+                    (user_id,),
+                )
+            else:
+                init_cursor = conn.execute(
+                    """
+                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
+                """,
+                    (user_id, is_demo_flag),
+                )
+            initial_balance_row = init_cursor.fetchone()
+        except Exception as e:
+            self.logger.error(f"❌ Error fetching initial balance: {e}")
+            initial_balance_row = None
+
         initial_balance = (
-            float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
+            float(initial_balance_row[0] or 0.0)
+            if initial_balance_row
+            and hasattr(initial_balance_row, "__len__")
+            and len(initial_balance_row) > 0
+            else 0.0
         )
 
         # حساب الرصيد المستثمر من الصفقات المفتوحة
-        invested_row = conn.execute(
-            """
-            SELECT COALESCE(SUM(position_size), 0) as invested
-            FROM active_positions
-            WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
-        """,
-            (user_id, is_demo_flag),
-        ).fetchone()
-        invested_balance = invested_row[0] if invested_row else 0
+        try:
+            invested_cursor = conn.execute(
+                """
+                SELECT COALESCE(SUM(position_size), 0) as invested
+                FROM active_positions
+                WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
+            """,
+                (user_id, is_demo_flag),
+            )
+            invested_row = invested_cursor.fetchone()
+        except Exception as e:
+            self.logger.error(f"❌ Error fetching invested balance: {e}")
+            invested_row = None
+
+        invested_balance = (
+            invested_row[0]
+            if invested_row
+            and hasattr(invested_row, "__len__")
+            and len(invested_row) > 0
+            else 0
+        )
 
         # total_balance = initial_balance + total_pnl (من الصفقات المغلقة)
         # هذا يضمن أن total_balance يعكس الأداء الحقيقي
