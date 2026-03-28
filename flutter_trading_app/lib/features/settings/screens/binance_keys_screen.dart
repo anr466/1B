@@ -214,7 +214,7 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
                         // ─── API Key ───────────────────────────
                         AppInput(
                           controller: _apiKeyCtrl,
-                          label: 'API Key',
+                          label: 'مفتاح API',
                           hint: 'أدخل مفتاح API',
                           obscureText: _obscureKey,
                           textInputAction: TextInputAction.next,
@@ -241,7 +241,7 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
                         // ─── API Secret ────────────────────────
                         AppInput(
                           controller: _apiSecretCtrl,
-                          label: 'API Secret',
+                          label: 'المفتاح السري',
                           hint: 'أدخل المفتاح السري',
                           obscureText: _obscureSecret,
                           textInputAction: TextInputAction.done,

@@ -502,7 +502,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
                     ],
                     const SizedBox(height: SpacingTokens.md),
                     Text(
-                      'Win Rate: ${winRate.toStringAsFixed(1)}%',
+                      'نسبة الربح: ${winRate.toStringAsFixed(1)}%',
                       style: TypographyTokens.body(
                         cs.onSurface,
                       ).copyWith(fontWeight: FontWeight.w700),
