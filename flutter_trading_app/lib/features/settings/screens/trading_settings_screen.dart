@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/constants/ux_messages.dart';
 import 'package:trading_app/core/models/settings_model.dart';
-import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
@@ -50,18 +48,12 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
 
       if (result['success'] == true) {
         ref.read(adminPortfolioModeProvider.notifier).state = mode;
-        ref.invalidate(settingsDataProvider);
-        ref.invalidate(dailyStatusProvider);
+        // Note: settingsDataProvider auto-invalidates when adminPortfolioModeProvider changes
+        // Only invalidate data that depends on the mode (portfolio, stats, positions)
         ref.invalidate(portfolioProvider);
         ref.invalidate(statsProvider);
         ref.invalidate(activePositionsProvider);
-        ref.invalidate(successfulCoinsProvider);
-        ref.invalidate(recentTradesProvider);
-        ref.invalidate(tradesListProvider);
-        ref.invalidate(accountTradingProvider);
-        ref.invalidate(mlStatusProvider);
-        ref.invalidate(tradingCycleLiveProvider);
-        ref.invalidate(systemStatusProvider);
+        ref.invalidate(dailyStatusProvider);
         AppSnackbar.show(
           context,
           message: UxMessages.success,
