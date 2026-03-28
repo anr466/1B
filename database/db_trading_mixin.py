@@ -742,7 +742,9 @@ class DbTradingMixin:
         self.logger.info(
             f"تم فتح صفقة {position_type.upper()}: {symbol} للمستخدم {user_id}"
         )
-        return cursor.lastrowid
+        # Fix: Use fetchone() for RETURNING id with psycopg2
+        row = cursor.fetchone()
+        return row[0] if row else None
 
     def add_position(
         self,

@@ -62,9 +62,7 @@ class AuthService:
         if BCRYPT_AVAILABLE and password_hash.startswith("$2b$"):
             # bcrypt hash
             try:
-                return bcrypt.checkpw(
-                    password.encode(), password_hash.encode()
-                )
+                return bcrypt.checkpw(password.encode(), password_hash.encode())
             except Exception:
                 return False
         else:
@@ -79,9 +77,7 @@ class AuthService:
         if not BCRYPT_AVAILABLE:
             return False
         # إذا كانت SHA256 (64 حرف hex)، تحتاج تحديث
-        return len(password_hash) == 64 and not password_hash.startswith(
-            "$2b$"
-        )
+        return len(password_hash) == 64 and not password_hash.startswith("$2b$")
 
     # ==================== تسجيل الدخول ====================
 
@@ -107,15 +103,11 @@ class AuthService:
             # البحث عن المستخدم
             user = self._get_user_by_username(username)
             if not user:
-                return False, {
-                    "error": "اسم المستخدم أو كلمة المرور غير صحيحة"
-                }
+                return False, {"error": "اسم المستخدم أو كلمة المرور غير صحيحة"}
 
             # التحقق من كلمة المرور (يدعم bcrypt و SHA256)
             if not self._verify_password(password, user["password_hash"]):
-                return False, {
-                    "error": "اسم المستخدم أو كلمة المرور غير صحيحة"
-                }
+                return False, {"error": "اسم المستخدم أو كلمة المرور غير صحيحة"}
 
             # ✅ تحديث كلمة المرور من SHA256 إلى bcrypt (تدريجي)
             if self._should_upgrade_password_hash(user["password_hash"]):
@@ -169,18 +161,14 @@ class AuthService:
                 return False, {"error": "جميع الحقول مطلوبة"}
 
             # التحقق من عدم وجود المستخدم
-            if self._get_user_by_username(username) or self._get_user_by_email(
-                email
-            ):
+            if self._get_user_by_username(username) or self._get_user_by_email(email):
                 return False, {"error": "المستخدم موجود مسبقاً"}
 
             # تشفير كلمة المرور باستخدام bcrypt (آمن)
             password_hash = self._hash_password(password)
 
             # إنشاء المستخدم
-            user_id = self._create_user(
-                username, password_hash, email, phone_number
-            )
+            user_id = self._create_user(username, password_hash, email, phone_number)
             if not user_id:
                 return False, {"error": "فشل في إنشاء المستخدم"}
 
@@ -360,7 +348,8 @@ class AuthService:
                 """,
                     (username, email.lower(), password_hash, phone_number),
                 )
-                return cursor.lastrowid
+                row = cursor.fetchone()
+                return row[0] if row else None
         except Exception:
             return None
 
@@ -377,9 +366,7 @@ class AuthService:
         except Exception:
             return False
 
-    def _update_last_login(
-        self, user_id: int, device_id: Optional[str] = None
-    ):
+    def _update_last_login(self, user_id: int, device_id: Optional[str] = None):
         """تحديث آخر تسجيل دخول"""
         try:
             with self.db.get_write_connection() as conn:
@@ -425,14 +412,10 @@ class AuthService:
 
         return {"access_token": access_token, "refresh_token": refresh_token}
 
-    def _verify_token(
-        self, token: str, token_type: str = "access"
-    ) -> Optional[Dict]:
+    def _verify_token(self, token: str, token_type: str = "access") -> Optional[Dict]:
         """التحقق من صحة الـ token"""
         try:
-            payload = jwt.decode(
-                token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM]
-            )
+            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
 
             # التحقق من نوع الـ token
             if payload.get("type") != token_type:
