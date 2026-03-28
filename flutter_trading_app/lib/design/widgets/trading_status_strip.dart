@@ -22,7 +22,7 @@ class TradingStatusStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
-    final isLoadingState = isLoading || enabled == null;
+    final isLoadingState = isLoading;
     final active = enabled ?? false;
     final statusTone = active ? cs.primary : cs.tertiary;
     final badgeType = active ? BadgeType.success : BadgeType.warning;

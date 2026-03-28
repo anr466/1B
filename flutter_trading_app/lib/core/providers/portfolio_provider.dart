@@ -24,6 +24,8 @@ class AccountTradingState {
     this.systemState = 'STOPPED',
   });
 
+  bool get enabledSafe => enabled ?? false;
+
   AccountTradingState copyWith({
     bool? enabled,
     bool? isLoading,
@@ -50,7 +52,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   AccountTradingNotifier(this._ref)
     : super(
         AccountTradingState(
-          enabled: _ref.read(authProvider).user?.tradingEnabled,
+          enabled: _ref.read(authProvider).user?.tradingEnabled ?? false,
         ),
       ) {
     load();
@@ -118,12 +120,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       _syncAuthTrading(settings.tradingEnabled);
     } catch (_) {
       if (_disposed) return;
-      _setStateSafely(
-        state.copyWith(
-          enabled: state.enabled ?? user.tradingEnabled,
-          isLoading: false,
-        ),
-      );
+      _setStateSafely(state.copyWith(enabled: false, isLoading: false));
     }
   }
 
