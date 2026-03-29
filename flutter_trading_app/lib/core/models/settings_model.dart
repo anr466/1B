@@ -18,6 +18,8 @@ class SettingsModel {
   final bool usingEnvTestKeys;
   final bool keysRequiredForCurrentMode;
   final bool canToggle;
+  final bool systemRunning;
+  final String systemState;
 
   const SettingsModel({
     this.tradingEnabled = false,
@@ -35,6 +37,8 @@ class SettingsModel {
     this.usingEnvTestKeys = false,
     this.keysRequiredForCurrentMode = true,
     this.canToggle = false,
+    this.systemRunning = false,
+    this.systemState = 'UNKNOWN',
   });
 
   factory SettingsModel.fromJson(Map<String, dynamic> json) {
@@ -113,6 +117,14 @@ class SettingsModel {
           json['can_toggle'] == 1 ||
           json['canToggle'] == true ||
           json['canToggle'] == 1,
+      systemRunning:
+          json['system_running'] == true ||
+          json['system_running'] == 1 ||
+          json['systemRunning'] == true ||
+          json['systemRunning'] == 1,
+      systemState: (json['system_state'] ?? json['systemState'] ?? 'UNKNOWN')
+          .toString()
+          .toUpperCase(),
     );
   }
 
@@ -132,6 +144,8 @@ class SettingsModel {
     'usingEnvTestKeys': usingEnvTestKeys,
     'keysRequiredForCurrentMode': keysRequiredForCurrentMode,
     'canToggle': canToggle,
+    'systemRunning': systemRunning,
+    'systemState': systemState,
   };
 
   SettingsModel copyWith({

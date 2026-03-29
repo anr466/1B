@@ -177,6 +177,20 @@ def register_mobile_settings_routes(bp, shared):
                 db, user_id, is_admin, effective_is_demo
             )
 
+            # ✅ جلب حالة النظام العامة (trading_state)
+            system_running = False
+            system_state = "UNKNOWN"
+            try:
+                system_status_result = db.execute_query(
+                    "SELECT trading_state, is_running FROM system_status WHERE id = 1"
+                )
+                if system_status_result:
+                    status_row = system_status_result[0]
+                    system_state = status_row.get("trading_state", "UNKNOWN")
+                    system_running = bool(status_row.get("is_running", False))
+            except Exception:
+                pass
+
             data = {
                 "tradingEnabled": bool(s.get("trading_enabled")),
                 "tradeAmount": as_float(s.get("trade_amount")),
@@ -186,7 +200,7 @@ def register_mobile_settings_routes(bp, shared):
                 "riskLevel": s.get("risk_level") or "medium",
                 "stopLossPercentage": as_float(s.get("stop_loss_pct")),
                 "takeProfitPercentage": as_float(s.get("take_profit_pct")),
-                "trailingDistance": as_float(s.get("trailing_distance")),
+                "tradingDistance": as_float(s.get("trailing_distance")),
                 "maxDailyLossPct": as_float(s.get("max_daily_loss_pct")),
                 "maxConcurrentTrades": as_int(s.get("max_positions")),
                 "tradingMode": effective_mode,
@@ -197,6 +211,10 @@ def register_mobile_settings_routes(bp, shared):
                 "usingEnvTestKeys": key_state["using_env_test_keys"],
                 "keysRequiredForCurrentMode": key_state[
                     "keys_required_for_current_mode"
+                ],
+                # ✅ حالة النظام العامة
+                "systemRunning": system_running,
+                "systemState": system_state,
                 ],
             }
             response_data, status_code = success_response(

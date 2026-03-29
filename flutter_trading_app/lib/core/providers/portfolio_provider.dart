@@ -56,6 +56,13 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
         ),
       ) {
     load();
+    // Listen to auth state changes to reload trading state when user changes
+    _ref.listen<AuthState>(authProvider, (previous, next) {
+      if (previous?.user?.id != next.user?.id) {
+        // User changed - reload trading state
+        load();
+      }
+    });
   }
 
   @override
@@ -92,28 +99,13 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
       final settings = await repo.getSettings(user.id, mode: mode);
 
-      // Get system status - don't fail if slow
-      bool systemRunning = false;
-      String systemState = 'UNKNOWN';
-      try {
-        final status = await _ref
-            .read(adminRepositoryProvider)
-            .getPublicTradingState()
-            .timeout(const Duration(seconds: 5));
-        if (!_disposed) {
-          systemRunning = status.isEffectivelyRunning || status.isRunning;
-          systemState = status.state.toString().toUpperCase();
-        }
-      } catch (_) {
-        // Keep default system status
-      }
-
+      // Use systemRunning and systemState from settings response (now included in one call)
       if (_disposed) return;
       _setStateSafely(
         state.copyWith(
           enabled: settings.tradingEnabled,
-          systemRunning: systemRunning,
-          systemState: systemState,
+          systemRunning: settings.systemRunning,
+          systemState: settings.systemState,
           isLoading: false,
         ),
       );
@@ -165,30 +157,14 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
 
       final settings = await repo.getSettings(user.id, mode: mode);
 
-      // Get system status separately - don't fail if it's slow
-      bool systemRunning = state.systemRunning;
-      String systemState = state.systemState;
-      try {
-        final status = await _ref
-            .read(adminRepositoryProvider)
-            .getPublicTradingState()
-            .timeout(const Duration(seconds: 5));
-        if (!_disposed) {
-          systemRunning = status.isEffectivelyRunning || status.isRunning;
-          systemState = status.state.toString().toUpperCase();
-        }
-      } catch (_) {
-        // Keep previous system status if timeout
-      }
-
       if (_disposed) return true;
 
-      // ✅ Update both UI and Auth state AFTER API success
+      // Update both UI and Auth state AFTER API success
       _setStateSafely(
         state.copyWith(
           enabled: settings.tradingEnabled,
-          systemRunning: systemRunning,
-          systemState: systemState,
+          systemRunning: settings.systemRunning,
+          systemState: settings.systemState,
           isLoading: false,
         ),
       );
@@ -196,7 +172,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       return true;
     } catch (_) {
       if (_disposed) return false;
-      // ✅ Revert UI but NOT auth state (auth wasn't updated optimistically)
+      // Revert UI but NOT auth state (auth wasn't updated optimistically)
       _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
       return false;
     } finally {
