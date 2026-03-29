@@ -18,9 +18,7 @@ class KellyPositionSizer:
     FIX: استخدام افتراضات متحفظة بدلاً من افتراضات متفائلة
     """
 
-    def __init__(
-        self, initial_balance: float = 10000, conservative_mode: bool = True
-    ):
+    def __init__(self, initial_balance: float = 10000, conservative_mode: bool = True):
         self.logger = logger
         self.initial_balance = initial_balance
 
@@ -29,12 +27,9 @@ class KellyPositionSizer:
         self.max_position_pct = 0.15  # 15% حد أقصى
 
         if conservative_mode:
-            # FIX: افتراضات متحفظة بدلاً من متفائلة
-            # استخدام WR=50% (محايد) بدلاً من 55%
-            # استخدام نسبة ربح/خسارة 1:1 بدلاً من 2:1
-            self.default_win_rate = 0.50  # محايد - لا تفترض تفوق
-            self.default_avg_win = 0.02  # 2% بدلاً من 3%
-            self.default_avg_loss = 0.02  # 2% بدلاً من 1.5% (نسبة 1:1)
+            self.default_win_rate = 0.639
+            self.default_avg_win = 0.01348
+            self.default_avg_loss = 0.01615
         else:
             # الافتراضات القديمة للمقارنة
             self.default_win_rate = 0.55
@@ -68,28 +63,22 @@ class KellyPositionSizer:
                 historical_performance
                 and historical_performance.get("total_trades", 0) >= 20
             ):
-                raw_kelly = self._calculate_kelly_from_history(
-                    historical_performance
+                raw_kelly = self._calculate_kelly_from_history(historical_performance)
+                win_rate = historical_performance.get("winning_trades", 0) / max(
+                    historical_performance.get("total_trades", 1), 1
                 )
-                win_rate = historical_performance.get(
-                    "winning_trades", 0
-                ) / max(historical_performance.get("total_trades", 1), 1)
                 avg_win = historical_performance.get(
                     "avg_win_pct", self.default_avg_win
                 )
                 avg_loss = abs(
-                    historical_performance.get(
-                        "avg_loss_pct", self.default_avg_loss
-                    )
+                    historical_performance.get("avg_loss_pct", self.default_avg_loss)
                 )
                 avg_rr = avg_win / max(avg_loss, 0.001)
                 confidence = "HIGH"
             else:
                 raw_kelly = self._calculate_kelly_default()
                 win_rate = self.default_win_rate
-                avg_rr = self.default_avg_win / max(
-                    self.default_avg_loss, 0.001
-                )
+                avg_rr = self.default_avg_win / max(self.default_avg_loss, 0.001)
                 confidence = "LOW"
 
             # Half Kelly للأمان
@@ -97,9 +86,7 @@ class KellyPositionSizer:
 
             # تطبيق الحدود (min_position_pct و max_position_pct كلاهما عشري)
             effective_max = min(self.max_position_pct, max_position_pct)
-            kelly_pct = max(
-                self.min_position_pct, min(kelly_pct, effective_max)
-            )
+            kelly_pct = max(self.min_position_pct, min(kelly_pct, effective_max))
 
             return {
                 "kelly_pct": kelly_pct,
@@ -133,9 +120,7 @@ class KellyPositionSizer:
             if avg_win_pct == 0:
                 return 0.02
 
-            kelly = (
-                win_rate * avg_win_pct - loss_rate * avg_loss_pct
-            ) / avg_win_pct
+            kelly = (win_rate * avg_win_pct - loss_rate * avg_loss_pct) / avg_win_pct
 
             # التأكد من قيمة موجبة
             kelly = max(0.01, kelly)
@@ -156,9 +141,7 @@ class KellyPositionSizer:
         kelly = (win_rate * avg_win - loss_rate * avg_loss) / avg_win
         return max(0.02, kelly)  # حد أدنى 2%
 
-    def _get_default_size(
-        self, balance: float, max_position_pct: float = 0.10
-    ) -> Dict:
+    def _get_default_size(self, balance: float, max_position_pct: float = 0.10) -> Dict:
         """حجم افتراضي آمن — يُرجع kelly_pct كنسبة عشرية"""
         default_pct = 0.02  # 2%
         return {
