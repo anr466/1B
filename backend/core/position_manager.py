@@ -1060,19 +1060,29 @@ class PositionManagerMixin:
             )
             return None
 
-        entry_price = signal.get("entry_price", 0)
-        quantity = position_size / entry_price if entry_price > 0 else 0
         side = signal.get("side", "LONG").upper()
+
+        # Get current market price for accurate entry (matches backtest behavior)
+        # Backtest enters at next bar OPEN, production enters at current market price
+        current_market_price = self._get_current_price(symbol)
+        if not current_market_price or current_market_price <= 0:
+            self.logger.warning(f"❌ Could not get current price for {symbol}")
+            return None
+
+        # Use current market price for quantity calculation (not signal's stale price)
+        quantity = (
+            position_size / current_market_price if current_market_price > 0 else 0
+        )
 
         # 💰 حساب عمولة الدخول (0.1% Binance) للحسابات الوهمية فقط
         entry_commission = 0
         order_id = None
+        entry_price = current_market_price
 
         if self.is_demo_trading:
-            # Demo: محاكاة تنفيذ أقرب للواقع (سعر/انزلاق/زمن/عمولة)
             demo_open_side = "BUY" if side != "SHORT" else "SELL"
             demo_open_fill = self._simulate_demo_fill(
-                symbol, demo_open_side, quantity, entry_price
+                symbol, demo_open_side, quantity, current_market_price
             )
             if not demo_open_fill.get("success"):
                 self.logger.warning(
@@ -1082,7 +1092,7 @@ class PositionManagerMixin:
                 )
                 return None
 
-            entry_price = float(demo_open_fill.get("price", entry_price))
+            entry_price = float(demo_open_fill.get("price", current_market_price))
             quantity = float(demo_open_fill.get("quantity", quantity))
             position_size = entry_price * quantity
             entry_commission = float(demo_open_fill.get("commission", 0))
