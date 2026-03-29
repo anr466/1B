@@ -231,9 +231,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     if (!authenticated) {
       setState(() => _isBiometricLoginInProgress = false);
+      // Clear tokens and force logout on biometric fail per security spec
+      await ref.read(authProvider.notifier).forceUnauthenticated();
+      await ref.read(storageServiceProvider).clearBiometricCredentials();
       AppSnackbar.show(
         context,
-        message: 'فشل التحقق من البصمة. حاول مرة أخرى.',
+        message: 'فشل التحقق من البصمة. تم تسجيل الخروج للأمان.',
         type: SnackType.error,
       );
       return;
@@ -245,6 +248,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (!mounted) return;
     final auth = ref.read(authProvider);
     if (auth.isAuthenticated) {
+      // Mark biometric as trusted after successful authentication
+      ref.read(biometricTrustProvider.notifier).markTrusted();
       setState(() => _isBiometricLoginInProgress = false);
       context.go(RouteNames.dashboard);
     } else if (auth.error != null) {

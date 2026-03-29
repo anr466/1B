@@ -638,6 +638,39 @@ class DbTradingMixin:
                 (signal_id,),
             )
 
+    def cleanup_orphaned_signals(self, max_age_hours: int = 24) -> int:
+        """تنظيف الإشارات القديمة غير المعالجة
+
+        يقوم بتحديد الإشارات الأقدم من max_age_hours كمعالجة لمنع تراكمها.
+        هذا يمنع الإشارات المعلقة من التأثير على أداء النظام.
+
+        Args:
+            max_age_hours: عمر الإشارة بالساعات قبل اعتبارها منتهية
+
+        Returns:
+            عدد الإشارات التي تم تنظيفها
+        """
+        try:
+            with self.get_write_connection() as conn:
+                result = conn.execute(
+                    """
+                    UPDATE trading_signals 
+                    SET is_processed = TRUE 
+                    WHERE is_processed = FALSE 
+                    AND generated_at < NOW() - INTERVAL '%s hours'
+                    """,
+                    (max_age_hours,),
+                )
+                cleaned = result.rowcount if hasattr(result, "rowcount") else 0
+                if cleaned > 0:
+                    self.logger.info(
+                        f"✅ Cleaned up {cleaned} orphaned signals older than {max_age_hours}h"
+                    )
+                return cleaned
+        except Exception as e:
+            self.logger.error(f"❌ Error cleaning up orphaned signals: {e}")
+            return 0
+
     # ==================== دوال GroupBSystem ====================
 
     def get_user_active_positions(

@@ -282,11 +282,13 @@ class _SecuritySettingsScreenState
 
     try {
       setState(() => _isBusy = true);
-      await storage.setBiometricEnabled(value);
 
+      // Clear credentials BEFORE disabling to prevent race condition
       if (!value) {
         await storage.clearBiometricCredentials();
       }
+
+      await storage.setBiometricEnabled(value);
 
       final currentUser = auth.user;
       if (currentUser != null) {

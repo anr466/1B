@@ -15,9 +15,7 @@ from datetime import datetime
 
 # إضافة مسار المشروع
 sys.path.append(
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
 
@@ -72,10 +70,20 @@ class TradingNotificationService:
             "setting_key": "alert_notifications",
             "priority": "high",
         },
+        "daily_profit": {
+            "title": "💵 أرباح يومية",
+            "setting_key": "notify_daily_profit",
+            "priority": "normal",
+        },
         "balance_low": {
             "title": "⚠️ رصيد منخفض",
             "setting_key": "alert_notifications",
             "priority": "high",
+        },
+        "price_alert": {
+            "title": "📊 تنبيه السعر",
+            "setting_key": "price_alerts",
+            "priority": "normal",
         },
         "system_alert": {
             "title": "🔔 تنبيه النظام",
@@ -98,6 +106,7 @@ class TradingNotificationService:
         self.logger = logging.getLogger(__name__)
         self.db_manager = db_manager if db_manager else get_db_manager()
         self._notification_history_has_data_column: Optional[bool] = None
+        self._retry_queue: list = []  # قائمة الإشعارات الفاشلة للإعادة
 
         # تهيئة Firebase
         if FIREBASE_AVAILABLE:
@@ -110,6 +119,42 @@ class TradingNotificationService:
         else:
             self.firebase_service = None
             self.logger.warning("⚠️ Firebase غير متوفر")
+
+    def _send_with_retry(
+        self, send_func, *args, max_retries: int = 3, **kwargs
+    ) -> bool:
+        """إرسال إشعار مع إعادة المحاولة عند الفشل
+
+        Args:
+            send_func: دالة الإرسال
+            max_retries: عدد محاولات الإعادة
+            *args, **kwargs: معاملات دالة الإرسال
+
+        Returns:
+            True إذا نجح الإرسال
+        """
+        import time
+
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                result = send_func(*args, **kwargs)
+                if result:
+                    return True
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt  # exponential backoff: 1s, 2s, 4s
+                    self.logger.warning(
+                        f"⚠️ Notification failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}"
+                    )
+                    time.sleep(wait_time)
+
+        self.logger.error(
+            f"❌ Notification failed after {max_retries} attempts: {last_error}"
+        )
+        return False
 
     def _has_notification_history_data_column(self, conn) -> bool:
         """فحص (مع كاش) لوجود عمود data في notification_history."""
@@ -132,8 +177,7 @@ class TradingNotificationService:
     def is_available(self) -> bool:
         """فحص توفر الخدمة"""
         return (
-            self.firebase_service is not None
-            and self.firebase_service.is_available()
+            self.firebase_service is not None and self.firebase_service.is_available()
         )
 
     def get_user_notification_settings(self, user_id: int) -> Dict[str, bool]:
@@ -208,9 +252,7 @@ class TradingNotificationService:
                                 "trade_notifications": bool(
                                     parsed.get(
                                         "tradeNotifications",
-                                        default_settings[
-                                            "trade_notifications"
-                                        ],
+                                        default_settings["trade_notifications"],
                                     )
                                 ),
                                 "price_alerts": bool(
@@ -222,9 +264,7 @@ class TradingNotificationService:
                                 "system_notifications": bool(
                                     parsed.get(
                                         "notifySystemStatus",
-                                        default_settings[
-                                            "system_notifications"
-                                        ],
+                                        default_settings["system_notifications"],
                                     )
                                 ),
                                 "notify_new_deal": bool(
@@ -248,9 +288,7 @@ class TradingNotificationService:
                                 "notify_daily_profit": bool(
                                     parsed.get(
                                         "notifyDailyProfit",
-                                        default_settings[
-                                            "notify_daily_profit"
-                                        ],
+                                        default_settings["notify_daily_profit"],
                                     )
                                 ),
                                 "notify_daily_loss": bool(
@@ -290,17 +328,13 @@ class TradingNotificationService:
                                 "end_of_day_report_enabled": bool(
                                     parsed.get(
                                         "endOfDayReportEnabled",
-                                        default_settings[
-                                            "end_of_day_report_enabled"
-                                        ],
+                                        default_settings["end_of_day_report_enabled"],
                                     )
                                 ),
                                 "end_of_day_report_time": str(
                                     parsed.get(
                                         "endOfDayReportTime",
-                                        default_settings[
-                                            "end_of_day_report_time"
-                                        ],
+                                        default_settings["end_of_day_report_time"],
                                     )
                                 ),
                             }
@@ -308,7 +342,8 @@ class TradingNotificationService:
                         return default_settings
                     except Exception as parse_error:
                         self.logger.warning(
-                            f"فشل تحليل settings_data للمستخدم {user_id}: {parse_error}")
+                            f"فشل تحليل settings_data للمستخدم {user_id}: {parse_error}"
+                        )
 
                 # fallback للأعمدة القديمة
                 return {
@@ -356,9 +391,7 @@ class TradingNotificationService:
         except Exception:
             return False
 
-    def should_send_notification(
-        self, user_id: int, notification_type: str
-    ) -> bool:
+    def should_send_notification(self, user_id: int, notification_type: str) -> bool:
         """
         فحص إذا يجب إرسال الإشعار للمستخدم بناءً على إعداداته ومرحلته
 
@@ -508,7 +541,8 @@ class TradingNotificationService:
 
                 if count > 0:
                     self.logger.debug(
-                        f"⏳ تجاهل إشعار مكرر [{notification_type}] لـ {unique_key}")
+                        f"⏳ تجاهل إشعار مكرر [{notification_type}] لـ {unique_key}"
+                    )
                     return True
 
                 return False
@@ -568,9 +602,7 @@ class TradingNotificationService:
                     )
                 except Exception as mirror_error:
                     # لا نفشل العملية الأساسية بسبب فشل المزامنة الثانوية
-                    self.logger.debug(
-                        f"فشل مزامنة notifications table: {mirror_error}"
-                    )
+                    self.logger.debug(f"فشل مزامنة notifications table: {mirror_error}")
                 return True
 
         except Exception as e:
@@ -613,8 +645,7 @@ class TradingNotificationService:
 
         title = "📈 صفقة جديدة"
         body = f"تم فتح صفقة {position_type} على {symbol}\n💵 السعر: {
-            entry_price:.4f}\n📊 الكمية: {
-            quantity:.4f}"
+            entry_price:.4f}\n📊 الكمية: {quantity:.4f}"
 
         data = {
             "type": "trade_opened",
@@ -626,15 +657,11 @@ class TradingNotificationService:
         }
 
         # حفظ في السجل
-        self.save_notification_to_history(
-            user_id, "trade_opened", title, body, data
-        )
+        self.save_notification_to_history(user_id, "trade_opened", title, body, data)
 
         # إرسال عبر Firebase
         if self.firebase_service:
-            return self.firebase_service.send_to_user(
-                user_id, title, body, data
-            )
+            return self.firebase_service.send_to_user(user_id, title, body, data)
 
         return True
 
@@ -659,17 +686,13 @@ class TradingNotificationService:
             trade_id: معرف الصفقة (لمنع التكرار)
         """
         is_profit = profit_loss >= 0
-        notification_type = (
-            "trade_closed_profit" if is_profit else "trade_closed_loss"
-        )
+        notification_type = "trade_closed_profit" if is_profit else "trade_closed_loss"
 
         if not self.should_send_notification(user_id, notification_type):
             return False
 
         # ✅ منع التكرار: إشعار إغلاق واحد فقط لكل صفقة
-        unique_key = (
-            str(trade_id) if trade_id else f"{symbol}_{profit_loss:.2f}"
-        )
+        unique_key = str(trade_id) if trade_id else f"{symbol}_{profit_loss:.2f}"
         if self.is_duplicate_notification(
             user_id, notification_type, unique_key, cooldown_minutes=60
         ):
@@ -692,8 +715,7 @@ class TradingNotificationService:
         }
         reason_text = exit_reasons.get(exit_reason, exit_reason)
 
-        body = f"{emoji} {symbol}\n💵 {
-            profit_loss:+.2f} USDT ({
+        body = f"{emoji} {symbol}\n💵 {profit_loss:+.2f} USDT ({
             profit_pct:+.2f}%)\n📌 السبب: {reason_text}"
 
         data = {
@@ -705,14 +727,10 @@ class TradingNotificationService:
             "trade_id": trade_id,
         }
 
-        self.save_notification_to_history(
-            user_id, notification_type, title, body, data
-        )
+        self.save_notification_to_history(user_id, notification_type, title, body, data)
 
         if self.firebase_service:
-            sent = self.firebase_service.send_to_user(
-                user_id, title, body, data
-            )
+            sent = self.firebase_service.send_to_user(user_id, title, body, data)
         else:
             sent = True
 
@@ -721,8 +739,7 @@ class TradingNotificationService:
             settings = self.get_user_notification_settings(user_id)
             if settings.get("cumulative_loss_alert_enabled", True):
                 threshold = float(
-                    settings.get("cumulative_loss_threshold_usd", 100.0)
-                    or 100.0
+                    settings.get("cumulative_loss_threshold_usd", 100.0) or 100.0
                 )
                 cumulative_loss = self._get_today_cumulative_loss(user_id)
                 if cumulative_loss >= threshold:
@@ -742,9 +759,7 @@ class TradingNotificationService:
         current_price: float,
     ) -> bool:
         """إشعار تفعيل Trailing Stop - مع منع التكرار"""
-        if not self.should_send_notification(
-            user_id, "trailing_stop_activated"
-        ):
+        if not self.should_send_notification(user_id, "trailing_stop_activated"):
             return False
 
         # ✅ منع التكرار: إشعار واحد فقط لكل صفقة (لكل symbol)
@@ -778,14 +793,14 @@ class TradingNotificationService:
                 recent_count = cursor.fetchone()[0]
                 if recent_count > 0:
                     self.logger.debug(
-                        f"⏳ تجاهل إشعار Trailing Stop لـ {symbol} - أُرسل مؤخراً")
+                        f"⏳ تجاهل إشعار Trailing Stop لـ {symbol} - أُرسل مؤخراً"
+                    )
                     return False
         except Exception as e:
             self.logger.debug(f"خطأ في فحص تكرار Trailing Stop: {e}")
 
         title = "🔒 Trailing Stop مُفعّل"
-        body = f"{symbol}\n📊 السعر الحالي: {
-            current_price:.4f}\n🛡️ وقف الخسارة الجديد: {
+        body = f"{symbol}\n📊 السعر الحالي: {current_price:.4f}\n🛡️ وقف الخسارة الجديد: {
             new_stop_price:.4f}"
 
         data = {
@@ -837,8 +852,7 @@ class TradingNotificationService:
             return False
 
         title = "⚠️ رصيد منخفض"
-        body = f"رصيدك الحالي: {
-            current_balance:.2f} USDT\n💡 الحد الأدنى للتداول: {
+        body = f"رصيدك الحالي: {current_balance:.2f} USDT\n💡 الحد الأدنى للتداول: {
             min_required:.2f} USDT\n\nيرجى إيداع المزيد لمتابعة التداول"
 
         data = {
@@ -848,9 +862,7 @@ class TradingNotificationService:
         }
 
         # حفظ في السجل فقط (بدون إشعار Push)
-        self.save_notification_to_history(
-            user_id, "balance_low", title, body, data
-        )
+        self.save_notification_to_history(user_id, "balance_low", title, body, data)
 
         # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
@@ -894,9 +906,7 @@ class TradingNotificationService:
         }
 
         # حفظ في السجل فقط (بدون إشعار Push)
-        self.save_notification_to_history(
-            user_id, "balance_low", title, body, data
-        )
+        self.save_notification_to_history(user_id, "balance_low", title, body, data)
 
         # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True
@@ -921,9 +931,7 @@ class TradingNotificationService:
         }
 
         # حفظ في السجل فقط (بدون إشعار Push)
-        self.save_notification_to_history(
-            user_id, "system_alert", title, body, data
-        )
+        self.save_notification_to_history(user_id, "system_alert", title, body, data)
 
         # لا يتم إرسال إشعار Push - النظام يتعامل تلقائياً
         return True

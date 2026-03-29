@@ -24,9 +24,7 @@ def register_mobile_settings_routes(bp, shared):
     rate_limit_auth = shared.get("rate_limit_auth", lambda f: f)
     success_response = shared["success_response"]
     error_response = shared["error_response"]
-    require_idempotency = shared.get(
-        "require_idempotency", lambda *a: (lambda f: f)
-    )
+    require_idempotency = shared.get("require_idempotency", lambda *a: lambda f: f)
     prevent_concurrent_duplicates = shared.get(
         "prevent_concurrent_duplicates", lambda f: f
     )
@@ -47,16 +45,12 @@ def register_mobile_settings_routes(bp, shared):
             "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE",
             (user_id,),
         )
-        has_configured_db_keys = bool(
-            db_rows and db_rows[0].get("count", 0) > 0
-        )
+        has_configured_db_keys = bool(db_rows and db_rows[0].get("count", 0) > 0)
         env_keys_enabled = (
             os.getenv("ALLOW_ENV_BINANCE_KEYS_FOR_TESTING") or ""
         ).strip().lower() in ("1", "true", "yes", "on")
         env_api_key = (os.getenv("BINANCE_BACKEND_API_KEY") or "").strip()
-        env_api_secret = (
-            os.getenv("BINANCE_BACKEND_API_SECRET") or ""
-        ).strip()
+        env_api_secret = (os.getenv("BINANCE_BACKEND_API_SECRET") or "").strip()
         using_env_test_keys = bool(
             env_keys_enabled
             and env_api_key
@@ -173,9 +167,7 @@ def register_mobile_settings_routes(bp, shared):
                     return fallback
 
             # ✅ فحص وجود مفاتيح Binance
-            key_state = resolve_key_state(
-                db, user_id, is_admin, effective_is_demo
-            )
+            key_state = resolve_key_state(db, user_id, is_admin, effective_is_demo)
 
             # ✅ جلب حالة النظام العامة (trading_state)
             system_running = False
@@ -194,9 +186,7 @@ def register_mobile_settings_routes(bp, shared):
             data = {
                 "tradingEnabled": bool(s.get("trading_enabled")),
                 "tradeAmount": as_float(s.get("trade_amount")),
-                "positionSizePercentage": as_float(
-                    s.get("position_size_percentage")
-                ),
+                "positionSizePercentage": as_float(s.get("position_size_percentage")),
                 "riskLevel": s.get("risk_level") or "medium",
                 "stopLossPercentage": as_float(s.get("stop_loss_pct")),
                 "takeProfitPercentage": as_float(s.get("take_profit_pct")),
@@ -215,7 +205,6 @@ def register_mobile_settings_routes(bp, shared):
                 # ✅ حالة النظام العامة
                 "systemRunning": system_running,
                 "systemState": system_state,
-                ],
             }
             response_data, status_code = success_response(
                 data, "تم جلب الإعدادات بنجاح"
@@ -297,8 +286,7 @@ def register_mobile_settings_routes(bp, shared):
             if keys_required and not actual_has_keys:
                 errors.append("مفاتيح Binance غير مضافة")
             if balance < 10:
-                errors.append(f"الرصيد غير كافٍ: ${
-                    balance:.2f} (الحد الأدنى $10)")
+                errors.append(f"الرصيد غير كافٍ: ${balance:.2f} (الحد الأدنى $10)")
             if position_size_pct <= 0:
                 errors.append("نسبة حجم الصفقة غير محددة")
             if max_positions <= 0:
@@ -306,9 +294,7 @@ def register_mobile_settings_routes(bp, shared):
             if not can_trade_gate and gate_reason != "OK":
                 warnings.append(f"بوابة الحماية: {gate_reason}")
 
-            can_trade = len(errors) == 0 and settings.get(
-                "trading_enabled", False
-            )
+            can_trade = len(errors) == 0 and settings.get("trading_enabled", False)
             reason = (
                 "جاهز للتداول"
                 if can_trade
@@ -371,9 +357,7 @@ def register_mobile_settings_routes(bp, shared):
             if data:
                 normalized = {}
                 for key, value in data.items():
-                    camel_key = re.sub(
-                        r"_([a-z])", lambda m: m.group(1).upper(), key
-                    )
+                    camel_key = re.sub(r"_([a-z])", lambda m: m.group(1).upper(), key)
                     normalized[camel_key] = value
                     if key != camel_key:
                         normalized[key] = value  # نحتفظ بالمفتاح الأصلي أيضاً
@@ -394,7 +378,8 @@ def register_mobile_settings_routes(bp, shared):
                                     "success": False,
                                     "error": "مبلغ التداول يجب أن يكون بين 5 و 10000 USDT",
                                     "error_code": "INVALID_TRADE_AMOUNT",
-                                }),
+                                }
+                            ),
                             400,
                         )
                     data["tradeAmount"] = trade_amount_val
@@ -405,7 +390,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "success": False,
                                 "error": "مبلغ التداول يجب أن يكون رقماً صحيحاً",
                                 "error_code": "INVALID_TRADE_AMOUNT",
-                            }),
+                            }
+                        ),
                         400,
                     )
 
@@ -420,17 +406,22 @@ def register_mobile_settings_routes(bp, shared):
                                     "success": False,
                                     "error": "عدد الصفقات المتزامنة يجب أن يكون بين 1 و 20",
                                     "error_code": "INVALID_MAX_TRADES",
-                                }),
+                                }
+                            ),
                             400,
                         )
                     data["maxConcurrentTrades"] = max_trades_val
                 except (ValueError, TypeError):
-                    return (jsonify({"success": False,
-                                     "error": "عدد الصفقات يجب أن يكون رقماً صحيحاً",
-                                     "error_code": "INVALID_MAX_TRADES",
-                                     }),
-                            400,
-                            )
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "عدد الصفقات يجب أن يكون رقماً صحيحاً",
+                                "error_code": "INVALID_MAX_TRADES",
+                            }
+                        ),
+                        400,
+                    )
 
             # التحقق من stopLossPercentage
             if "stopLossPercentage" in data:
@@ -443,7 +434,8 @@ def register_mobile_settings_routes(bp, shared):
                                     "success": False,
                                     "error": "نسبة وقف الخسارة يجب أن تكون بين 0.5% و 10%",
                                     "error_code": "INVALID_STOP_LOSS",
-                                }),
+                                }
+                            ),
                             400,
                         )
                     data["stopLossPercentage"] = sl_val
@@ -470,7 +462,8 @@ def register_mobile_settings_routes(bp, shared):
                                     "success": False,
                                     "error": "نسبة جني الأرباح يجب أن تكون بين 1% و 50%",
                                     "error_code": "INVALID_TAKE_PROFIT",
-                                }),
+                                }
+                            ),
                             400,
                         )
                     data["takeProfitPercentage"] = tp_val
@@ -496,9 +489,7 @@ def register_mobile_settings_routes(bp, shared):
                 # ملاحظة: حجم الصفقة وعدد المراكز يتحكم فيها backend تلقائياً —
                 # لا نتحقق منها هنا
                 user_type_query = "SELECT user_type FROM users WHERE id = %s"
-                user_type_result = db.execute_query(
-                    user_type_query, (user_id,)
-                )
+                user_type_result = db.execute_query(user_type_query, (user_id,))
                 is_admin_user = (
                     user_type_result[0]["user_type"] == "admin"
                     if user_type_result
@@ -534,7 +525,8 @@ def register_mobile_settings_routes(bp, shared):
                                     "error_code": "NO_BINANCE_KEYS",
                                     "message": "🔑 يرجى إضافة مفاتيح Binance API أولاً من إعدادات التداول",
                                     "action_required": "add_binance_keys",
-                                }),
+                                }
+                            ),
                             400,
                         )
 
@@ -545,13 +537,9 @@ def register_mobile_settings_routes(bp, shared):
                     trade_amount = float(data["tradeAmount"])
                 else:
                     _amt_q = "SELECT trade_amount FROM user_settings WHERE user_id = %s AND is_demo = %s"
-                    _amt_r = db.execute_query(
-                        _amt_q, (user_id, current_is_demo)
-                    )
+                    _amt_r = db.execute_query(_amt_q, (user_id, current_is_demo))
                     trade_amount = (
-                        float(_amt_r[0]["trade_amount"] or 100.0)
-                        if _amt_r
-                        else 100.0
+                        float(_amt_r[0]["trade_amount"] or 100.0) if _amt_r else 100.0
                     )
                 available_balance = 0.0
                 binance_error = None
@@ -565,8 +553,10 @@ def register_mobile_settings_routes(bp, shared):
                         if demo_result
                         else 0.0
                     )
-                    logger.info(f"✅ Demo balance for admin {user_id}: {
-                        available_balance:.2f} USDT")
+                    logger.info(
+                        f"✅ Demo balance for admin {user_id}: {
+                            available_balance:.2f} USDT"
+                    )
                 else:
                     try:
                         from backend.utils.binance_balance_checker import (
@@ -574,9 +564,7 @@ def register_mobile_settings_routes(bp, shared):
                         )
 
                         balance_checker = BinanceBalanceChecker(user_id)
-                        balance_result = (
-                            balance_checker.get_available_balance()
-                        )
+                        balance_result = balance_checker.get_available_balance()
 
                         if balance_result.get("success"):
                             available_balance = float(
@@ -592,8 +580,11 @@ def register_mobile_settings_routes(bp, shared):
                             )
                     except ImportError:
                         logger.error(
-                            f"❌ BinanceBalanceChecker غير متاح — لا يمكن التحقق من الرصيد")
-                        binance_error = "خدمة فحص الرصيد غير متاحة حالياً. يرجى المحاولة لاحقاً."
+                            f"❌ BinanceBalanceChecker غير متاح — لا يمكن التحقق من الرصيد"
+                        )
+                        binance_error = (
+                            "خدمة فحص الرصيد غير متاحة حالياً. يرجى المحاولة لاحقاً."
+                        )
                     except Exception as e:
                         binance_error = str(e)
                         logger.error(f"❌ خطأ في جلب رصيد Binance: {e}")
@@ -608,7 +599,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "error_code": "BINANCE_CONNECTION_ERROR",
                                 "message": f"⚠️ لم نتمكن من التحقق من رصيدك في Binance.\n\n{binance_error}\n\nتأكد من صحة مفاتيح API وأنها تملك صلاحية القراءة.",
                                 "action_required": "check_binance_keys",
-                            }),
+                            }
+                        ),
                         400,
                     )
 
@@ -626,7 +618,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "available_balance": available_balance,
                                 "required_amount": trade_amount,
                                 "action_required": "deposit_funds",
-                            }),
+                            }
+                        ),
                         400,
                     )
 
@@ -640,20 +633,18 @@ def register_mobile_settings_routes(bp, shared):
                 positions_result = db.execute_query(
                     positions_query, (user_id, current_is_demo)
                 )
-                open_positions = (
-                    positions_result[0]["count"] if positions_result else 0
-                )
+                open_positions = positions_result[0]["count"] if positions_result else 0
                 locked_amount = (
-                    positions_result[0]["locked_amount"] or 0
-                    if positions_result
-                    else 0
+                    positions_result[0]["locked_amount"] or 0 if positions_result else 0
                 )
 
                 # إذا كان هناك مراكز مفتوحة، نضيف تحذير (لكن نسمح بالتفعيل)
                 if open_positions > 0:
                     logger.info(
-                        f"⚠️ المستخدم {user_id} يفعّل التداول مع {open_positions} مراكز مفتوحة (مبلغ مقفل: {
-                            locked_amount:.2f} USDT)")
+                        f"⚠️ المستخدم {user_id} يفعّل التداول مع {
+                            open_positions
+                        } مراكز مفتوحة (مبلغ مقفل: {locked_amount:.2f} USDT)"
+                    )
 
                 logger.info(
                     f"✅ المستخدم {user_id}: تفعيل التداول - رصيد حر: {available_balance:.2f} USDT"
@@ -670,21 +661,19 @@ def register_mobile_settings_routes(bp, shared):
                 # فرض الحدود من النظام (5%-15%)
                 if max_daily_loss < 5.0:
                     logger.warning(
-                        f"⚠️ المستخدم {user_id}: حد الخسارة اليومي أقل من 5%، تم التعديل")
+                        f"⚠️ المستخدم {user_id}: حد الخسارة اليومي أقل من 5%، تم التعديل"
+                    )
                     max_daily_loss = 5.0
                 elif max_daily_loss > 15.0:
                     logger.warning(
-                        f"⚠️ المستخدم {user_id}: حد الخسارة اليومي أكبر من 15%، تم التعديل")
+                        f"⚠️ المستخدم {user_id}: حد الخسارة اليومي أكبر من 15%، تم التعديل"
+                    )
                     max_daily_loss = 15.0
 
             # ✅ تحديد المحفظة المستهدفة (للأدمن حسب trading_mode، للمستخدمين دائماً وهمية)
             user_query = "SELECT user_type FROM users WHERE id = %s"
             user_result = db.execute_query(user_query, (user_id,))
-            is_admin = (
-                user_result[0]["user_type"] == "admin"
-                if user_result
-                else False
-            )
+            is_admin = user_result[0]["user_type"] == "admin" if user_result else False
 
             if is_admin:
                 # جلب trading_mode الحالي لتحديد المحفظة المستهدفة
@@ -698,7 +687,9 @@ def register_mobile_settings_routes(bp, shared):
                 current_mode = "real"
 
             # فحص وجود إعدادات للمحفظة المستهدفة
-            check_query = "SELECT id FROM user_settings WHERE user_id = %s AND is_demo = %s"
+            check_query = (
+                "SELECT id FROM user_settings WHERE user_id = %s AND is_demo = %s"
+            )
             existing = db.execute_query(check_query, (user_id, target_is_demo))
             stop_loss_value = (
                 data.get("stopLossPercentage")
@@ -722,9 +713,7 @@ def register_mobile_settings_routes(bp, shared):
                 "takeProfitPercentage": float(take_profit_value),
                 "trailingDistance": float(data.get("trailingDistance", 3.0)),
                 "maxDailyLossPct": (
-                    float(max_daily_loss)
-                    if max_daily_loss is not None
-                    else None
+                    float(max_daily_loss) if max_daily_loss is not None else None
                 ),
                 "maxConcurrentTrades": int(data.get("maxConcurrentTrades", 5)),
                 "tradingMode": effective_mode,
@@ -764,13 +753,9 @@ def register_mobile_settings_routes(bp, shared):
                 ):
                     field_map["take_profit_pct"] = float(take_profit_value)
                 if "trailingDistance" in data:
-                    field_map["trailing_distance"] = float(
-                        data["trailingDistance"]
-                    )
+                    field_map["trailing_distance"] = float(data["trailingDistance"])
                 if "maxConcurrentTrades" in data:
-                    field_map["max_positions"] = int(
-                        data["maxConcurrentTrades"]
-                    )
+                    field_map["max_positions"] = int(data["maxConcurrentTrades"])
                 if max_daily_loss is not None:
                     field_map["max_daily_loss_pct"] = float(max_daily_loss)
                 # دائماً نحدّث وضع التداول
@@ -822,11 +807,7 @@ def register_mobile_settings_routes(bp, shared):
                         int(data.get("maxConcurrentTrades", 5)),
                         str(data.get("riskLevel", "medium")),
                         # backend enforces 3%
-                        (
-                            float(max_daily_loss)
-                            if max_daily_loss is not None
-                            else 3.0
-                        ),
+                        (float(max_daily_loss) if max_daily_loss is not None else 3.0),
                         effective_mode,
                     ),
                 )
@@ -880,7 +861,8 @@ def register_mobile_settings_routes(bp, shared):
                             "error": "النظام مشغول حالياً، يرجى المحاولة بعد قليل",
                             "error_code": "DATABASE_BUSY",
                             "retry_after": 3,
-                        }),
+                        }
+                    ),
                     503,
                 )
 
@@ -920,9 +902,7 @@ def register_mobile_settings_routes(bp, shared):
             current_mode = get_trading_context(db, user_id)["trading_mode"]
             current_is_demo = current_mode == "demo"
 
-            key_state = resolve_key_state(
-                db, user_id, is_admin, current_is_demo
-            )
+            key_state = resolve_key_state(db, user_id, is_admin, current_is_demo)
 
             return jsonify(
                 {
@@ -930,9 +910,7 @@ def register_mobile_settings_routes(bp, shared):
                     "data": {
                         "tradingMode": current_mode,
                         "hasBinanceKeys": key_state["has_binance_keys"],
-                        "hasConfiguredDbKeys": key_state[
-                            "has_configured_db_keys"
-                        ],
+                        "hasConfiguredDbKeys": key_state["has_configured_db_keys"],
                         "usingEnvTestKeys": key_state["using_env_test_keys"],
                         "keysRequiredForCurrentMode": key_state[
                             "keys_required_for_current_mode"
@@ -997,9 +975,7 @@ def register_mobile_settings_routes(bp, shared):
             if new_mode == "real":
                 keys_query = "SELECT COUNT(*) as count FROM user_binance_keys WHERE user_id = %s AND is_active = TRUE"
                 keys_result = db.execute_query(keys_query, (user_id,))
-                has_keys = (
-                    keys_result[0]["count"] > 0 if keys_result else False
-                )
+                has_keys = keys_result[0]["count"] > 0 if keys_result else False
 
                 if not has_keys:
                     return (
@@ -1019,111 +995,88 @@ def register_mobile_settings_routes(bp, shared):
             # إعدادات غير مكتملة
             target_is_demo = new_mode == "demo"
             target_row_query = "SELECT id FROM user_settings WHERE user_id = %s AND is_demo = %s LIMIT 1"
-            target_row = db.execute_query(
-                target_row_query, (user_id, target_is_demo)
-            )
-            if not target_row:
-                source_query = """
-                    SELECT trade_amount, position_size_percentage, stop_loss_pct, take_profit_pct,
-                           trailing_distance, max_positions, risk_level, max_daily_loss_pct
-                    FROM user_settings
-                    WHERE user_id = %s
-                    ORDER BY COALESCE(updated_at, created_at) DESC
-                    LIMIT 1
-                """
-                source_result = db.execute_query(source_query, (user_id,))
-                if source_result:
-                    src = source_result[0]
-                    db.execute_query(
-                        """
-                        INSERT INTO user_settings (
-                            user_id, is_demo, trading_enabled, trade_amount, position_size_percentage,
-                            stop_loss_pct, take_profit_pct, trailing_distance, max_positions,
-                            risk_level, max_daily_loss_pct, trading_mode, created_at, updated_at
-                        ) VALUES (%s, %s, FALSE, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        """,
-                        (
-                            user_id,
-                            target_is_demo,
-                            src.get("trade_amount", 100.0),
-                            src.get("position_size_percentage", 10.0),
-                            src.get("stop_loss_pct", 3.0),
-                            src.get("take_profit_pct", 6.0),
-                            src.get("trailing_distance", 3.0),
-                            src.get("max_positions", 5),
-                            src.get("risk_level", "medium"),
-                            src.get("max_daily_loss_pct", 10.0),
-                            new_mode,
-                        ),
-                    )
-                    if not target_is_demo:
-                        initial_balance = 0.0
-                        db.execute_query(
-                            """
-                            INSERT INTO portfolio (
-                                user_id, total_balance, available_balance, invested_balance,
-                                total_profit_loss, total_profit_loss_percentage, initial_balance,
-                                is_demo, created_at, updated_at
-                            )
-                            SELECT %s, %s, %s, 0.0, 0.0, 0.0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                            WHERE NOT EXISTS (
-                                SELECT 1 FROM portfolio WHERE user_id = %s AND is_demo = %s
-                            )
-                            """,
-                            (
-                                user_id,
-                                initial_balance,
-                                initial_balance,
-                                initial_balance,
-                                target_is_demo,
-                                user_id,
-                                target_is_demo,
-                            ),
-                        )
-                else:
-                    db.execute_query(
-                        """
-                        INSERT INTO user_settings (
-                            user_id, is_demo, trading_enabled, trade_amount, position_size_percentage,
-                            stop_loss_pct, take_profit_pct, trailing_distance, max_positions,
-                            risk_level, max_daily_loss_pct, trading_mode, created_at, updated_at
-                        ) VALUES (%s, %s, FALSE, 100.0, 10.0, 3.0, 6.0, 3.0, 5, 'medium', 10.0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        """,
-                        (user_id, target_is_demo, new_mode),
-                    )
-                    if not target_is_demo:
-                        initial_balance = 0.0
-                        db.execute_query(
-                            """
-                            INSERT INTO portfolio (
-                                user_id, total_balance, available_balance, invested_balance,
-                                total_profit_loss, total_profit_loss_percentage, initial_balance,
-                                is_demo, created_at, updated_at
-                            )
-                            SELECT %s, %s, %s, 0.0, 0.0, 0.0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                            WHERE NOT EXISTS (
-                                SELECT 1 FROM portfolio WHERE user_id = %s AND is_demo = %s
-                            )
-                            """,
-                            (
-                                user_id,
-                                initial_balance,
-                                initial_balance,
-                                initial_balance,
-                                target_is_demo,
-                                user_id,
-                                target_is_demo,
-                            ),
-                        )
+            target_row = db.execute_query(target_row_query, (user_id, target_is_demo))
 
-            # ✅ تحديث الوضع في جميع إعدادات المستخدم
-            # trading_mode يجب أن يكون متزامن في كلا الصفين
-            update_query = """
-                UPDATE user_settings
-                SET trading_mode = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s
-            """
-            db.execute_query(update_query, (new_mode, user_id))
+            # ═══════════════════════════════════════════════════════════════
+            # ✅ TRANSACTION: جميع الكتابات في transaction واحد
+            # إذا فشل أي عملية، تتراجع جميع العمليات تلقائياً
+            # ═══════════════════════════════════════════════════════════════
+            with db.get_write_connection() as conn:
+                if not target_row:
+                    source_query = """
+                        SELECT trade_amount, position_size_percentage, stop_loss_pct, take_profit_pct,
+                               trailing_distance, max_positions, risk_level, max_daily_loss_pct
+                        FROM user_settings
+                        WHERE user_id = %s
+                        ORDER BY COALESCE(updated_at, created_at) DESC
+                        LIMIT 1
+                    """
+                    source_result = db.execute_query(source_query, (user_id,))
+                    if source_result:
+                        src = source_result[0]
+                        conn.execute(
+                            """
+                            INSERT INTO user_settings (
+                                user_id, is_demo, trading_enabled, trade_amount, position_size_percentage,
+                                stop_loss_pct, take_profit_pct, trailing_distance, max_positions,
+                                risk_level, max_daily_loss_pct, trading_mode, created_at, updated_at
+                            ) VALUES (%s, %s, FALSE, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            """,
+                            (
+                                user_id,
+                                target_is_demo,
+                                src.get("trade_amount", 100.0),
+                                src.get("position_size_percentage", 10.0),
+                                src.get("stop_loss_pct", 3.0),
+                                src.get("take_profit_pct", 6.0),
+                                src.get("trailing_distance", 3.0),
+                                src.get("max_positions", 5),
+                                src.get("risk_level", "medium"),
+                                src.get("max_daily_loss_pct", 10.0),
+                                new_mode,
+                            ),
+                        )
+                        if not target_is_demo:
+                            conn.execute(
+                                """
+                                INSERT INTO portfolio (
+                                    user_id, total_balance, available_balance, invested_balance,
+                                    total_profit_loss, total_profit_loss_percentage, initial_balance,
+                                    is_demo, created_at, updated_at
+                                )
+                                VALUES (%s, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                """,
+                                (user_id, target_is_demo),
+                            )
+                    else:
+                        conn.execute(
+                            """
+                            INSERT INTO user_settings (
+                                user_id, is_demo, trading_enabled, trade_amount, position_size_percentage,
+                                stop_loss_pct, take_profit_pct, trailing_distance, max_positions,
+                                risk_level, max_daily_loss_pct, trading_mode, created_at, updated_at
+                            ) VALUES (%s, %s, FALSE, 100.0, 10.0, 3.0, 6.0, 3.0, 5, 'medium', 10.0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            """,
+                            (user_id, target_is_demo, new_mode),
+                        )
+                        if not target_is_demo:
+                            conn.execute(
+                                """
+                                INSERT INTO portfolio (
+                                    user_id, total_balance, available_balance, invested_balance,
+                                    total_profit_loss, total_profit_loss_percentage, initial_balance,
+                                    is_demo, created_at, updated_at
+                                )
+                                VALUES (%s, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                """,
+                                (user_id, target_is_demo),
+                            )
+
+                # تحديث trading_mode في جميع الصفوف
+                conn.execute(
+                    "UPDATE user_settings SET trading_mode = %s, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s",
+                    (new_mode, user_id),
+                )
 
             # ✅ تسجيل في activity_logs (باستخدام audit_logger الموحد)
             if audit_logger:
@@ -1146,20 +1099,19 @@ def register_mobile_settings_routes(bp, shared):
                 for page in range(1, 50):  # حد أقصى 50 صفحة
                     for limit in [10, 20, 50, 100, 200]:
                         for status in ["all", "open", "closed"]:
-                            cache_key = f"trades_{user_id}_{page}_{limit}_{status}_None_None"
+                            cache_key = (
+                                f"trades_{user_id}_{page}_{limit}_{status}_None_None"
+                            )
                             try:
                                 response_cache.delete(cache_key)
                             except Exception:
-                                logger.debug(
-                                    f"Cache delete skipped: {cache_key}"
-                                )
+                                logger.debug(f"Cache delete skipped: {cache_key}")
 
-                logger.debug(
-                    f"✅ تم إبطال cache لجميع البيانات للمستخدم {user_id}"
-                )
+                logger.debug(f"✅ تم إبطال cache لجميع البيانات للمستخدم {user_id}")
 
             logger.info(
-                f"✅ الأدمن {user_id}: تبديل trading_mode من {old_mode} إلى {new_mode}")
+                f"✅ الأدمن {user_id}: تبديل trading_mode من {old_mode} إلى {new_mode}"
+            )
 
             return jsonify(
                 {
@@ -1204,21 +1156,18 @@ def register_mobile_settings_routes(bp, shared):
 
                         api_key_decrypted = decrypt_text(api_key_encrypted)
                         masked_key = (
-                            api_key_decrypted[:8]
-                            + "..."
-                            + api_key_decrypted[-8:]
+                            api_key_decrypted[:8] + "..." + api_key_decrypted[-8:]
                             if len(api_key_decrypted) > 16
                             else "***"
                         )
                     except Exception as decrypt_error:
                         logger.warning(
-                            f"⚠️ فشل فك التشفير، ربما مفتاح قديم غير مشفر: {decrypt_error}")
+                            f"⚠️ فشل فك التشفير، ربما مفتاح قديم غير مشفر: {decrypt_error}"
+                        )
                         # إذا فشل فك التشفير، نفترض أنه غير مشفر (للتوافق مع
                         # البيانات القديمة)
                         masked_key = (
-                            api_key_encrypted[:8]
-                            + "..."
-                            + api_key_encrypted[-8:]
+                            api_key_encrypted[:8] + "..." + api_key_encrypted[-8:]
                             if len(api_key_encrypted) > 16
                             else "***"
                         )
@@ -1301,7 +1250,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "success": False,
                                 "error": "تعذر التحقق من بيانات الحساب في Binance",
                                 "error_code": "ACCOUNT_VALIDATION_FAILED",
-                            }),
+                            }
+                        ),
                         400,
                     )
 
@@ -1315,7 +1265,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "success": False,
                                 "error": "صلاحية التداول غير مفعّلة. فعّل Enable Spot & Margin Trading أولاً.",
                                 "error_code": "TRADING_PERMISSION_DISABLED",
-                            }),
+                            }
+                        ),
                         400,
                     )
 
@@ -1339,14 +1290,16 @@ def register_mobile_settings_routes(bp, shared):
                     )
             except Exception as perm_error:
                 logger.warning(
-                    f"⚠️ Could not verify key permissions before save: {perm_error}")
+                    f"⚠️ Could not verify key permissions before save: {perm_error}"
+                )
                 return (
                     jsonify(
                         {
                             "success": False,
                             "error": "تعذر التحقق من صلاحيات المفتاح مع Binance. أعد المحاولة لاحقاً.",
                             "error_code": "BINANCE_VALIDATION_UNAVAILABLE",
-                        }),
+                        }
+                    ),
                     503,
                 )
 
@@ -1361,7 +1314,8 @@ def register_mobile_settings_routes(bp, shared):
                             "success": False,
                             "error": "نظام التشفير غير متاح حالياً. يرجى المحاولة لاحقاً.",
                             "error_code": "ENCRYPTION_UNAVAILABLE",
-                        }),
+                        }
+                    ),
                     503,
                 )
 
@@ -1475,9 +1429,7 @@ def register_mobile_settings_routes(bp, shared):
                         decrypt_text(api_key) if len(api_key) > 50 else api_key
                     )
                     api_secret_decrypted = (
-                        decrypt_text(api_secret)
-                        if len(api_secret) > 50
-                        else api_secret
+                        decrypt_text(api_secret) if len(api_secret) > 50 else api_secret
                     )
                 except Exception as e:
                     logger.warning(
@@ -1531,7 +1483,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "level": "critical",
                                 "message": "صلاحية السحب مفعّلة! يجب تعطيلها لحماية أموالك",
                                 "action": "قم بتعطيل Enable Withdrawals من إعدادات API في Binance",
-                            })
+                            }
+                        )
                         security_score -= 50
 
                     if not ip_restricted:
@@ -1540,7 +1493,8 @@ def register_mobile_settings_routes(bp, shared):
                                 "level": "warning",
                                 "message": "المفتاح غير مقيّد بعنوان IP — أي جهاز يمكنه استخدامه",
                                 "action": "قم بإضافة IP السيرفر في Restrict access to trusted IPs only",
-                            })
+                            }
+                        )
                         security_score -= 30
 
                     if not enable_spot:
@@ -1549,19 +1503,19 @@ def register_mobile_settings_routes(bp, shared):
                                 "level": "info",
                                 "message": "صلاحية التداول غير مفعّلة",
                                 "action": "قم بتفعيل Enable Spot & Margin Trading",
-                            })
+                            }
+                        )
                         security_score -= 20
 
                 except Exception as perm_error:
-                    logger.warning(
-                        f"⚠️ تعذر جلب صلاحيات المفتاح: {perm_error}"
-                    )
+                    logger.warning(f"⚠️ تعذر جلب صلاحيات المفتاح: {perm_error}")
                     security_warnings.append(
                         {
                             "level": "info",
                             "message": "تعذر التحقق من صلاحيات المفتاح التفصيلية",
                             "action": "تحقق يدوياً من إعدادات API في Binance",
-                        })
+                        }
+                    )
 
                 security_score = max(0, security_score)
 
@@ -1585,8 +1539,7 @@ def register_mobile_settings_routes(bp, shared):
                             "withdrawals_enabled": enable_withdrawals,
                             "spot_enabled": enable_spot,
                             "warnings": security_warnings,
-                            "is_safe": security_score >= 70
-                            and not enable_withdrawals,
+                            "is_safe": security_score >= 70 and not enable_withdrawals,
                         },
                     }
                 )
@@ -1606,23 +1559,20 @@ def register_mobile_settings_routes(bp, shared):
                 )
 
             except BinanceRequestException as e:
-                logger.warning(
-                    f"⚠️ خطأ في الاتصال بـ Binance للمستخدم {user_id}: {e}"
-                )
+                logger.warning(f"⚠️ خطأ في الاتصال بـ Binance للمستخدم {user_id}: {e}")
                 return (
                     jsonify(
                         {
                             "success": False,
                             "valid": False,
                             "error": "فشل الاتصال بـ Binance. تحقق من الاتصال بالإنترنت",
-                        }),
+                        }
+                    ),
                     503,
                 )
 
             except Exception as e:
-                logger.error(
-                    f"❌ خطأ في اختبار المفاتيح للمستخدم {user_id}: {e}"
-                )
+                logger.error(f"❌ خطأ في اختبار المفاتيح للمستخدم {user_id}: {e}")
                 return (
                     jsonify(
                         {
@@ -1709,9 +1659,7 @@ def register_mobile_settings_routes(bp, shared):
                 params = []
 
                 full_name = (
-                    data.get("fullName")
-                    or data.get("full_name")
-                    or data.get("name")
+                    data.get("fullName") or data.get("full_name") or data.get("name")
                 )
                 phone_number = (
                     data.get("phoneNumber")
@@ -1734,8 +1682,7 @@ def register_mobile_settings_routes(bp, shared):
 
                 if updates:
                     params.append(user_id)
-                    query = f"UPDATE users SET {
-                        ', '.join(updates)} WHERE id = %s"
+                    query = f"UPDATE users SET {', '.join(updates)} WHERE id = %s"
                     cursor.execute(query, params)
 
             return success_response(None, "تم تحديث الملف الشخصي بنجاح")
@@ -1755,18 +1702,14 @@ def register_mobile_settings_routes(bp, shared):
         ⚠️ عملية خطيرة - تتطلب تأكيد
         """
         if not verify_user_access(user_id):
-            response_data, status_code = error_response(
-                "غير مصرح", "UNAUTHORIZED", 403
-            )
+            response_data, status_code = error_response("غير مصرح", "UNAUTHORIZED", 403)
             return jsonify(response_data), status_code
 
         try:
             user_row = db_manager.execute_query(
                 "SELECT user_type FROM users WHERE id = %s", (user_id,)
             )
-            is_admin_user = (
-                user_row[0]["user_type"] == "admin" if user_row else False
-            )
+            is_admin_user = user_row[0]["user_type"] == "admin" if user_row else False
             reset_mode = "demo" if is_admin_user else "real"
             reset_is_demo = is_admin_user
 
@@ -1794,7 +1737,8 @@ def register_mobile_settings_routes(bp, shared):
                     )
 
                 logger.info(
-                    f"✅ تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} من المصدر الموحد")
+                    f"✅ تم إعادة ضبط الحساب التجريبي للمستخدم {user_id} من المصدر الموحد"
+                )
                 response_data, status_code = success_response(
                     {"reset": True, "mode": "demo"},
                     "تم إعادة ضبط البيانات بنجاح",
@@ -1817,9 +1761,7 @@ def register_mobile_settings_routes(bp, shared):
                     (user_id, reset_is_demo),
                 ).fetchone()
                 initial_balance = (
-                    float(portfolio_row[0] or 1000.0)
-                    if portfolio_row
-                    else 1000.0
+                    float(portfolio_row[0] or 1000.0) if portfolio_row else 1000.0
                 )
                 conn.execute(
                     """
@@ -1873,9 +1815,7 @@ def register_mobile_settings_routes(bp, shared):
         يُستخدم من واجهة Flutter لعرض مؤشر المخاطرة للمستخدم.
         """
         if not verify_user_access(user_id):
-            response_data, status_code = error_response(
-                "غير مصرح", "UNAUTHORIZED", 403
-            )
+            response_data, status_code = error_response("غير مصرح", "UNAUTHORIZED", 403)
             return jsonify(response_data), status_code
 
         try:
@@ -1903,9 +1843,7 @@ def register_mobile_settings_routes(bp, shared):
                 ).fetchone()
 
                 max_daily_loss_pct = (
-                    float(settings_row[0])
-                    if settings_row and settings_row[0]
-                    else 10.0
+                    float(settings_row[0]) if settings_row and settings_row[0] else 10.0
                 )
 
                 # 2️⃣ رصيد المحفظة (للحساب النسبي)
@@ -1945,12 +1883,8 @@ def register_mobile_settings_routes(bp, shared):
                 if base_balance > 0
                 else 0.0
             )
-            daily_limit_usdt = round(
-                (max_daily_loss_pct / 100.0) * base_balance, 2
-            )
-            remaining_usdt = round(
-                max(0.0, daily_limit_usdt - daily_loss_abs), 2
-            )
+            daily_limit_usdt = round((max_daily_loss_pct / 100.0) * base_balance, 2)
+            remaining_usdt = round(max(0.0, daily_limit_usdt - daily_loss_abs), 2)
             limit_breached = daily_loss_used_pct >= max_daily_loss_pct
 
             return jsonify(

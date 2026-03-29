@@ -833,6 +833,12 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                     }, size_pct={position_size_pct}, max_pos={user_max_positions}"
                 )
 
+            # 4. تنظيف الإشارات القديمة غير المعالجة
+            try:
+                self.db.cleanup_orphaned_signals(max_age_hours=24)
+            except Exception as cleanup_err:
+                self.logger.warning(f"⚠️ Signal cleanup failed: {cleanup_err}")
+
         except Exception as e:
             result["errors"].append(f"Cycle error: {e}")
             self.logger.error(f"Cycle error: {e}")

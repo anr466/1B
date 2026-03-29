@@ -44,9 +44,7 @@ STOPPED = "STOPPED"
 STARTING = "STARTING"
 RUNNING = "RUNNING"
 STOPPING = "STOPPING"
-HALTING = (
-    "HALTING"  # حالة التصفية: تمنع الصفقات الجديدة وتستمر في إدارة المفتوحة
-)
+HALTING = "HALTING"  # حالة التصفية: تمنع الصفقات الجديدة وتستمر في إدارة المفتوحة
 ERROR = "ERROR"
 
 VALID_STATES = [STOPPED, STARTING, RUNNING, STOPPING, HALTING, ERROR]
@@ -99,9 +97,7 @@ class TradingStateMachine:
             "last_event_at": None,
             "last_event_type": None,
         }
-        self.reconcile_warn_threshold = int(
-            os.getenv("RECONCILE_WARN_THRESHOLD", "5")
-        )
+        self.reconcile_warn_threshold = int(os.getenv("RECONCILE_WARN_THRESHOLD", "5"))
 
     def _normalize_state(self, raw_state: Any) -> str:
         """Normalize DB state into canonical enum values."""
@@ -156,9 +152,7 @@ class TradingStateMachine:
 
             # Keep UI-facing message aligned with canonical state
             if trading_state == STOPPED:
-                if (not message) or (
-                    "يعمل" in str(message) and not process_alive
-                ):
+                if (not message) or ("يعمل" in str(message) and not process_alive):
                     message = "النظام متوقف"
             elif trading_state == RUNNING and not message:
                 message = "النظام يعمل"
@@ -199,17 +193,13 @@ class TradingStateMachine:
                 binance_connected = bc.is_connected
                 binance_latency_ms = getattr(bc, "latency_ms", None)
             except Exception:
-                binance_connected = (
-                    False  # unknown / unavailable — do not assume OK
-                )
+                binance_connected = False  # unknown / unavailable — do not assume OK
 
             return {
                 "success": True,
                 "trading_state": trading_state,
                 "state": trading_state,
-                "trading_state_label": STATE_LABELS.get(
-                    trading_state, trading_state
-                ),
+                "trading_state_label": STATE_LABELS.get(trading_state, trading_state),
                 "trading_active": trading_state == RUNNING,
                 "session_id": session_id,
                 "mode": mode,
@@ -261,9 +251,7 @@ class TradingStateMachine:
             "reconcile_stats": getattr(self, "reconcile_stats", None),
         }
 
-    def start(
-        self, initiated_by: str = "admin", mode: str = "PAPER"
-    ) -> Dict[str, Any]:
+    def start(self, initiated_by: str = "admin", mode: str = "PAPER") -> Dict[str, Any]:
         """
         Attempt to start trading system.
 
@@ -277,22 +265,19 @@ class TradingStateMachine:
                 row = conn.execute(
                     "SELECT trading_state FROM system_status WHERE id = 1"
                 ).fetchone()
-                current_state = self._normalize_state(
-                    row[0] if row else STOPPED
-                )
+                current_state = self._normalize_state(row[0] if row else STOPPED)
 
                 # Already running or starting — return current state (no
                 # error!)
                 if current_state in (STARTING, RUNNING):
                     logger.info(
-                        f"ℹ️ Start requested but state is {current_state} — returning current state")
+                        f"ℹ️ Start requested but state is {current_state} — returning current state"
+                    )
                     return self.get_state()
 
                 # Can only start from STOPPED or ERROR
                 if current_state not in (STOPPED, ERROR):
-                    logger.warning(
-                        f"⚠️ Cannot start from state {current_state}"
-                    )
+                    logger.warning(f"⚠️ Cannot start from state {current_state}")
                     return self.get_state()
 
                 # Containerized deployment safety:
@@ -316,7 +301,8 @@ class TradingStateMachine:
                         f"Adopted existing process PID={existing_pid}",
                     )
                     logger.info(
-                        f"✅ Adopted existing trading process PID={existing_pid}")
+                        f"✅ Adopted existing trading process PID={existing_pid}"
+                    )
                     return self.get_state()
 
                 # Transition to STARTING
@@ -350,7 +336,8 @@ class TradingStateMachine:
                         break
                 else:
                     raise Exception(
-                        f"Process {pid} failed to start after {max_retries} attempts")
+                        f"Process {pid} failed to start after {max_retries} attempts"
+                    )
 
                 # Transition to RUNNING
                 with self.db.get_write_connection() as conn:
@@ -375,7 +362,8 @@ class TradingStateMachine:
                 # No additional StateManager sync needed
 
                 logger.info(
-                    f"✅ Trading system started (PID: {pid}, session: {session_id})")
+                    f"✅ Trading system started (PID: {pid}, session: {session_id})"
+                )
 
             except Exception as start_error:
                 logger.error(f"❌ Failed to start process: {start_error}")
@@ -401,7 +389,8 @@ class TradingStateMachine:
                         f"recovered via existing PID={recovered_pid} after start error",
                     )
                     logger.info(
-                        f"✅ Recovered start flow using existing process PID={recovered_pid}")
+                        f"✅ Recovered start flow using existing process PID={recovered_pid}"
+                    )
                 else:
                     # Transition to ERROR
                     with self.db.get_write_connection() as conn:
@@ -441,16 +430,12 @@ class TradingStateMachine:
                 row = conn.execute(
                     "SELECT trading_state, session_id FROM system_status WHERE id = 1"
                 ).fetchone()
-                current_state = self._normalize_state(
-                    row[0] if row else STOPPED
-                )
+                current_state = self._normalize_state(row[0] if row else STOPPED)
                 session_id = row[1] if row else None
 
                 # Already stopped or halting — return current state
                 if current_state in (STOPPED, HALTING):
-                    logger.info(
-                        f"ℹ️ Stop requested but state is {current_state}"
-                    )
+                    logger.info(f"ℹ️ Stop requested but state is {current_state}")
                     return self.get_state()
 
                 # Can stop from RUNNING, ERROR, or STARTING
@@ -476,7 +461,8 @@ class TradingStateMachine:
             # Log current status
             if open_positions > 0:
                 logger.info(
-                    f"ℹ️ System entering HALTING state with {open_positions} open positions")
+                    f"ℹ️ System entering HALTING state with {open_positions} open positions"
+                )
             else:
                 # No open positions - can transition to STOPPED immediately
                 logger.info("ℹ️ No open positions - transitioning to STOPPED")
@@ -488,9 +474,7 @@ class TradingStateMachine:
             logger.error(f"❌ stop() error: {e}")
             return self.get_state()
 
-    def _complete_halt(
-        self, session_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def _complete_halt(self, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Complete the halt process - transition from HALTING to STOPPED."""
         try:
             with self.db.get_write_connection() as conn:
@@ -511,17 +495,11 @@ class TradingStateMachine:
                 "تم التصفية والإيقاف بنجاح",
             )
 
-            logger.info(
-                f"✅ Trading system halted completely (session: {session_id})"
-            )
+            logger.info(f"✅ Trading system halted completely (session: {session_id})")
             return self.get_state()
 
         except Exception as e:
             logger.error(f"❌ _complete_halt error: {e}")
-            return self.get_state()
-
-        except Exception as e:
-            logger.error(f"❌ stop() error: {e}")
             return self.get_state()
 
     def emergency_stop(self, initiated_by: str = "admin") -> Dict[str, Any]:
@@ -567,9 +545,7 @@ class TradingStateMachine:
                 row = conn.execute(
                     "SELECT trading_state FROM system_status WHERE id = 1"
                 ).fetchone()
-                current_state = self._normalize_state(
-                    row[0] if row else STOPPED
-                )
+                current_state = self._normalize_state(row[0] if row else STOPPED)
                 if current_state == ERROR:
                     self._transition(
                         conn,
@@ -642,9 +618,7 @@ class TradingStateMachine:
         corrected = db_state
         corrected_msg = message
         heartbeat_seconds = self._get_seconds_since_heartbeat()
-        heartbeat_fresh = (
-            heartbeat_seconds is not None and heartbeat_seconds < 60
-        )
+        heartbeat_fresh = heartbeat_seconds is not None and heartbeat_seconds < 60
 
         if db_state == RUNNING and not process_alive:
             # In containerized/distributed runtime, PID discovery may fail while
@@ -709,11 +683,10 @@ class TradingStateMachine:
                 )
             else:
                 # لا تزال هناك صفقات مفتوحة - استمر في التصفية
-                corrected_msg = (
-                    f"جاري التصفية... ({open_positions} صفقة مفتوحة)"
-                )
+                corrected_msg = f"جاري التصفية... ({open_positions} صفقة مفتوحة)"
                 logger.info(
-                    f"ℹ️ HALTING state: {open_positions} open positions remaining")
+                    f"ℹ️ HALTING state: {open_positions} open positions remaining"
+                )
 
         elif db_state == STOPPED and process_alive:
             # Process running but DB says stopped
@@ -727,32 +700,24 @@ class TradingStateMachine:
                     if row and row[0]:
                         last_update = datetime.fromisoformat(row[0])
                         stopped_at = last_update
-                        seconds_since = (
-                            datetime.now() - stopped_at
-                        ).total_seconds()
+                        seconds_since = (datetime.now() - stopped_at).total_seconds()
 
                         # Check if process started AFTER the STOPPED was recorded
                         # If so, it's a legitimate new process, not an orphan
                         try:
                             proc_start_time = self._get_process_start_time(pid)
-                            if (
-                                proc_start_time
-                                and proc_start_time > stopped_at
-                            ):
+                            if proc_start_time and proc_start_time > stopped_at:
                                 # Process started after STOPPED was recorded =
                                 # legitimate
                                 logger.info(
-                                    f"ℹ️ Process PID={pid} started after STOPPED (at {proc_start_time}) — promoting to RUNNING")
+                                    f"ℹ️ Process PID={pid} started after STOPPED (at {proc_start_time}) — promoting to RUNNING"
+                                )
                                 corrected = RUNNING
                                 corrected_msg = (
                                     f"النظام يعمل (PID: {pid}) - تمت المزامنة"
                                 )
-                                self._do_reconcile_update(
-                                    corrected, corrected_msg
-                                )
-                                self._record_reconcile_event(
-                                    "stopped_to_running"
-                                )
+                                self._do_reconcile_update(corrected, corrected_msg)
+                                self._record_reconcile_event("stopped_to_running")
                                 self._log_transition(
                                     STOPPED,
                                     RUNNING,
@@ -768,12 +733,11 @@ class TradingStateMachine:
                             # Recently stopped — kill the orphan
                             logger.warning(
                                 f"⚠️ Orphan process PID={pid} found {
-                                    seconds_since:.0f}s after STOPPED — killing it")
+                                    seconds_since:.0f}s after STOPPED — killing it"
+                            )
                             try:
                                 os.kill(pid, 9)
-                                self._record_reconcile_event(
-                                    "stopped_orphan_killed"
-                                )
+                                self._record_reconcile_event("stopped_orphan_killed")
                             except OSError:
                                 pass
                             return corrected, corrected_msg
@@ -915,9 +879,7 @@ class TradingStateMachine:
                                     self.pid_file.parent.mkdir(
                                         parents=True, exist_ok=True
                                     )
-                                    self.pid_file.write_text(
-                                        str(pid), encoding="utf-8"
-                                    )
+                                    self.pid_file.write_text(str(pid), encoding="utf-8")
                                 except Exception:
                                     pass
                                 return pid
@@ -933,9 +895,7 @@ class TradingStateMachine:
             if proc_cmdline.exists():
                 try:
                     raw = proc_cmdline.read_bytes()
-                    cmdline = raw.decode("utf-8", errors="ignore").replace(
-                        "\x00", " "
-                    )
+                    cmdline = raw.decode("utf-8", errors="ignore").replace("\x00", " ")
                     return "background_trading_manager.py" in cmdline
                 except Exception:
                     return True
@@ -949,9 +909,7 @@ class TradingStateMachine:
             stat_path = Path(f"/proc/{pid}/stat")
             if not stat_path.exists():
                 return None
-            stat_content = stat_path.read_text(
-                encoding="utf-8", errors="ignore"
-            )
+            stat_content = stat_path.read_text(encoding="utf-8", errors="ignore")
             # Format: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime ...
             # The start time is field 19 (0-indexed from 22)
             parts = stat_content.split()
@@ -989,9 +947,7 @@ class TradingStateMachine:
         process = subprocess.Popen(
             [
                 sys.executable,
-                str(
-                    self.project_root / "bin" / "background_trading_manager.py"
-                ),
+                str(self.project_root / "bin" / "background_trading_manager.py"),
                 "--start",
             ],
             cwd=str(self.project_root),
@@ -1005,8 +961,9 @@ class TradingStateMachine:
             self.pid_file.write_text(str(process.pid), encoding="utf-8")
         except Exception:
             pass
-        logger.info(f"📋 Process launched PID={
-            process.pid}, logs → logs/trading_process_*.log")
+        logger.info(
+            f"📋 Process launched PID={process.pid}, logs → logs/trading_process_*.log"
+        )
         return process.pid
 
     def _close_log_handles(self):
@@ -1108,8 +1065,7 @@ class TradingStateMachine:
                     try:
                         seconds_ago = int(
                             (
-                                datetime.now()
-                                - datetime.fromisoformat(last_act)
+                                datetime.now() - datetime.fromisoformat(last_act)
                             ).total_seconds()
                         )
                     except Exception:
@@ -1135,8 +1091,7 @@ class TradingStateMachine:
                     try:
                         seconds_ago = int(
                             (
-                                datetime.now()
-                                - datetime.fromisoformat(last_act)
+                                datetime.now() - datetime.fromisoformat(last_act)
                             ).total_seconds()
                         )
                     except Exception:
@@ -1166,7 +1121,9 @@ class TradingStateMachine:
                         "status": (
                             "healthy"
                             if hb_seconds < 30
-                            else "warning" if hb_seconds < 60 else "critical"
+                            else "warning"
+                            if hb_seconds < 60
+                            else "critical"
                         ),
                     }
                 except Exception:
@@ -1219,7 +1176,8 @@ class TradingStateMachine:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
             logger.info(
-                f"📋 State: {from_state} → {to_state} | by={initiated_by} | {reason}")
+                f"📋 State: {from_state} → {to_state} | by={initiated_by} | {reason}"
+            )
 
         except Exception as e:
             logger.warning(f"⚠️ Failed to log transition: {e}")

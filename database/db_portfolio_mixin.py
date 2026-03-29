@@ -401,11 +401,15 @@ class DbPortfolioMixin:
             is_demo = get_effective_is_demo(self, user_id)
         is_demo = bool(is_demo)
 
+        # Convert side to position_type (active_positions uses position_type, not side)
+        side = trade_data.get("side", "LONG")
+        position_type = side.upper() if side.lower() in ["long", "short"] else "LONG"
+
         with self.get_write_connection() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO active_positions 
-                (user_id, symbol, strategy, timeframe, side, entry_price, quantity, 
+                (user_id, symbol, strategy, timeframe, position_type, entry_price, quantity, 
                  stop_loss, take_profit, is_active, is_demo, entry_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, CURRENT_TIMESTAMP)
                 RETURNING id
@@ -415,7 +419,7 @@ class DbPortfolioMixin:
                     trade_data["symbol"],
                     trade_data["strategy"],
                     trade_data["timeframe"],
-                    trade_data["side"],
+                    position_type,
                     trade_data["entry_price"],
                     trade_data["quantity"],
                     trade_data.get("stop_loss"),
