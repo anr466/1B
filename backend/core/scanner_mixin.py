@@ -208,7 +208,10 @@ class ScannerMixin:
                         if self.optimizer and entry_indicators:
                             try:
                                 sig_score = self.optimizer.score_signal(
-                                    symbol, entry_indicators
+                                    self.user_id,
+                                    bool(self.is_demo_trading),
+                                    symbol,
+                                    entry_indicators,
                                 )
                                 predicted_wr = sig_score.get("predicted_wr", 0.5)
                                 if not sig_score.get("should_trade", True):

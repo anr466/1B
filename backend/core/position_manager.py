@@ -938,6 +938,7 @@ class PositionManagerMixin:
                     pass
 
                 self.optimizer.record_trade(
+                    user_id=self.user_id,
                     symbol=symbol,
                     side=position_type.lower(),
                     entry_price=entry_price,
@@ -1172,7 +1173,9 @@ class PositionManagerMixin:
             sl_pct = self.config["max_sl_pct"]
             if self.optimizer:
                 try:
-                    adaptive_sl = self.optimizer.get_optimal_sl(symbol)
+                    adaptive_sl = self.optimizer.get_optimal_sl(
+                        self.user_id, bool(self.is_demo_trading), symbol
+                    )
                     if adaptive_sl != sl_pct:
                         self.logger.info(
                             f"   📈 Adaptive SL: {sl_pct * 100:.1f}% → {

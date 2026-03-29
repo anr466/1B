@@ -23,6 +23,7 @@ try:
     import psycopg2
     import psycopg2.extras
     from psycopg2 import IntegrityError as PostgresIntegrityError
+
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     psycopg2 = None
@@ -32,15 +33,17 @@ except ImportError:
 # استيراد مدير التشفير
 try:
     from backend.utils.encryption_utils import encrypt_key, decrypt_key
+
     ENCRYPTION_AVAILABLE = True
 except ImportError:
     ENCRYPTION_AVAILABLE = False
 
 # إضافة مسار config للوصول إلى unified_settings
-sys.path.insert(0, str(Path(__file__).parent.parent / 'config'))
+sys.path.insert(0, str(Path(__file__).parent.parent / "config"))
 
 try:
     from unified_settings import settings, get_database_engine, get_database_url
+
     USE_UNIFIED_SETTINGS = True
 except ImportError:
     USE_UNIFIED_SETTINGS = False
@@ -53,36 +56,36 @@ from database.db_notifications_mixin import DbNotificationsMixin
 
 
 POSTGRES_UPSERT_CONFLICTS = {
-    'system_status': ['id'],
-    'user_settings': ['user_id', 'is_demo'],
-    'portfolio': ['user_id', 'is_demo'],
-    'verification_codes': ['email'],
-    'user_sessions': ['user_id'],
-    'user_devices': ['user_id', 'device_id'],
-    'biometric_auth': ['user_id'],
-    'pending_verifications': ['user_id', 'action'],
-    'user_binance_keys': ['user_id'],
-    'successful_coins': ['symbol', 'strategy', 'timeframe'],
-    'active_positions': ['user_id', 'symbol', 'strategy', 'is_demo'],
-    'trading_signals': ['symbol', 'strategy', 'timeframe'],
-    'portfolio_growth_history': ['user_id', 'date', 'is_demo'],
-    'coin_states': ['symbol'],
+    "system_status": ["id"],
+    "user_settings": ["user_id", "is_demo"],
+    "portfolio": ["user_id", "is_demo"],
+    "verification_codes": ["email"],
+    "user_sessions": ["user_id"],
+    "user_devices": ["user_id", "device_id"],
+    "biometric_auth": ["user_id"],
+    "pending_verifications": ["user_id", "action"],
+    "user_binance_keys": ["user_id"],
+    "successful_coins": ["symbol", "strategy", "timeframe"],
+    "active_positions": ["user_id", "symbol", "strategy", "is_demo"],
+    "trading_signals": ["symbol", "strategy", "timeframe"],
+    "portfolio_growth_history": ["user_id", "date", "is_demo"],
+    "coin_states": ["symbol"],
 }
 
 POSTGRES_BOOLEAN_COLUMNS = {
-    'is_active',
-    'is_demo',
-    'is_read',
-    'trading_enabled',
-    'is_running',
-    'is_processed',
-    'email_verified',
-    'is_phone_verified',
-    'notifications_enabled',
-    'verified',
-    'resolved',
-    'requires_admin',
-    'read',
+    "is_active",
+    "is_demo",
+    "is_read",
+    "trading_enabled",
+    "is_running",
+    "is_processed",
+    "email_verified",
+    "is_phone_verified",
+    "notifications_enabled",
+    "verified",
+    "resolved",
+    "requires_admin",
+    "read",
 }
 
 
@@ -99,19 +102,19 @@ def _replace_qmark_params(sql: str) -> str:
             in_double = not in_double
             out.append(ch)
             continue
-        if ch == '?' and not in_single and not in_double:
-            out.append('%s')
+        if ch == "?" and not in_single and not in_double:
+            out.append("%s")
         else:
             out.append(ch)
-    return ''.join(out)
+    return "".join(out)
 
 
 def _translate_datetime_literals(sql: str) -> str:
     replacements = {
-        "datetime('now')": 'CURRENT_TIMESTAMP',
-        'datetime("now")': 'CURRENT_TIMESTAMP',
-        "DATE('now')": 'CURRENT_DATE',
-        'DATE("now")': 'CURRENT_DATE',
+        "datetime('now')": "CURRENT_TIMESTAMP",
+        'datetime("now")': "CURRENT_TIMESTAMP",
+        "DATE('now')": "CURRENT_DATE",
+        'DATE("now")': "CURRENT_DATE",
         "datetime('now', '+7 days')": "CURRENT_TIMESTAMP + INTERVAL '7 days'",
         'datetime("now", "+7 days")': "CURRENT_TIMESTAMP + INTERVAL '7 days'",
         "datetime('now', '-7 days')": "CURRENT_TIMESTAMP - INTERVAL '7 days'",
@@ -122,12 +125,13 @@ def _translate_datetime_literals(sql: str) -> str:
     }
     for old, new in replacements.items():
         sql = sql.replace(old, new)
+
     def _replace_relative_now(match: re.Match) -> str:
         sign = match.group(1)
         amount = match.group(2)
         unit = match.group(3).lower()
-        normalized_unit = unit if unit.endswith('s') else f'{unit}s'
-        operator = '+' if sign == '+' else '-'
+        normalized_unit = unit if unit.endswith("s") else f"{unit}s"
+        operator = "+" if sign == "+" else "-"
         return f"CURRENT_TIMESTAMP {operator} INTERVAL '{amount} {normalized_unit}'"
 
     sql = re.sub(
@@ -136,65 +140,112 @@ def _translate_datetime_literals(sql: str) -> str:
         sql,
         flags=re.IGNORECASE,
     )
-    sql = re.sub(r"""datetime\(\s*['"]now['"]\s*\)""", 'CURRENT_TIMESTAMP', sql, flags=re.IGNORECASE)
-    sql = re.sub(r"""date\(\s*['"]now['"]\s*\)""", 'CURRENT_DATE', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'\bdatetime\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)', r'\1', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'\bDATE\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)', r'\1::date', sql, flags=re.IGNORECASE)
+    sql = re.sub(
+        r"""datetime\(\s*['"]now['"]\s*\)""",
+        "CURRENT_TIMESTAMP",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    sql = re.sub(
+        r"""date\(\s*['"]now['"]\s*\)""", "CURRENT_DATE", sql, flags=re.IGNORECASE
+    )
+    sql = re.sub(
+        r"\bdatetime\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)",
+        r"\1",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    sql = re.sub(
+        r"\bDATE\(\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\)",
+        r"\1::date",
+        sql,
+        flags=re.IGNORECASE,
+    )
     return sql
 
 
 def _translate_boolean_literal_comparisons(sql: str) -> str:
     for col in POSTGRES_BOOLEAN_COLUMNS:
-        sql = re.sub(rf'\b{re.escape(col)}\s*=\s*1\b', f'{col} = TRUE', sql, flags=re.IGNORECASE)
-        sql = re.sub(rf'\b{re.escape(col)}\s*=\s*0\b', f'{col} = FALSE', sql, flags=re.IGNORECASE)
-        sql = re.sub(rf'\b{re.escape(col)}\s*<>\s*1\b', f'{col} <> TRUE', sql, flags=re.IGNORECASE)
-        sql = re.sub(rf'\b{re.escape(col)}\s*<>\s*0\b', f'{col} <> FALSE', sql, flags=re.IGNORECASE)
-        sql = re.sub(rf'COALESCE\(\s*{re.escape(col)}\s*,\s*1\s*\)', f'COALESCE({col}, TRUE)', sql, flags=re.IGNORECASE)
-        sql = re.sub(rf'COALESCE\(\s*{re.escape(col)}\s*,\s*0\s*\)', f'COALESCE({col}, FALSE)', sql, flags=re.IGNORECASE)
+        sql = re.sub(
+            rf"\b{re.escape(col)}\s*=\s*1\b", f"{col} = TRUE", sql, flags=re.IGNORECASE
+        )
+        sql = re.sub(
+            rf"\b{re.escape(col)}\s*=\s*0\b", f"{col} = FALSE", sql, flags=re.IGNORECASE
+        )
+        sql = re.sub(
+            rf"\b{re.escape(col)}\s*<>\s*1\b",
+            f"{col} <> TRUE",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(
+            rf"\b{re.escape(col)}\s*<>\s*0\b",
+            f"{col} <> FALSE",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(
+            rf"COALESCE\(\s*{re.escape(col)}\s*,\s*1\s*\)",
+            f"COALESCE({col}, TRUE)",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(
+            rf"COALESCE\(\s*{re.escape(col)}\s*,\s*0\s*\)",
+            f"COALESCE({col}, FALSE)",
+            sql,
+            flags=re.IGNORECASE,
+        )
     return sql
 
 
 def _translate_insert_or_ignore(sql: str) -> Optional[str]:
     upper_sql = sql.upper()
-    marker = 'INSERT OR IGNORE INTO '
+    marker = "INSERT OR IGNORE INTO "
     if marker not in upper_sql:
         return None
     idx = upper_sql.index(marker)
-    rest = sql[idx + len(marker):]
-    table_name = rest.split('(', 1)[0].strip().strip('"')
+    rest = sql[idx + len(marker) :]
+    table_name = rest.split("(", 1)[0].strip().strip('"')
     prefix = sql[:idx]
-    translated = prefix + 'INSERT INTO ' + rest
-    return translated.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
+    translated = prefix + "INSERT INTO " + rest
+    return translated.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
 
 
 def _translate_insert_or_replace(sql: str) -> Optional[str]:
     upper_sql = sql.upper()
-    marker = 'INSERT OR REPLACE INTO '
+    marker = "INSERT OR REPLACE INTO "
     if marker not in upper_sql:
         return None
     idx = upper_sql.index(marker)
-    rest = sql[idx + len(marker):]
-    table_name = rest.split('(', 1)[0].strip().strip('"')
+    rest = sql[idx + len(marker) :]
+    table_name = rest.split("(", 1)[0].strip().strip('"')
     conflict_cols = POSTGRES_UPSERT_CONFLICTS.get(table_name)
     if not conflict_cols:
         return None
-    col_section = rest.split('(', 1)[1].split(')', 1)[0]
-    columns = [c.strip().strip('"') for c in col_section.split(',')]
-    update_cols = [c for c in columns if c not in conflict_cols and c != 'id']
+    col_section = rest.split("(", 1)[1].split(")", 1)[0]
+    columns = [c.strip().strip('"') for c in col_section.split(",")]
+    update_cols = [c for c in columns if c not in conflict_cols and c != "id"]
     prefix = sql[:idx]
-    base = prefix + 'INSERT INTO ' + rest
+    base = prefix + "INSERT INTO " + rest
     if update_cols:
-        set_clause = ', '.join(f'{col} = EXCLUDED.{col}' for col in update_cols)
-        return base.rstrip().rstrip(';') + f" ON CONFLICT ({', '.join(conflict_cols)}) DO UPDATE SET {set_clause}"
-    return base.rstrip().rstrip(';') + f" ON CONFLICT ({', '.join(conflict_cols)}) DO NOTHING"
+        set_clause = ", ".join(f"{col} = EXCLUDED.{col}" for col in update_cols)
+        return (
+            base.rstrip().rstrip(";")
+            + f" ON CONFLICT ({', '.join(conflict_cols)}) DO UPDATE SET {set_clause}"
+        )
+    return (
+        base.rstrip().rstrip(";")
+        + f" ON CONFLICT ({', '.join(conflict_cols)}) DO NOTHING"
+    )
 
 
 def _translate_sql_for_postgres(sql: str) -> Optional[str]:
     stripped = sql.strip()
     upper_sql = stripped.upper()
-    if upper_sql.startswith('PRAGMA '):
+    if upper_sql.startswith("PRAGMA "):
         return None
-    if upper_sql.startswith('BEGIN IMMEDIATE'):
+    if upper_sql.startswith("BEGIN IMMEDIATE"):
         return None
     sql = _translate_datetime_literals(sql)
     sql = _translate_boolean_literal_comparisons(sql)
@@ -211,16 +262,16 @@ def _coerce_postgres_boolean_params(sql: str, params):
         return params
     coerced = list(params)
     for col in POSTGRES_BOOLEAN_COLUMNS:
-        pattern = re.compile(rf'\b{re.escape(col)}\s*=\s*%s\b', re.IGNORECASE)
+        pattern = re.compile(rf"\b{re.escape(col)}\s*=\s*%s\b", re.IGNORECASE)
         for match in pattern.finditer(sql):
-            param_index = sql[:match.start()].count('%s')
+            param_index = sql[: match.start()].count("%s")
             if param_index < len(coerced) and coerced[param_index] in (0, 1):
                 coerced[param_index] = bool(coerced[param_index])
     return tuple(coerced)
 
 
 def _normalize_postgres_param_value(value):
-    if hasattr(value, 'item') and callable(getattr(value, 'item')):
+    if hasattr(value, "item") and callable(getattr(value, "item")):
         try:
             return value.item()
         except Exception:
@@ -228,7 +279,9 @@ def _normalize_postgres_param_value(value):
     if isinstance(value, (list, tuple)):
         return type(value)(_normalize_postgres_param_value(item) for item in value)
     if isinstance(value, dict):
-        return {key: _normalize_postgres_param_value(item) for key, item in value.items()}
+        return {
+            key: _normalize_postgres_param_value(item) for key, item in value.items()
+        }
     return value
 
 
@@ -236,7 +289,9 @@ def _normalize_postgres_params(params):
     if not params:
         return params
     if isinstance(params, dict):
-        return {key: _normalize_postgres_param_value(value) for key, value in params.items()}
+        return {
+            key: _normalize_postgres_param_value(value) for key, value in params.items()
+        }
     return tuple(_normalize_postgres_param_value(value) for value in params)
 
 
@@ -256,18 +311,27 @@ class PostgresCursorWrapper:
         try:
             self._empty_result = False
             normalized_params = _normalize_postgres_params(params or ())
-            coerced_params = _coerce_postgres_boolean_params(translated_sql, normalized_params)
+            coerced_params = _coerce_postgres_boolean_params(
+                translated_sql, normalized_params
+            )
             self._cursor.execute(translated_sql, coerced_params)
             self.lastrowid = None
             normalized_sql = translated_sql.strip().upper()
-            if self._cursor.description and normalized_sql.startswith('INSERT') and 'RETURNING' in normalized_sql:
+            if (
+                self._cursor.description
+                and normalized_sql.startswith("INSERT")
+                and "RETURNING" in normalized_sql
+            ):
                 row = self._cursor.fetchone()
                 if row is not None:
-                    self.lastrowid = row[0] if not isinstance(row, dict) else row.get('id')
+                    self.lastrowid = (
+                        row[0] if not isinstance(row, dict) else row.get("id")
+                    )
                     self._connection_wrapper._pending_prefetched_row = row
             return self
         except PostgresIntegrityError as e:
             from psycopg2 import IntegrityError as _PgIntegrityError
+
             raise _PgIntegrityError(str(e)) from e
 
     def fetchone(self):
@@ -305,15 +369,29 @@ class PostgresConnectionWrapper:
 
     def execute(self, sql, params=None):
         cursor = self.cursor()
-        translated_sql = _translate_sql_for_postgres(sql) if isinstance(sql, str) else sql
-        if translated_sql and translated_sql.strip().upper().startswith('INSERT INTO '):
-            table_name = translated_sql.split('INSERT INTO ', 1)[1].split('(', 1)[0].strip().strip('"')
-            if table_name in {'users', 'active_positions'} and 'RETURNING' not in translated_sql.upper():
-                translated_sql = translated_sql.rstrip().rstrip(';') + ' RETURNING id'
-        return cursor.execute(translated_sql if translated_sql is not None else sql, params)
+        translated_sql = (
+            _translate_sql_for_postgres(sql) if isinstance(sql, str) else sql
+        )
+        if translated_sql and translated_sql.strip().upper().startswith("INSERT INTO "):
+            table_name = (
+                translated_sql.split("INSERT INTO ", 1)[1]
+                .split("(", 1)[0]
+                .strip()
+                .strip('"')
+            )
+            if (
+                table_name in {"users", "active_positions"}
+                and "RETURNING" not in translated_sql.upper()
+            ):
+                translated_sql = translated_sql.rstrip().rstrip(";") + " RETURNING id"
+        return cursor.execute(
+            translated_sql if translated_sql is not None else sql, params
+        )
 
     def cursor(self):
-        return PostgresCursorWrapper(self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor), self)
+        return PostgresCursorWrapper(
+            self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor), self
+        )
 
     def commit(self):
         self._conn.commit()
@@ -343,36 +421,38 @@ class PostgresConnectionWrapper:
         return getattr(self._conn, name)
 
 
-class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotificationsMixin):
+class DatabaseManager(
+    DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotificationsMixin
+):
     """مدير قاعدة البيانات الموحد - محسن لتجنب التضارب"""
-    
+
     # ✅ FIX: Singleton pattern لمنع تسريب الاتصالات
     _instance = None
     _initialized = False
     _singleton_lock = threading.Lock()
-    
+
     def __new__(cls):
         """تأكد من وجود instance واحد فقط"""
         with cls._singleton_lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
             return cls._instance
-    
+
     def __init__(self):
         # ✅ FIX: منع إعادة التهيئة
         if DatabaseManager._initialized:
             return
-            
-        self.database_engine = 'postgresql'
-        self.database_url = ''
-             
+
+        self.database_engine = "postgresql"
+        self.database_url = ""
+
         if USE_UNIFIED_SETTINGS:
             self.database_engine = get_database_engine()
             self.database_url = get_database_url()
         self._local = threading.local()
         self.logger = logging.getLogger(__name__)
         self._postgres_dsn = self._build_postgres_dsn()
-        
+
         # نظام منع التضارب
         self._write_lock = threading.RLock()
         self._connection_pool = queue.Queue(maxsize=10)
@@ -383,22 +463,24 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 f"Unsupported DATABASE_ENGINE='{self.database_engine}'. This project now runs in PostgreSQL-only mode."
             )
 
-        self.logger.info("✅ DATABASE_ENGINE=postgresql enabled - using PostgreSQL runtime path")
-         
+        self.logger.info(
+            "✅ DATABASE_ENGINE=postgresql enabled - using PostgreSQL runtime path"
+        )
+
         self._init_database()
         self._init_connection_pool()
         self._apply_migrations()  # تطبيق أي migrations مطلوبة
-        
+
         DatabaseManager._initialized = True
         self.logger.info("✅ DatabaseManager initialized (Singleton)")
-    
+
     def _init_database(self):
         """تهيئة قاعدة البيانات - PostgreSQL فقط."""
         self.logger.info(
             "✅ PostgreSQL runtime detected - schema initialization is managed by postgres_schema.sql and runtime migrations"
         )
         return
-    
+
     def _init_connection_pool(self):
         """تهيئة مجموعة الاتصالات لتجنب التضارب"""
         try:
@@ -413,14 +495,14 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
 
     def _build_postgres_dsn(self) -> str:
         if not self.is_postgres():
-            return ''
+            return ""
         if self.database_url:
             return self.database_url
-        host = os.getenv('POSTGRES_HOST', '127.0.0.1').strip()
-        port = os.getenv('POSTGRES_PORT', '5432').strip()
-        db_name = os.getenv('POSTGRES_DB', 'trading_ai_bot').strip()
-        user = os.getenv('POSTGRES_USER', 'trading_user').strip()
-        password = os.getenv('POSTGRES_PASSWORD', 'change-this-password')
+        host = os.getenv("POSTGRES_HOST", "127.0.0.1").strip()
+        port = os.getenv("POSTGRES_PORT", "5432").strip()
+        db_name = os.getenv("POSTGRES_DB", "trading_ai_bot").strip()
+        user = os.getenv("POSTGRES_USER", "trading_user").strip()
+        password = os.getenv("POSTGRES_PASSWORD", "change-this-password")
         return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
 
     def _connect_postgres(self, timeout: float = 60.0) -> PostgresConnectionWrapper:
@@ -429,7 +511,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         dsn = self._postgres_dsn or self._build_postgres_dsn()
         parsed = urlparse(dsn)
         raw_conn = psycopg2.connect(
-            dbname=(parsed.path or '/').lstrip('/'),
+            dbname=(parsed.path or "/").lstrip("/"),
             user=parsed.username,
             password=parsed.password,
             host=parsed.hostname,
@@ -449,7 +531,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
 
     def is_postgres(self) -> bool:
         """هل المحرك الحالي PostgreSQL؟"""
-        return self.database_engine in {'postgres', 'postgresql'}
+        return self.database_engine in {"postgres", "postgresql"}
 
     def _migrate_user_settings_unique_constraint(self, conn):
         """Legacy SQLite migration — no-op on PostgreSQL."""
@@ -471,16 +553,36 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         """Apply lightweight compatibility migrations for existing PostgreSQL databases."""
         try:
             with self.get_write_connection() as conn:
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS trading_state TEXT DEFAULT 'STOPPED'")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS message TEXT DEFAULT ''")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS pid INTEGER")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS session_id TEXT")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'PAPER'")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS initiated_by TEXT")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS error_count INTEGER DEFAULT 0")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS last_error TEXT")
-                conn.execute("ALTER TABLE system_status ADD COLUMN IF NOT EXISTS subsystem_status TEXT DEFAULT '{}' ")
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS trading_state TEXT DEFAULT 'STOPPED'"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS message TEXT DEFAULT ''"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS pid INTEGER"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS session_id TEXT"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'PAPER'"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS initiated_by TEXT"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS error_count INTEGER DEFAULT 0"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS last_error TEXT"
+                )
+                conn.execute(
+                    "ALTER TABLE system_status ADD COLUMN IF NOT EXISTS subsystem_status TEXT DEFAULT '{}' "
+                )
                 conn.execute("""
                     INSERT INTO system_status
                     (id, status, is_running, trading_state, mode, message, last_update)
@@ -524,7 +626,9 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                conn.execute("INSERT INTO admin_notification_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+                conn.execute(
+                    "INSERT INTO admin_notification_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+                )
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS security_audit_log (
                         id BIGSERIAL PRIMARY KEY,
@@ -603,6 +707,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS trade_learning_log (
                         id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                         symbol TEXT NOT NULL,
                         side TEXT NOT NULL,
                         entry_price DOUBLE PRECISION NOT NULL,
@@ -623,11 +728,19 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         atr_pct DOUBLE PRECISION,
                         trend_4h TEXT,
                         score DOUBLE PRECISION,
+                        is_demo BOOLEAN NOT NULL DEFAULT FALSE,
                         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_tll_symbol ON trade_learning_log(symbol)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_tll_created ON trade_learning_log(created_at)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tll_symbol ON trade_learning_log(symbol)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tll_created ON trade_learning_log(created_at)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tll_user_demo ON trade_learning_log(user_id, is_demo, created_at)"
+                )
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS learning_validation_log (
                         id BIGSERIAL PRIMARY KEY,
@@ -670,9 +783,15 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_combo ON signal_learning(combination, timestamp DESC)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_quality ON signal_learning(signal_quality_score DESC)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_learning_user ON signal_learning(user_id, timestamp DESC)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_signal_learning_combo ON signal_learning(combination, timestamp DESC)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_signal_learning_quality ON signal_learning(signal_quality_score DESC)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_signal_learning_user ON signal_learning(user_id, timestamp DESC)"
+                )
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_onboarding (
                         id BIGSERIAL PRIMARY KEY,
@@ -1020,13 +1139,13 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
             self.logger.info("✅ PostgreSQL runtime migrations applied")
         except Exception as e:
             self.logger.warning(f"⚠️ PostgreSQL runtime migration warning: {e}")
-    
+
     def _get_pooled_connection(self):
         """الحصول على اتصال جديد (بدون Pool للحصول على بيانات فورية)"""
         # إنشاء اتصال جديد في كل مرة لضمان الحصول على البيانات الفورية
         conn = self._build_connection(timeout=60.0)
         return conn
-    
+
     def _return_pooled_connection(self, conn):
         """إرجاع الاتصال إلى pool للاستخدام المستقبلي"""
         if conn is None:
@@ -1048,7 +1167,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 conn.close()
             except Exception:
                 pass
-    
+
     @contextmanager
     def get_connection(self):
         """الحصول على اتصال جديد مع retry عند OperationalError (انقطاع مؤقت بـ PostgreSQL)"""
@@ -1062,7 +1181,9 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 last_err = e
                 if attempt < 2:
                     wait = 1.5 * (attempt + 1)
-                    self.logger.warning(f"⚠️ DB connect retry {attempt+1}/3 in {wait}s: {e}")
+                    self.logger.warning(
+                        f"⚠️ DB connect retry {attempt + 1}/3 in {wait}s: {e}"
+                    )
                     time.sleep(wait)
         if conn is None:
             raise last_err
@@ -1074,8 +1195,8 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                     conn.close()
                 except Exception:
                     pass
-    
-    @contextmanager 
+
+    @contextmanager
     def get_write_connection(self):
         """اتصال محمي للكتابة مع retry عند OperationalError"""
         with self._write_lock:
@@ -1089,7 +1210,9 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                     last_err = e
                     if attempt < 2:
                         wait = 1.5 * (attempt + 1)
-                        self.logger.warning(f"⚠️ DB write connect retry {attempt+1}/3 in {wait}s: {e}")
+                        self.logger.warning(
+                            f"⚠️ DB write connect retry {attempt + 1}/3 in {wait}s: {e}"
+                        )
                         time.sleep(wait)
             if conn is None:
                 raise last_err
@@ -1104,25 +1227,31 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
             finally:
                 if conn:
                     self._return_pooled_connection(conn)
-    
+
     # ==================== حالة النظام العامة ====================
-    
+
     def update_system_status(self, status: str, **kwargs):
         """تحديث حالة النظام العامة"""
         with self.get_write_connection() as conn:
             update_fields = ["status = %s", "last_update = CURRENT_TIMESTAMP"]
             values = [status]
-            
+
             for key, value in kwargs.items():
-                if key in ['group_b_status', 'total_coins_analyzed', 'successful_coins_count', 'system_uptime_seconds',
-                          'trading_status', 'database_status']:
+                if key in [
+                    "group_b_status",
+                    "total_coins_analyzed",
+                    "successful_coins_count",
+                    "system_uptime_seconds",
+                    "trading_status",
+                    "database_status",
+                ]:
                     update_fields.append(f"{key} = %s")
                     values.append(value)
-            
+
             query = f"UPDATE system_status SET {', '.join(update_fields)} WHERE id = 1"
             conn.execute(query, values)
             self.logger.info(f"تم تحديث حالة النظام: {status}")
-    
+
     def get_system_status(self) -> Dict[str, Any]:
         """الحصول على حالة النظام العامة"""
         with self.get_connection() as conn:
@@ -1132,84 +1261,116 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
             return {}
 
     # ==================== سجل الأنشطة ====================
-    
-    def log_activity(self, component: str, action: str, details: str = None, status: str = 'success', user_id: int = None):
+
+    def log_activity(
+        self,
+        component: str,
+        action: str,
+        details: str = None,
+        status: str = "success",
+        user_id: int = None,
+    ):
         """تسجيل نشاط في السجل"""
         with self.get_write_connection() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO activity_logs (user_id, component, action, details, status)
                 VALUES (%s, %s, %s, %s, %s)
-            """, (user_id, component, action, details, status))
-    
-    def get_recent_activities(self, limit: int = 100, user_id: int = None) -> List[Dict[str, Any]]:
+            """,
+                (user_id, component, action, details, status),
+            )
+
+    def get_recent_activities(
+        self, limit: int = 100, user_id: int = None
+    ) -> List[Dict[str, Any]]:
         """الحصول على الأنشطة الأخيرة"""
         with self.get_connection() as conn:
             if user_id:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT * FROM activity_logs 
                     WHERE user_id = %s OR user_id IS NULL
                     ORDER BY created_at DESC 
                     LIMIT %s
-                """, (user_id, limit)).fetchall()
+                """,
+                    (user_id, limit),
+                ).fetchall()
             else:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT * FROM activity_logs 
                     ORDER BY created_at DESC 
                     LIMIT %s
-                """, (limit,)).fetchall()
-        
+                """,
+                    (limit,),
+                ).fetchall()
+
         return [dict(row) for row in rows]
-    
+
     # ==================== إحصائيات السوق (مؤقتاً من system_status) ====================
-    
+
     # ملاحظة: تم حذف دوال market_stats لأن الجدول غير موجود في قاعدة البيانات الحالية
     # يمكن إضافة الجدول لاحقاً إذا لزم الأمر
-    
+
     def get_market_stats(self) -> Dict[str, Any]:
         """الحصول على إحصائيات السوق - مؤقتاً من system_status"""
         with self.get_connection() as conn:
             row = conn.execute("SELECT * FROM system_status WHERE id = 1").fetchone()
             if row:
                 return {
-                    'total_coins_analyzed': row.get('total_coins_analyzed', 0),
-                    'successful_coins_count': row.get('successful_coins_count', 0),
-                    'market_sentiment': 'neutral',
-                    'active_pairs_count': row.get('successful_coins_count', 0)
+                    "total_coins_analyzed": row.get("total_coins_analyzed", 0),
+                    "successful_coins_count": row.get("successful_coins_count", 0),
+                    "market_sentiment": "neutral",
+                    "active_pairs_count": row.get("successful_coins_count", 0),
                 }
         return {}
-    
+
     # ==================== وظائف مساعدة ====================
-    
+
     def cleanup_old_data(self, days: int = 30):
         """تنظيف البيانات القديمة"""
         cutoff_date = datetime.now() - timedelta(days=days)
-        
+
         with self.get_write_connection() as conn:
             # تنظيف الإشارات القديمة المعالجة
-            conn.execute("""
+            conn.execute(
+                """
                 DELETE FROM trading_signals 
                 WHERE is_processed = TRUE AND generated_at < %s
-            """, (cutoff_date,))
-            
+            """,
+                (cutoff_date,),
+            )
+
             # تنظيف سجل الأنشطة القديم
-            conn.execute("""
+            conn.execute(
+                """
                 DELETE FROM activity_logs WHERE created_at < %s
-            """, (cutoff_date,))
-            
+            """,
+                (cutoff_date,),
+            )
+
             self.logger.info(f"تم تنظيف البيانات الأقدم من {days} يوم")
-    
+
     def get_database_stats(self) -> Dict[str, int]:
         """الحصول على إحصائيات قاعدة البيانات"""
         with self.get_connection() as conn:
             stats = {}
-            
-            tables = ['users', 'successful_coins', 'user_trades', 'trading_signals', 'activity_logs']
+
+            tables = [
+                "users",
+                "successful_coins",
+                "user_trades",
+                "trading_signals",
+                "activity_logs",
+            ]
             for table in tables:
-                count = conn.execute(f"SELECT COUNT(*) as count FROM {table}").fetchone()['count']
+                count = conn.execute(
+                    f"SELECT COUNT(*) as count FROM {table}"
+                ).fetchone()["count"]
                 stats[table] = count
-            
+
             return stats
-    
+
     def get_all_users(self) -> List[Dict[str, Any]]:
         """الحصول على قائمة جميع المستخدمين"""
         with self.get_connection() as conn:
@@ -1219,7 +1380,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 ORDER BY created_at DESC
             """).fetchall()
             return [dict(row) for row in rows]
-    
+
     def get_active_users(self) -> List[Dict[str, Any]]:
         """الحصول على قائمة المستخدمين النشطين"""
         with self.get_connection() as conn:
@@ -1227,14 +1388,14 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                 SELECT id, username, email FROM users WHERE is_active = TRUE
             """).fetchall()
             return [dict(row) for row in rows]
-    
+
     def execute_query(self, query: str, params: tuple = (), max_retries: int = 3):
         """تنفيذ استعلام SQL عام مع retry mechanism"""
         import time
-        
+
         for attempt in range(max_retries):
             try:
-                if query.strip().upper().startswith('SELECT'):
+                if query.strip().upper().startswith("SELECT"):
                     with self.get_connection() as conn:
                         rows = conn.execute(query, params).fetchall()
                         return [dict(row) for row in rows]
@@ -1243,23 +1404,32 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         cursor = conn.execute(query, params)
                         return cursor.rowcount
             except Exception as e:
-                if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
-                    self.logger.warning(f"⚠️ Database locked, retry {attempt + 1}/{max_retries}")
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    self.logger.warning(
+                        f"⚠️ Database locked, retry {attempt + 1}/{max_retries}"
+                    )
                     time.sleep(0.5 * (attempt + 1))  # تأخير تصاعدي
                     continue
                 raise
+
     # ==================== النظام ====================
-    
+
     def reset_user_account_data(self, user_id: int) -> bool:
         """إعادة ضبط بيانات حساب المستخدم"""
         try:
             with self.get_write_connection() as conn:
                 # إعادة ضبط المحفظة باستخدام الأعمدة الموجودة فعلياً
-                portfolio_row = conn.execute("""
+                portfolio_row = conn.execute(
+                    """
                     SELECT initial_balance FROM portfolio WHERE user_id = %s ORDER BY is_demo DESC, updated_at DESC LIMIT 1
-                """, (user_id,)).fetchone()
-                initial_balance = float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
-                conn.execute("""
+                """,
+                    (user_id,),
+                ).fetchone()
+                initial_balance = (
+                    float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
+                )
+                conn.execute(
+                    """
                     UPDATE portfolio 
                     SET total_balance = %s, available_balance = %s,
                         invested_balance = 0.0,
@@ -1269,26 +1439,33 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
                         initial_balance = %s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = %s
-                """, (initial_balance, initial_balance, initial_balance, user_id))
-                
+                """,
+                    (initial_balance, initial_balance, initial_balance, user_id),
+                )
+
                 # حذف المراكز من active_positions
-                conn.execute("DELETE FROM active_positions WHERE user_id = %s", (user_id,))
-                
+                conn.execute(
+                    "DELETE FROM active_positions WHERE user_id = %s", (user_id,)
+                )
+
                 # إعادة ضبط الإعدادات للافتراضية
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE user_settings 
                     SET trading_enabled = FALSE, 
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = %s
-                """, (user_id,))
-                
+                """,
+                    (user_id,),
+                )
+
                 self.logger.info(f"تم إعادة ضبط بيانات المستخدم {user_id}")
                 return True
-                
+
         except Exception as e:
             self.logger.error(f"خطأ في إعادة ضبط بيانات المستخدم: {e}")
             return False
-    
+
     def test_connection(self):
         """اختبار الاتصال بقاعدة البيانات"""
         try:
@@ -1299,7 +1476,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         except Exception as e:
             self.logger.error(f"خطأ في اختبار الاتصال: {e}")
             return False
-    
+
     def get_total_users(self):
         """الحصول على إجمالي عدد المستخدمين"""
         try:
@@ -1309,7 +1486,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         except Exception as e:
             self.logger.error(f"خطأ في جلب عدد المستخدمين: {e}")
             return 0
-    
+
     def get_active_trades_count(self):
         """الحصول على عدد الصفقات النشطة"""
         try:
@@ -1319,7 +1496,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         except Exception as e:
             self.logger.error(f"خطأ في جلب عدد الصفقات النشطة: {e}")
             return 0
-    
+
     def get_total_trades_count(self):
         """الحصول على إجمالي عدد الصفقات"""
         try:
@@ -1329,7 +1506,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         except Exception as e:
             self.logger.error(f"خطأ في جلب إجمالي الصفقات: {e}")
             return 0
-    
+
     def get_successful_coins_count(self):
         """الحصول على عدد العملات الناجحة"""
         try:
@@ -1339,7 +1516,7 @@ class DatabaseManager(DbTradingMixin, DbUsersMixin, DbPortfolioMixin, DbNotifica
         except Exception as e:
             self.logger.error(f"خطأ في جلب عدد العملات الناجحة: {e}")
             return 0
-    
+
     def close(self):
         """إغلاق جميع الاتصالات"""
         try:

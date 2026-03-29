@@ -68,6 +68,7 @@ class AdaptiveOptimizer:
 
     def record_trade(
         self,
+        user_id: int,
         symbol: str,
         side: str,
         entry_price: float,
@@ -78,7 +79,7 @@ class AdaptiveOptimizer:
         sl_pct_used: float,
         hold_minutes: int = 0,
         open_positions_count: int = 1,
-        indicators: Dict = None,
+        indicators: Optional[Dict] = None,
         is_demo: bool = False,
     ):
         """
@@ -93,7 +94,7 @@ class AdaptiveOptimizer:
                 conn.execute(
                     """
                     INSERT INTO trade_learning_log (
-                        symbol, side, entry_price, exit_price,
+                        user_id, symbol, side, entry_price, exit_price,
                         pnl, pnl_pct, exit_reason, sl_pct_used,
                         hold_minutes, open_positions_count,
                         hour_of_day, day_of_week,
@@ -101,9 +102,10 @@ class AdaptiveOptimizer:
                         ema_trend, atr_pct, trend_4h, score,
                         is_demo,
                         created_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
+                        user_id,
                         symbol,
                         side.lower(),
                         entry_price,
@@ -147,7 +149,7 @@ class AdaptiveOptimizer:
 
     # ==================== SL الأمثل لكل عملة ====================
 
-    def get_optimal_sl(self, symbol: str) -> float:
+    def get_optimal_sl(self, user_id: int, is_demo: bool, symbol: str) -> float:
         """
         SL% الأمثل لعملة معينة
 
@@ -159,7 +161,7 @@ class AdaptiveOptimizer:
         Returns:
             float: SL% (مثال: 0.010 = 1.0%)
         """
-        stats = self._get_symbol_stats(symbol)
+        stats = self._get_symbol_stats(user_id, is_demo, symbol)
         if not stats or stats["total_trades"] < SAFE_LIMITS["min_trades_for_learning"]:
             return SAFE_LIMITS["sl_pct_default"]
 
@@ -190,9 +192,9 @@ class AdaptiveOptimizer:
 
     # ==================== ترتيب العملات ====================
 
-    def get_symbol_ranking(self) -> List[Dict[str, Any]]:
+    def get_symbol_ranking(self, user_id: int, is_demo: bool) -> List[Dict[str, Any]]:
         """
-        ترتيب العملات بالأداء (آخر 7 أيام)
+        ترتيب العملات بالأداء (آخر 7 أيام) - للمستخدم والحساب المحدد
 
         Returns:
             قائمة مرتبة [{symbol, score, win_rate, avg_pnl, trades}]
@@ -210,12 +212,12 @@ class AdaptiveOptimizer:
                         AVG(pnl_pct) as avg_pnl_pct,
                         SUM(pnl) as total_pnl
                     FROM trade_learning_log
-                    WHERE created_at > %s
+                    WHERE user_id = %s AND is_demo = %s AND created_at > %s
                     GROUP BY symbol
                     HAVING COUNT(*) >= 3
                     ORDER BY avg_pnl_pct DESC
                 """,
-                    (cutoff,),
+                    (user_id, is_demo, cutoff),
                 ).fetchall()
 
             ranking = []
@@ -275,7 +277,7 @@ class AdaptiveOptimizer:
     ]
 
     def get_preferred_symbols(
-        self, available_symbols: List[str], top_n: int = 10
+        self, user_id: int, is_demo: bool, available_symbols: List[str], top_n: int = 10
     ) -> List[str]:
         """
         إدارة ديناميكية للعملات:
@@ -283,7 +285,7 @@ class AdaptiveOptimizer:
         2. إضافة عملات بديلة من pool أوسع
         3. ترتيب بالأداء
         """
-        ranking = self.get_symbol_ranking()
+        ranking = self.get_symbol_ranking(user_id, is_demo)
         ranked_map = {r["symbol"]: r for r in ranking}
 
         # تحديد العملات المحظورة (خسائر مستمرة)
@@ -322,7 +324,9 @@ class AdaptiveOptimizer:
 
     # ==================== فلتر ساعات التداول ====================
 
-    def is_good_trading_hour(self, hour: int = None) -> Tuple[bool, str]:
+    def is_good_trading_hour(
+        self, user_id: int, is_demo: bool, hour: Optional[int] = None
+    ) -> Tuple[bool, str]:
         """
         هل هذه الساعة مناسبة للتداول؟
 
@@ -335,7 +339,7 @@ class AdaptiveOptimizer:
         if hour is None:
             hour = datetime.now().hour
 
-        hourly = self._get_hourly_stats()
+        hourly = self._get_hourly_stats(user_id, is_demo)
         if not hourly or hour not in hourly:
             return True, "لا توجد بيانات كافية"
 
@@ -351,7 +355,11 @@ class AdaptiveOptimizer:
     # ==================== مُضاعف حجم الصفقة ====================
 
     def get_position_size_multiplier(
-        self, consecutive_losses: int = 0, daily_pnl: float = 0
+        self,
+        user_id: int,
+        is_demo: bool,
+        consecutive_losses: int = 0,
+        daily_pnl: float = 0,
     ) -> float:
         """
         مُضاعف حجم الصفقة بناءً على الأداء الأخير
@@ -380,7 +388,7 @@ class AdaptiveOptimizer:
             mult *= 0.8
 
         # تعلم من البيانات التاريخية: متوسط الأداء بعد خسائر
-        recovery_stats = self._get_post_loss_stats(consecutive_losses)
+        recovery_stats = self._get_post_loss_stats(user_id, is_demo, consecutive_losses)
         if recovery_stats and recovery_stats.get("win_rate", 0.5) < 0.3:
             mult *= 0.7  # تقليل إضافي إذا التاريخ يقول الاسترداد صعب
 
@@ -391,7 +399,7 @@ class AdaptiveOptimizer:
 
     # ==================== عدد الصفقات الأمثل ====================
 
-    def get_optimal_max_positions(self) -> int:
+    def get_optimal_max_positions(self, user_id: int, is_demo: bool) -> int:
         """
         عدد الصفقات المتزامنة الأمثل
 
@@ -409,12 +417,12 @@ class AdaptiveOptimizer:
                         AVG(pnl_pct) as avg_pnl,
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as wr
                     FROM trade_learning_log
-                    WHERE created_at > %s AND open_positions_count > 0
+                    WHERE user_id = %s AND is_demo = %s AND created_at > %s AND open_positions_count > 0
                     GROUP BY open_positions_count
                     HAVING trades >= 5
                     ORDER BY avg_pnl DESC
                 """,
-                    (cutoff,),
+                    (user_id, is_demo, cutoff),
                 ).fetchall()
 
             if not rows:
@@ -434,14 +442,15 @@ class AdaptiveOptimizer:
 
     # ==================== ملخص التعلم ====================
 
-    def get_learning_summary(self) -> Dict[str, Any]:
+    def get_learning_summary(self, user_id: int, is_demo: bool) -> Dict[str, Any]:
         """
-        ملخص شامل لما تعلمه النظام
+        ملخص شامل لما تعلمه النظام للمستخدم والحساب المحدد
         """
         try:
             with self.db_manager.get_connection() as conn:
                 total = conn.execute(
-                    "SELECT COUNT(*) FROM trade_learning_log"
+                    "SELECT COUNT(*) FROM trade_learning_log WHERE user_id = %s AND is_demo = %s",
+                    (user_id, is_demo),
                 ).fetchone()[0]
 
                 last_7d = (datetime.now() - timedelta(days=7)).isoformat()
@@ -452,9 +461,9 @@ class AdaptiveOptimizer:
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
                         AVG(pnl_pct) as avg_pnl,
                         SUM(pnl) as total_pnl
-                    FROM trade_learning_log WHERE created_at > %s
+                    FROM trade_learning_log WHERE user_id = %s AND is_demo = %s AND created_at > %s
                 """,
-                    (last_7d,),
+                    (user_id, is_demo, last_7d),
                 ).fetchone()
 
             trades_7d = recent[0] if recent else 0
@@ -465,8 +474,8 @@ class AdaptiveOptimizer:
             can_learn = total >= SAFE_LIMITS["min_trades_for_learning"]
 
             # الحصول على التعديلات الحالية
-            ranking = self.get_symbol_ranking()
-            hourly = self._get_hourly_stats()
+            ranking = self.get_symbol_ranking(user_id, is_demo)
+            hourly = self._get_hourly_stats(user_id, is_demo)
             bad_hours = [
                 h
                 for h, s in (hourly or {}).items()
@@ -487,7 +496,9 @@ class AdaptiveOptimizer:
                 "adaptations": {
                     "symbol_ranking": ranking[:5] if ranking else [],
                     "blocked_hours": bad_hours,
-                    "optimal_max_positions": self.get_optimal_max_positions(),
+                    "optimal_max_positions": self.get_optimal_max_positions(
+                        user_id, is_demo
+                    ),
                 },
             }
         except Exception as e:
@@ -779,8 +790,10 @@ class AdaptiveOptimizer:
 
     # ==================== استعلامات داخلية ====================
 
-    def _get_symbol_stats(self, symbol: str) -> Optional[Dict]:
-        """إحصائيات عملة معينة (آخر 30 يوم)"""
+    def _get_symbol_stats(
+        self, user_id: int, is_demo: bool, symbol: str
+    ) -> Optional[Dict]:
+        """إحصائيات عملة معينة (آخر 30 يوم) - للمستخدم والحساب المحدد"""
         try:
             with self.db_manager.get_connection() as conn:
                 cutoff = (datetime.now() - timedelta(days=30)).isoformat()
@@ -793,9 +806,9 @@ class AdaptiveOptimizer:
                         AVG(CASE WHEN pnl < 0 THEN pnl_pct ELSE NULL END) as avg_loss,
                         SUM(CASE WHEN exit_reason = 'STOP_LOSS' THEN 1 ELSE 0 END) as sl_hits
                     FROM trade_learning_log
-                    WHERE symbol = %s AND created_at > %s
+                    WHERE user_id = %s AND is_demo = %s AND symbol = %s AND created_at > %s
                 """,
-                    (symbol, cutoff),
+                    (user_id, is_demo, symbol, cutoff),
                 ).fetchone()
 
             if not row or row[0] == 0:
@@ -812,8 +825,10 @@ class AdaptiveOptimizer:
             logger.error(f"❌ Symbol stats error: {e}")
             return None
 
-    def _get_hourly_stats(self) -> Optional[Dict[int, Dict]]:
-        """إحصائيات بالساعة"""
+    def _get_hourly_stats(
+        self, user_id: int, is_demo: bool
+    ) -> Optional[Dict[int, Dict]]:
+        """إحصائيات بالساعة للمستخدم والحساب المحدد"""
         try:
             with self.db_manager.get_connection() as conn:
                 cutoff = (datetime.now() - timedelta(days=30)).isoformat()
@@ -826,10 +841,10 @@ class AdaptiveOptimizer:
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
                         AVG(pnl_pct) as avg_pnl
                     FROM trade_learning_log
-                    WHERE created_at > %s
+                    WHERE user_id = %s AND is_demo = %s AND created_at > %s
                     GROUP BY hour_of_day
                 """,
-                    (cutoff,),
+                    (user_id, is_demo, cutoff),
                 ).fetchall()
 
             if not rows:
@@ -847,8 +862,10 @@ class AdaptiveOptimizer:
             logger.error(f"❌ Hourly stats error: {e}")
             return None
 
-    def _get_post_loss_stats(self, consecutive_losses: int) -> Optional[Dict]:
-        """إحصائيات الأداء بعد خسائر متتالية"""
+    def _get_post_loss_stats(
+        self, user_id: int, is_demo: bool, consecutive_losses: int
+    ) -> Optional[Dict]:
+        """إحصائيات الأداء بعد خسائر متتالية للمستخدم والحساب المحدد"""
         if consecutive_losses < 2:
             return None
 
@@ -864,9 +881,9 @@ class AdaptiveOptimizer:
                         COUNT(*) as total,
                         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins
                     FROM trade_learning_log
-                    WHERE created_at > %s
+                    WHERE user_id = %s AND is_demo = %s AND created_at > %s
                 """,
-                    (cutoff,),
+                    (user_id, is_demo, cutoff),
                 ).fetchone()
 
             if not row or row[0] < 5:
@@ -892,7 +909,9 @@ class AdaptiveOptimizer:
     # Exponential decay: half-life ~23 days (lambda=0.03)
     _DECAY_LAMBDA = 0.03
 
-    def score_signal(self, symbol: str, indicators: Dict) -> Dict[str, Any]:
+    def score_signal(
+        self, user_id: int, is_demo: bool, symbol: str, indicators: Dict
+    ) -> Dict[str, Any]:
         """
         تقييم جودة إشارة التداول — V2 المحسّن
 
@@ -902,6 +921,8 @@ class AdaptiveOptimizer:
         3. Confidence Weighting: عدد العينات يؤثر على وثوقية العامل
 
         Args:
+            user_id: معرف المستخدم
+            is_demo: هل الحساب تجريبي
             symbol: رمز العملة
             indicators: {rsi, macd, bb_position, volume_ratio, ema_trend, atr_pct, trend_4h, score}
 
@@ -919,10 +940,10 @@ class AdaptiveOptimizer:
                            volume_ratio, ema_trend, atr_pct, trend_4h, score,
                            created_at
                     FROM trade_learning_log
-                    WHERE created_at > %s AND rsi IS NOT NULL
+                    WHERE user_id = %s AND is_demo = %s AND created_at > %s AND rsi IS NOT NULL
                     ORDER BY created_at ASC
                 """,
-                    (cutoff,),
+                    (user_id, is_demo, cutoff),
                 ).fetchall()
 
             if len(rows) < SAFE_LIMITS["min_trades_for_learning"]:
@@ -1022,7 +1043,7 @@ class AdaptiveOptimizer:
                 total_weight += w
 
             # Factor 5: Symbol WR (uses its own 30-day stats)
-            sym_stats = self._get_symbol_stats(symbol)
+            sym_stats = self._get_symbol_stats(user_id, is_demo, symbol)
             if sym_stats and sym_stats["total_trades"] >= 5:
                 sym_wr = sym_stats["win_rate"]
                 w = weights["symbol"] * self._confidence_scale(

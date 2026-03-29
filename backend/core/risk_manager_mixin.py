@@ -16,9 +16,7 @@ from typing import Dict, List
 class RiskManagerMixin:
     """Mixin for risk management, position sizing, and daily state tracking"""
 
-    def _calculate_position_size(
-        self, balance: float, signal: Dict = None
-    ) -> float:
+    def _calculate_position_size(self, balance: float, signal: Dict = None) -> float:
         """حساب حجم الصفقة الذكي — يجمع Kelly + قوة الإشارة + إعدادات المستخدم.
 
         المنطق:
@@ -41,9 +39,7 @@ class RiskManagerMixin:
         max_pct = self.config.get("max_position_pct", 0.10)
 
         # نسبة إعدادات المستخدم
-        user_pct = (
-            self.user_settings.get("position_size_percentage", 10.0) / 100.0
-        )
+        user_pct = self.user_settings.get("position_size_percentage", 10.0) / 100.0
 
         # حساب Kelly Criterion
         kelly_pct = self._calculate_kelly_pct(balance, max_pct, signal)
@@ -83,10 +79,10 @@ class RiskManagerMixin:
         if size_factor != 1.0:
             original_size = position_size
             position_size = max(0.0, position_size * size_factor)
-            self.logger.info(f"💧 Liquidity-adjusted size: ${
-                original_size:.2f} × {
-                size_factor:.2f} = ${
-                position_size:.2f}")
+            self.logger.info(
+                f"💧 Liquidity-adjusted size: ${original_size:.2f} × {
+                    size_factor:.2f} = ${position_size:.2f}"
+            )
 
         # Fix-A: تطبيق معامل الحذر من حالة السوق (يُضبط في _check_market_regime)
         # 1.0 = طبيعي | 0.7 = هبوط BTC 3-5% | 0.5 = RSI < 25
@@ -94,23 +90,20 @@ class RiskManagerMixin:
         if caution < 1.0 and caution > 0.0:
             original_size = position_size
             position_size = position_size * caution
-            self.logger.info(f"🌡️ Market caution: ${
-                original_size:.2f} × {
-                caution:.1f} = ${
-                position_size:.2f}")
+            self.logger.info(
+                f"🌡️ Market caution: ${original_size:.2f} × {caution:.1f} = ${
+                    position_size:.2f}"
+            )
 
         # ✅ لا يتجاوز 15% من الرصيد (حماية — أكثر صرامة مع Kelly)
         max_size = balance * 0.15
         if position_size > max_size:
             position_size = max_size
-            self.logger.warning(f"⚠️ Position size capped at 15%: ${
-                position_size:.2f}")
+            self.logger.warning(f"⚠️ Position size capped at 15%: ${position_size:.2f}")
 
         # ✅ تطبيق الحد الأقصى للمبلغ الاسمي (trade_amount) من إعدادات المستخدم إن وجد
         try:
-            trade_amount_limit = float(
-                self.user_settings.get("trade_amount", 0)
-            )
+            trade_amount_limit = float(self.user_settings.get("trade_amount", 0))
             if trade_amount_limit > 0 and position_size > trade_amount_limit:
                 position_size = trade_amount_limit
                 self.logger.info(
@@ -122,8 +115,7 @@ class RiskManagerMixin:
 
         # ✅ الحد الأدنى $10 (متطلبات Binance)
         if position_size < 10:
-            self.logger.warning(f"⚠️ Position size ${
-                position_size:.2f} < $10 minimum")
+            self.logger.warning(f"⚠️ Position size ${position_size:.2f} < $10 minimum")
             return 0  # لا يكفي للتداول
 
         self.logger.info(f"📊 Final Position size: ${position_size:.2f}")
@@ -166,10 +158,12 @@ class RiskManagerMixin:
         """حساب Kelly Criterion مع معلومات الأداء التاريخية."""
         if self.kelly_sizer:
             try:
+                historical_performance = self._get_user_historical_performance()
                 kelly_result = self.kelly_sizer.calculate_position_size(
                     balance=balance,
                     max_position_pct=max_pct,
                     symbol=signal.get("symbol") if signal else None,
+                    historical_performance=historical_performance,
                 )
                 kelly_pct = kelly_result.get("kelly_pct", max_pct)
                 self.logger.info(
@@ -181,11 +175,8 @@ class RiskManagerMixin:
             except Exception as e:
                 self.logger.warning(f"⚠️ Kelly calculation failed: {e}")
 
-        user_pct = (
-            self.user_settings.get("position_size_percentage", 10.0) / 100.0
-        )
-        self.logger.info(f"📊 Kelly fallback to user settings: {
-            user_pct * 100:.1f}%")
+        user_pct = self.user_settings.get("position_size_percentage", 10.0) / 100.0
+        self.logger.info(f"📊 Kelly fallback to user settings: {user_pct * 100:.1f}%")
         return user_pct
 
         return position_size
@@ -234,10 +225,7 @@ class RiskManagerMixin:
             self.daily_state["consecutive_losses"] = consecutive_losses
 
             # إعادة تفعيل cooldown إذا كانت الخسائر المتتالية >= الحد
-            if (
-                consecutive_losses
-                >= self.daily_state["max_consecutive_losses"]
-            ):
+            if consecutive_losses >= self.daily_state["max_consecutive_losses"]:
                 # آخر صفقة خاسرة + مدة الـ cooldown
                 last_loss_time = rows[-1]["closed_at"]
                 if isinstance(last_loss_time, str):
@@ -277,9 +265,43 @@ class RiskManagerMixin:
             self.daily_state["last_reset"] = today
             self.daily_state["cooldown_until"] = None
 
-    def _check_risk_gates(
-        self, open_positions: List[Dict], balance: float
-    ) -> tuple:
+    def _get_user_historical_performance(self) -> Dict:
+        """
+        جلب أداء المستخدم التاريخي من قاعدة البيانات
+        يُستخدم لحساب Kelly Criterion per-user
+        """
+        try:
+            with self.db.get_connection() as conn:
+                cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+                row = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) as total_trades,
+                        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                        AVG(CASE WHEN pnl > 0 THEN pnl_pct ELSE NULL END) as avg_win_pct,
+                        AVG(CASE WHEN pnl < 0 THEN pnl_pct ELSE NULL END) as avg_loss_pct
+                    FROM trade_learning_log
+                    WHERE user_id = %s AND is_demo = %s AND created_at > %s
+                    """,
+                    (self.user_id, bool(self.is_demo_trading), cutoff),
+                ).fetchone()
+
+                if row and row[0] and row[0] >= 10:
+                    total_trades = row[0]
+                    winning_trades = row[1] or 0
+                    avg_win_pct = abs(row[2]) if row[2] else None
+                    avg_loss_pct = abs(row[3]) if row[3] else None
+                    return {
+                        "total_trades": total_trades,
+                        "winning_trades": winning_trades,
+                        "avg_win_pct": avg_win_pct,
+                        "avg_loss_pct": avg_loss_pct,
+                    }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to get user historical performance: {e}")
+        return None
+
+    def _check_risk_gates(self, open_positions: List[Dict], balance: float) -> tuple:
         """
         فحص جميع بوابات الحماية قبل فتح صفقة جديدة
 
@@ -290,15 +312,12 @@ class RiskManagerMixin:
         self._reset_daily_state_if_needed()
 
         # 2. Self-Throttling: حد يومي للصفقات
-        if (
-            self.daily_state["trades_today"]
-            >= self.daily_state["max_daily_trades"]
-        ):
+        if self.daily_state["trades_today"] >= self.daily_state["max_daily_trades"]:
             return (
                 False,
-                f"حد يومي: {
-                    self.daily_state['trades_today']}/{
-                    self.daily_state['max_daily_trades']} صفقة",
+                f"حد يومي: {self.daily_state['trades_today']}/{
+                    self.daily_state['max_daily_trades']
+                } صفقة",
             )
 
         # 3. Self-Throttling: حد خسارة يومي
@@ -317,9 +336,9 @@ class RiskManagerMixin:
                 ).total_seconds() / 60
                 return (
                     False,
-                    f"cooldown: {
-                        remaining:.0f} دقيقة متبقية (بعد {
-                        self.daily_state['consecutive_losses']} خسائر)",
+                    f"cooldown: {remaining:.0f} دقيقة متبقية (بعد {
+                        self.daily_state['consecutive_losses']
+                    } خسائر)",
                 )
             else:
                 self.daily_state["cooldown_until"] = None
@@ -327,40 +346,32 @@ class RiskManagerMixin:
                 self.logger.info("✅ انتهى cooldown — استئناف التداول")
 
         # 5. Portfolio Heat Manager (Phase 0 — تفعيل الكود الميت)
-        heat_result = self.heat_manager.check_portfolio_heat(
-            open_positions, balance
-        )
+        heat_result = self.heat_manager.check_portfolio_heat(open_positions, balance)
         if not heat_result["can_open_new"]:
             return (
                 False,
-                f"حرارة المحفظة: {
-                    heat_result['current_heat_pct']}% (حد: {
-                    heat_result['max_heat_pct']}%)",
+                f"حرارة المحفظة: {heat_result['current_heat_pct']}% (حد: {
+                    heat_result['max_heat_pct']
+                }%)",
             )
 
         # ✅ FIX: Max Drawdown Stop — فحص الحد الأقصى للسحب
-        max_drawdown_pct = self.daily_state.get(
-            "max_drawdown_pct", 0.30
-        )  # 30% افتراضي
+        max_drawdown_pct = self.daily_state.get("max_drawdown_pct", 0.30)  # 30% افتراضي
         peak_balance = self.daily_state.get("peak_balance", balance)
 
         if peak_balance > 0:
             current_drawdown = (peak_balance - balance) / peak_balance
             if current_drawdown >= max_drawdown_pct:
-                self.logger.critical(f"🚨 MAX DRAWDOWN STOP: {
-                    current_drawdown *
-                    100:.1f}% drawdown reached " f"(balance=${
-                    balance:.2f}, peak=${
-                    peak_balance:.2f}, limit={
-                    max_drawdown_pct *
-                    100:.0f}%)")
+                self.logger.critical(
+                    f"🚨 MAX DRAWDOWN STOP: {
+                        current_drawdown * 100:.1f}% drawdown reached "
+                    f"(balance=${balance:.2f}, peak=${peak_balance:.2f}, limit={
+                        max_drawdown_pct * 100:.0f}%)"
+                )
                 return (
                     False,
-                    f"توقف max drawdown: {
-                        current_drawdown *
-                        100:.1f}% (حد: {
-                        max_drawdown_pct *
-                        100:.0f}%)",
+                    f"توقف max drawdown: {current_drawdown * 100:.1f}% (حد: {
+                        max_drawdown_pct * 100:.0f}%)",
                 )
 
         return True, "OK"
@@ -380,14 +391,16 @@ class RiskManagerMixin:
         same_direction_count = sum(
             1
             for p in open_positions
-            if p.get("position_type", "long").upper()
-            == new_signal_side.upper()
+            if p.get("position_type", "long").upper() == new_signal_side.upper()
         )
 
         if same_direction_count >= self.daily_state["max_same_direction"]:
             return (
-                False, f"تكدس اتجاهي: {same_direction_count} صفقات {new_signal_side} (حد: {
-                    self.daily_state['max_same_direction']})", )
+                False,
+                f"تكدس اتجاهي: {same_direction_count} صفقات {new_signal_side} (حد: {
+                    self.daily_state['max_same_direction']
+                })",
+            )
 
         return True, "OK"
 
@@ -408,13 +421,17 @@ class RiskManagerMixin:
                 >= self.daily_state["max_consecutive_losses"]
             ):
                 cooldown_hours = self.daily_state["cooldown_hours"]
-                self.daily_state["cooldown_until"] = (
-                    datetime.now() + timedelta(hours=cooldown_hours)
+                self.daily_state["cooldown_until"] = datetime.now() + timedelta(
+                    hours=cooldown_hours
                 )
                 self.logger.warning(
                     f"🛑 System Cooldown: {
-                        self.daily_state['consecutive_losses']} خسائر متتالية " f"→ توقف {cooldown_hours} ساعة حتى {
-                        self.daily_state['cooldown_until'].strftime('%H:%M')}")
+                        self.daily_state['consecutive_losses']
+                    } خسائر متتالية "
+                    f"→ توقف {cooldown_hours} ساعة حتى {
+                        self.daily_state['cooldown_until'].strftime('%H:%M')
+                    }"
+                )
 
         # ✅ FIX: تحديث peak_balance بعد كل صفقة
         current_balance = self._load_user_portfolio().get("total_value", 0)
