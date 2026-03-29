@@ -139,7 +139,7 @@ class ScalpingV8Strategy(BaseStrategy):
         }
 
     def get_market_trend(self, df: pd.DataFrame) -> str:
-        return self._engine.get_4h_trend(df)
+        return self._engine.get_4h_trend(df, len(df) - 2)
 
     def extract_entry_indicators(self, df: pd.DataFrame) -> Dict:
         try:

@@ -297,10 +297,10 @@ class DataProvider:
             df = cached_data
             if calculate_indicators and not self._has_indicators(df):
                 df = self._calculate_technical_indicators(df)
-            # فلترة الشموع غير المغلقة حتى للبيانات من الكاش
-            current_time_ms = int(time.time() * 1000)
-            close_times_ms = df["close_time"].values.astype("int64") // 10**6
-            df = df[close_times_ms <= current_time_ms]
+            if interval in ("1h", "4h", "1d", "1w"):
+                current_time_ms = int(time.time() * 1000)
+                close_times_ms = df["close_time"].values.astype("int64") // 10**6
+                df = df[close_times_ms <= current_time_ms]
             return df
 
         # جلب البيانات من API مع Retry Logic
@@ -353,14 +353,15 @@ class DataProvider:
             # تعيين الطابع الزمني كفهرس
             df.set_index("timestamp", inplace=True)
 
-            # فلترة الشموع غير المغلقة
-            current_time_ms = int(time.time() * 1000)
-            close_times_ms = df["close_time"].values.astype("int64") // 10**6
-            df = df[close_times_ms <= current_time_ms]
-
-            if len(df) == 0:
-                logger.warning(f"No closed candles for {symbol}")
-                return pd.DataFrame()
+            # فلترة الشموع غير المغلقة للtimeframes >= 1h
+            # لا نفلتر للtimeframes الصغيرة (1m, 5m, 15m) لأنها تستخدم للسعر الحالي
+            if interval in ("1h", "4h", "1d", "1w"):
+                current_time_ms = int(time.time() * 1000)
+                close_times_ms = df["close_time"].values.astype("int64") // 10**6
+                df = df[close_times_ms <= current_time_ms]
+                if len(df) == 0:
+                    logger.warning(f"No closed candles for {symbol}")
+                    return pd.DataFrame()
 
             # حساب المؤشرات الفنية إذا كان مطلوبًا
             if calculate_indicators:
