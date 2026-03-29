@@ -723,7 +723,7 @@ class DbTradingMixin:
                     position_size,
                     position_type,
                     timeframe,
-                    entry_price,
+                    0,
                     signal_metadata,
                 ),
             )
@@ -742,9 +742,18 @@ class DbTradingMixin:
         self.logger.info(
             f"تم فتح صفقة {position_type.upper()}: {symbol} للمستخدم {user_id}"
         )
-        # Fix: Use fetchone() for RETURNING id with psycopg2
-        row = cursor.fetchone()
-        return row[0] if row else None
+        try:
+            row = cursor.fetchone()
+            if row is None:
+                self.logger.error(f"❌ RETURNING id returned None for {symbol}")
+                return None
+            if not hasattr(row, "__len__") or len(row) < 1:
+                self.logger.error(f"❌ RETURNING id returned invalid row: {row}")
+                return None
+            return row[0]
+        except Exception as e:
+            self.logger.error(f"❌ Error fetching RETURNING id: {e}")
+            raise
 
     def add_position(
         self,
