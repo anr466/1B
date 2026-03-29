@@ -1451,10 +1451,12 @@ class DbPortfolioMixin:
                 self.logger.info(f"بدء إعادة ضبط بيانات الحساب للأدمن {user_id}")
 
                 try:
-                    conn.execute("DELETE FROM trades WHERE user_id = %s", (user_id,))
+                    conn.execute(
+                        "DELETE FROM user_trades WHERE user_id = %s", (user_id,)
+                    )
                     self.logger.info(f"تم مسح جميع الصفقات للمستخدم {user_id}")
                 except Exception as e:
-                    self.logger.warning(f"جدول trades غير موجود: {e}")
+                    self.logger.warning(f"جدول user_trades غير موجود: {e}")
 
                 resolved_initial_balance = self._reset_demo_account_on_conn(
                     conn, user_id, self.DEMO_ACCOUNT_INITIAL_BALANCE
