@@ -95,11 +95,10 @@ class ScannerMixin:
         # 📈 فلتر ساعات التداول (التعلم التكيّفي)
         if self.optimizer:
             try:
-                hour_ok, hour_reason = self.optimizer.is_good_trading_hour()
+                hour_ok, hour_reason = self.optimizer.is_good_trading_hour(
+                    self.user_id, bool(self.is_demo_trading)
+                )
                 if not hour_ok:
-                    # ✅ تم إلغاء ميزة الحظر الزمني الكامل:
-                    # يبقى التقييم التكيّفي إرشادياً فقط ولا يمنع التداول
-                    # بالكامل.
                     self.logger.warning(
                         f"   📈 Adaptive hour warning (non-blocking): {hour_reason}"
                     )
@@ -110,7 +109,10 @@ class ScannerMixin:
         if self.optimizer:
             try:
                 symbols_to_scan = self.optimizer.get_preferred_symbols(
-                    symbols_to_scan, top_n=len(symbols_to_scan)
+                    self.user_id,
+                    bool(self.is_demo_trading),
+                    symbols_to_scan,
+                    top_n=len(symbols_to_scan),
                 )
             except Exception as e:
                 self.logger.warning(f"⚠️ Symbol ranking error: {e}")
