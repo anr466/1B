@@ -212,8 +212,7 @@ class DataProvider:
             return True, cache_data["data"]
 
         except Exception as e:
-            logger.warning(f"فشل في تحميل البيانات من التخزين المؤقت: {
-                str(e)}")
+            logger.warning(f"فشل في تحميل البيانات من التخزين المؤقت: {str(e)}")
             return False, None
 
     def _manage_rate_limit(self) -> None:
@@ -232,8 +231,7 @@ class DataProvider:
         # التحقق من تجاوز الحد
         if self.request_count >= self.rate_limit_per_minute:
             wait_time = 60 - elapsed + 1
-            logger.warning(f"تجاوز حد الطلبات. انتظار {
-                wait_time:.2f} ثانية...")
+            logger.warning(f"تجاوز حد الطلبات. انتظار {wait_time:.2f} ثانية...")
 
             # استخدام انتظار تدريجي بدلاً من توقف كامل
             # هذا يسمح للخيوط الأخرى بالاستمرار
@@ -260,9 +258,7 @@ class DataProvider:
     )
     def _fetch_klines_from_api(self, symbol: str, interval: str, limit: int):
         """جلب بيانات الشموع من API مع Retry Logic و Circuit Breaker"""
-        return self.client.get_klines(
-            symbol=symbol, interval=interval, limit=limit
-        )
+        return self.client.get_klines(symbol=symbol, interval=interval, limit=limit)
 
     def get_klines(
         self,
@@ -301,6 +297,10 @@ class DataProvider:
             df = cached_data
             if calculate_indicators and not self._has_indicators(df):
                 df = self._calculate_technical_indicators(df)
+            # فلترة الشموع غير المغلقة حتى للبيانات من الكاش
+            current_time_ms = int(time.time() * 1000)
+            close_times_ms = df["close_time"].values.astype("int64") // 10**6
+            df = df[close_times_ms <= current_time_ms]
             return df
 
         # جلب البيانات من API مع Retry Logic
@@ -353,6 +353,15 @@ class DataProvider:
             # تعيين الطابع الزمني كفهرس
             df.set_index("timestamp", inplace=True)
 
+            # فلترة الشموع غير المغلقة
+            current_time_ms = int(time.time() * 1000)
+            close_times_ms = df["close_time"].values.astype("int64") // 10**6
+            df = df[close_times_ms <= current_time_ms]
+
+            if len(df) == 0:
+                logger.warning(f"No closed candles for {symbol}")
+                return pd.DataFrame()
+
             # حساب المؤشرات الفنية إذا كان مطلوبًا
             if calculate_indicators:
                 df = self._calculate_technical_indicators(df)
@@ -381,9 +390,7 @@ class DataProvider:
         indicator_columns = ["sma_20", "ema_50", "rsi_14", "volume_change"]
         return all(col in df.columns for col in indicator_columns)
 
-    def _calculate_technical_indicators(
-        self, df: pd.DataFrame
-    ) -> pd.DataFrame:
+    def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         حساب المؤشرات الفنية لإطار البيانات
 
@@ -404,9 +411,7 @@ class DataProvider:
             df_copy["sma_20"] = df_copy["close"].rolling(window=20).mean()
 
             # المتوسط المتحرك الأسي (EMA)
-            df_copy["ema_50"] = (
-                df_copy["close"].ewm(span=50, adjust=False).mean()
-            )
+            df_copy["ema_50"] = df_copy["close"].ewm(span=50, adjust=False).mean()
 
             # مؤشر القوة النسبية (RSI)
             delta = df_copy["close"].diff()
@@ -420,12 +425,8 @@ class DataProvider:
             # مؤشر تقلب بولينجر (Bollinger Bands)
             df_copy["bb_middle"] = df_copy["close"].rolling(window=20).mean()
             df_copy["bb_stddev"] = df_copy["close"].rolling(window=20).std()
-            df_copy["bb_upper"] = (
-                df_copy["bb_middle"] + 2 * df_copy["bb_stddev"]
-            )
-            df_copy["bb_lower"] = (
-                df_copy["bb_middle"] - 2 * df_copy["bb_stddev"]
-            )
+            df_copy["bb_upper"] = df_copy["bb_middle"] + 2 * df_copy["bb_stddev"]
+            df_copy["bb_lower"] = df_copy["bb_middle"] - 2 * df_copy["bb_stddev"]
 
             # تغير الحجم
             df_copy["volume_change"] = df_copy["volume"].pct_change() * 100
@@ -437,23 +438,15 @@ class DataProvider:
             high_low = df_copy["high"] - df_copy["low"]
             high_close = (df_copy["high"] - df_copy["close"].shift()).abs()
             low_close = (df_copy["low"] - df_copy["close"].shift()).abs()
-            ranges = pd.concat([high_low, high_close, low_close], axis=1).max(
-                axis=1
-            )
+            ranges = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             df_copy["atr_14"] = ranges.rolling(window=14).mean()
 
             # مؤشر تدفق المال (MFI)
-            typical_price = (
-                df_copy["high"] + df_copy["low"] + df_copy["close"]
-            ) / 3
+            typical_price = (df_copy["high"] + df_copy["low"] + df_copy["close"]) / 3
             money_flow = typical_price * df_copy["volume"]
 
-            positive_flow = money_flow.where(
-                typical_price > typical_price.shift(1), 0
-            )
-            negative_flow = money_flow.where(
-                typical_price < typical_price.shift(1), 0
-            )
+            positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0)
+            negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0)
 
             positive_mf = positive_flow.rolling(window=14).sum()
             negative_mf = negative_flow.rolling(window=14).sum()
@@ -462,16 +455,10 @@ class DataProvider:
             df_copy["mfi_14"] = 100 - (100 / (1 + money_ratio))
 
             # مؤشر الانحراف والتقارب المتوسط المتحرك (MACD)
-            df_copy["ema_12"] = (
-                df_copy["close"].ewm(span=12, adjust=False).mean()
-            )
-            df_copy["ema_26"] = (
-                df_copy["close"].ewm(span=26, adjust=False).mean()
-            )
+            df_copy["ema_12"] = df_copy["close"].ewm(span=12, adjust=False).mean()
+            df_copy["ema_26"] = df_copy["close"].ewm(span=26, adjust=False).mean()
             df_copy["macd"] = df_copy["ema_12"] - df_copy["ema_26"]
-            df_copy["macd_signal"] = (
-                df_copy["macd"].ewm(span=9, adjust=False).mean()
-            )
+            df_copy["macd_signal"] = df_copy["macd"].ewm(span=9, adjust=False).mean()
             df_copy["macd_hist"] = df_copy["macd"] - df_copy["macd_signal"]
 
             return df_copy
@@ -571,9 +558,7 @@ class DataProvider:
                 tickers = self.client.get_ticker()
 
             # تصفية الأزواج بناءً على الأصل المقتبس
-            filtered_tickers = [
-                t for t in tickers if t["symbol"].endswith(quote_asset)
-            ]
+            filtered_tickers = [t for t in tickers if t["symbol"].endswith(quote_asset)]
 
             # ترتيب حسب حجم التداول (من الأعلى إلى الأدنى)
             sorted_tickers = sorted(
@@ -591,8 +576,7 @@ class DataProvider:
             return top_pairs
 
         except Exception as e:
-            logger.error(f"فشل في جلب أزواج التداول الأعلى من حيث الحجم: {
-                str(e)}")
+            logger.error(f"فشل في جلب أزواج التداول الأعلى من حيث الحجم: {str(e)}")
 
             # في حالة الفشل، إرجاع قائمة أزواج التداول الشائعة
             return self.common_pairs[:limit]
@@ -712,9 +696,7 @@ class DataProvider:
 
         # فحص الاتصال وإعادة الاتصال التلقائي إذا لزم الأمر
         if not self.check_and_reconnect():
-            logger.warning(
-                "⚠️ Connection issue, returning cached/default prices..."
-            )
+            logger.warning("⚠️ Connection issue, returning cached/default prices...")
 
         try:
             if symbol:
@@ -787,9 +769,7 @@ class DataProvider:
                 )
             elif "timeout" in error_msg:
                 result["error"] = "TIMEOUT"
-                result["error_detail"] = (
-                    "انتهت مهلة الاتصال - الشبكة بطيئة أو معطلة"
-                )
+                result["error_detail"] = "انتهت مهلة الاتصال - الشبكة بطيئة أو معطلة"
             elif "429" in error_msg:
                 result["error"] = "RATE_LIMIT"
                 result["error_detail"] = "تم تجاوز حد الطلبات - انتظر قليلاً"
@@ -827,8 +807,9 @@ class DataProvider:
                     status["circuit_breakers_open"] = open_breakers
                     status["connected"] = False
                     status["error"] = "CIRCUIT_OPEN"
-                    status["error_detail"] = f'الدوائر التالية مفتوحة: {
-                        ", ".join(open_breakers)}'
+                    status["error_detail"] = (
+                        f"الدوائر التالية مفتوحة: {', '.join(open_breakers)}"
+                    )
             except Exception as e:
                 logger.warning(f"فشل في جلب حالة Circuit Breakers: {e}")
 
@@ -836,9 +817,7 @@ class DataProvider:
 
     def _record_connection_error(self, error: str):
         """تسجيل خطأ الاتصال ومحاولة إعادة الاتصال"""
-        self._connection_errors.append(
-            {"timestamp": datetime.now(), "error": error}
-        )
+        self._connection_errors.append({"timestamp": datetime.now(), "error": error})
 
         # الاحتفاظ بآخر 10 أخطاء
         if len(self._connection_errors) > 10:
@@ -848,9 +827,7 @@ class DataProvider:
         recent_errors = len(self._connection_errors)
         if recent_errors >= 5:
             self._fallback_mode = True
-            logger.warning(
-                f"⚠️ وضع الفشل مفعل بعد {recent_errors} أخطاء متتالية"
-            )
+            logger.warning(f"⚠️ وضع الفشل مفعل بعد {recent_errors} أخطاء متتالية")
 
         logger.error(f"❌ خطأ في الاتصال بـ Binance: {error}")
 
@@ -902,8 +879,9 @@ class DataProvider:
             return False
 
         if self._reconnect_attempts >= self._max_reconnect_attempts:
-            logger.warning(f"⚠️ reached max reconnect attempts ({
-                self._max_reconnect_attempts})")
+            logger.warning(
+                f"⚠️ reached max reconnect attempts ({self._max_reconnect_attempts})"
+            )
             return False
 
         # حساب التأخير مع Exponential Backoff
