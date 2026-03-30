@@ -108,6 +108,24 @@ logger = get_logger(__name__)
 # ✅ FIX: جعل قائمة الرموز قابلة للتكوين
 # يمكن تجاوزها عبر متغير البيئة TRADING_SYMBOLS (مفصولة بفواصل)
 
+# 🎯 BACKTEST MODE: الرموز الـ 14 المستخدمة في الاختبار الخلفي (V8 Production Validation)
+BACKTEST_SYMBOLS = [
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "AVAXUSDT",
+    "NEARUSDT",
+    "SUIUSDT",
+    "ARBUSDT",
+    "APTUSDT",
+    "INJUSDT",
+    "LINKUSDT",
+    "PEPEUSDT",
+    "OPUSDT",
+]
+
 _default_pool = [
     "ETHUSDT",
     "SOLUSDT",
@@ -288,6 +306,8 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             "require_quality": True,
             "position_size_pct": 0.06,
             "max_positions": strategy_cfg.get("max_positions", 5),
+            "backtest_mode": _os.environ.get("TRADING_BACKTEST_MODE", "false").lower()
+            == "true",
             "symbols_pool": self._get_trading_symbols(),
         }
 
@@ -433,7 +453,16 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
 
         ✅ يحمّل من successful_coins مع ترتيب محافظ وآمن
         ✅ لا يغير منطق الاستراتيجية — فقط يحسن universe selection
+
+        🎯 BACKTEST MODE: يرجع BACKTEST_SYMBOLS إذا backtest_mode=True
         """
+        # 🎯 BACKTEST MODE: استخدام الرموز الـ 14 من الاختبار الخلفي
+        if self.config.get("backtest_mode", False):
+            self.logger.info(
+                f"🎯 BACKTEST MODE: Using {len(BACKTEST_SYMBOLS)} symbols from backtest validation"
+            )
+            return BACKTEST_SYMBOLS.copy()
+
         try:
             rows = self._load_successful_coin_rows()
             if not rows:

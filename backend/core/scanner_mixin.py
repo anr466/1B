@@ -65,32 +65,56 @@ class ScannerMixin:
         النظام يستدعي self.strategy فقط — لا يعرف أي استراتيجية يشغّل
 
         ✅ Phase 0+1: Risk Protection مفعّلة
+
+        🎯 BACKTEST MODE: إذا backtest_mode=True في الإعدادات،
+        يتم تخطي معظم بوابات الحماية لمحاكاة الاختبار الخلفي.
         """
         entries = []
         symbols_to_scan = self.config["symbols_pool"]
         strategy_name = self.strategy.name if self.strategy else "none"
-        self.logger.info(
-            f"\n🔍 [{strategy_name}] Scanning {
-                len(symbols_to_scan)
-            } symbols for entries..."
-        )
 
-        # ===== Phase 0+1: فحص بوابات الحماية قبل أي شيء =====
+        # 🎯 BACKTEST MODE: للتصحيح ومحاذاة نتائج الاختبار الخلفي
+        backtest_mode = self.config.get("backtest_mode", False)
+
+        if backtest_mode:
+            self.logger.info(
+                f"\n🎯 [{strategy_name}] BACKTEST MODE - Scanning {len(symbols_to_scan)} symbols"
+            )
+        else:
+            self.logger.info(
+                f"\n🔍 [{strategy_name}] Scanning {len(symbols_to_scan)} symbols for entries..."
+            )
+
+        # ===== Phase 0+1: فحص بوابات الحماية =====
         portfolio = self._load_user_portfolio()
         balance = portfolio.get("balance", 0)
         risk_balance = portfolio.get("total_value", balance)
         open_positions = self._get_open_positions()
 
-        can_trade, gate_reason = self._check_risk_gates(open_positions, risk_balance)
-        if not can_trade:
-            self.logger.info(f"   🛡️ Risk Gate BLOCKED: {gate_reason}")
-            return entries
+        # 🎯 BACKTEST MODE: تخطي بوابة الحماية اليومية (للتصحيح فقط)
+        if not backtest_mode:
+            can_trade, gate_reason = self._check_risk_gates(
+                open_positions, risk_balance
+            )
+            if not can_trade:
+                self.logger.info(f"   🛡️ Risk Gate BLOCKED: {gate_reason}")
+                return entries
 
-        # فحص حالة السوق العامة أولاً (عبر BTC)
-        market_ok = self._check_market_regime()
-        if not market_ok:
-            self.logger.info("   ⚠️ Market regime unfavorable - skipping new entries")
-            return entries
+            # فحص حالة السوق العامة أولاً (عبر BTC)
+            market_ok = self._check_market_regime()
+            if not market_ok:
+                self.logger.info(
+                    "   ⚠️ Market regime unfavorable - skipping new entries"
+                )
+                return entries
+        else:
+            # في وضع الاختبار الخلفي، نستخدم حد أقصى للصفقات المفتوحة فقط
+            max_open = self.config.get("max_positions", 5)
+            if len(open_positions) >= max_open:
+                self.logger.info(
+                    f"   🛡️ BACKTEST: Max positions reached ({len(open_positions)}/{max_open})"
+                )
+                return entries
 
         # 📈 فلتر ساعات التداول (التعلم التكيّفي)
         if self.optimizer:
@@ -190,14 +214,16 @@ class ScannerMixin:
                         )
 
                         # ===== Phase 1: Capital Stress — فحص تكدس الاتجاه ====
-                        dir_ok, dir_reason = self._check_directional_stress(
-                            open_positions, signal["side"]
-                        )
-                        if not dir_ok:
-                            self.logger.info(
-                                f"   🛡️ [{symbol}] Directional Stress BLOCKED: {dir_reason}"
+                        # 🎯 BACKTEST MODE: تخطي فحص التكدس الاتجاهي
+                        if not backtest_mode:
+                            dir_ok, dir_reason = self._check_directional_stress(
+                                open_positions, signal["side"]
                             )
-                            continue
+                            if not dir_ok:
+                                self.logger.info(
+                                    f"   🛡️ [{symbol}] Directional Stress BLOCKED: {dir_reason}"
+                                )
+                                continue
 
                         # 📈 استخراج المؤشرات للتعلم (عبر الواجهة الموحدة)
                         entry_indicators = self.strategy.extract_entry_indicators(df)
@@ -206,8 +232,9 @@ class ScannerMixin:
                         signal["_entry_indicators"] = entry_indicators
 
                         # 📈 تقييم جودة الإشارة (التعلم التكيّفي)
+                        # 🎯 BACKTEST MODE: تخطي WR Gate
                         predicted_wr = 0.5
-                        if self.optimizer and entry_indicators:
+                        if not backtest_mode and self.optimizer and entry_indicators:
                             try:
                                 sig_score = self.optimizer.score_signal(
                                     self.user_id,
@@ -272,63 +299,67 @@ class ScannerMixin:
 
                     filtered_signal = sig
 
-                    # فلتر السيولة/المعرفة — يعمل فقط إذا كان موجوداً على
-                    # النظام
-                    if (
-                        hasattr(self, "liquidity_filter")
-                        and getattr(self, "liquidity_filter") is not None
-                    ):
-                        try:
-                            lf_result = self.liquidity_filter.evaluate_entry(
-                                sym, df_prepared, sig
-                            )
-                            decision = lf_result.get("decision", "ACCEPT")
-                            size_factor = float(
-                                lf_result.get("size_factor", 1.0) or 1.0
-                            )
+                    # 🎯 BACKTEST MODE: تخطي فلتر السيولة
+                    if not backtest_mode:
+                        # فلتر السيولة/المعرفة — يعمل فقط إذا كان موجوداً على
+                        # النظام
+                        if (
+                            hasattr(self, "liquidity_filter")
+                            and getattr(self, "liquidity_filter") is not None
+                        ):
+                            try:
+                                lf_result = self.liquidity_filter.evaluate_entry(
+                                    sym, df_prepared, sig
+                                )
+                                decision = lf_result.get("decision", "ACCEPT")
+                                size_factor = float(
+                                    lf_result.get("size_factor", 1.0) or 1.0
+                                )
 
-                            if decision == "REJECT" or size_factor <= 0:
-                                self.logger.info(
-                                    f"   💧 [{sym}] Entry REJECTED by LiquidityFilter "
-                                    f"(sig={lf_result.get('signal_score', 0):.1f} "
-                                    f"liq={lf_result.get('liquidity_score', 0):.1f})"
+                                if decision == "REJECT" or size_factor <= 0:
+                                    self.logger.info(
+                                        f"   💧 [{sym}] Entry REJECTED by LiquidityFilter "
+                                        f"(sig={lf_result.get('signal_score', 0):.1f} "
+                                        f"liq={lf_result.get('liquidity_score', 0):.1f})"
+                                    )
+                                    continue
+                                elif decision == "DOWNGRADE" and size_factor < 1.0:
+                                    # نعمل نسخة من الإشارة ولا نعدل الأصل مباشرة
+                                    filtered_signal = dict(sig)
+                                    filtered_signal["_size_factor"] = max(
+                                        0.0, min(size_factor, 1.0)
+                                    )
+                                    self.logger.info(
+                                        f"   💧 [{sym}] Entry DOWNGRADED by LiquidityFilter "
+                                        f"(size_factor={size_factor:.2f})"
+                                    )
+                                else:
+                                    filtered_signal = sig
+                            except Exception as e:
+                                # أي خطأ في الفلتر لا يجب أن يكسر دورة التداول
+                                self.logger.warning(
+                                    f"⚠️ LiquidityFilter error for {sym}: {e}"
                                 )
-                                continue
-                            elif decision == "DOWNGRADE" and size_factor < 1.0:
-                                # نعمل نسخة من الإشارة ولا نعدل الأصل مباشرة
-                                filtered_signal = dict(sig)
-                                filtered_signal["_size_factor"] = max(
-                                    0.0, min(size_factor, 1.0)
-                                )
-                                self.logger.info(
-                                    f"   💧 [{sym}] Entry DOWNGRADED by LiquidityFilter "
-                                    f"(size_factor={size_factor:.2f})"
-                                )
-                            else:
                                 filtered_signal = sig
-                        except Exception as e:
-                            # أي خطأ في الفلتر لا يجب أن يكسر دورة التداول
-                            self.logger.warning(
-                                f"⚠️ LiquidityFilter error for {sym}: {e}"
-                            )
-                            filtered_signal = sig
 
                     # ✅ FIX: Re-check risk gates before actual entry (TOCTOU prevention)
-                    open_positions_for_entry = self._get_open_positions()
-                    portfolio_for_entry = self._load_user_portfolio()
-                    risk_balance_for_entry = portfolio_for_entry.get(
-                        "total_value", portfolio_for_entry.get("balance", 0)
-                    )
-
-                    can_trade_entry, gate_reason_entry = self._check_risk_gates(
-                        open_positions_for_entry, risk_balance_for_entry
-                    )
-
-                    if not can_trade_entry:
-                        self.logger.warning(
-                            f"   🛡️ [{sym}] Pre-entry risk gate BLOCKED: {gate_reason_entry}"
+                    # 🎯 BACKTEST MODE: تخطي فحص المخاطر الثاني
+                    if not backtest_mode:
+                        open_positions_for_entry = self._get_open_positions()
+                        portfolio_for_entry = self._load_user_portfolio()
+                        risk_balance_for_entry = portfolio_for_entry.get(
+                            "total_value", portfolio_for_entry.get("balance", 0)
                         )
-                        continue
+
+                        can_trade_entry, gate_reason_entry = self._check_risk_gates(
+                            open_positions_for_entry, risk_balance_for_entry
+                        )
+
+                        if not can_trade_entry:
+                            self.logger.warning(
+                                f"   🛡️ [{sym}] Pre-entry risk gate BLOCKED: {gate_reason_entry}"
+                            )
+                            continue
 
                     entry = self._open_position(sym, filtered_signal)
                     if entry:
