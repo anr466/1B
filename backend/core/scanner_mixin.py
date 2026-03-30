@@ -58,6 +58,79 @@ class ScannerMixin:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to persist detected signals: {e}")
 
+    def _log_signal_for_verification(
+        self,
+        symbol: str,
+        signal: Dict,
+        predicted_wr: float,
+        trend: str,
+        mode: str,
+        entry_indicators: Dict = None,
+        rejection_reason: str = None,
+    ) -> None:
+        """
+        تسجيل الإشارة في جدول التحقق للاختبار
+
+        Args:
+            symbol: رمز العملة
+            signal: بيانات الإشارة
+            predicted_wr: نسبة الربح المتوقعة
+            trend: الاتجاه
+            mode: الوضع (production_validation/backtest/normal)
+            entry_indicators: مؤشرات الدخول
+            rejection_reason: سبب الرفض (إن وجد)
+        """
+        try:
+            import json
+
+            entry_price = float(signal.get("entry_price", 0) or 0)
+            stop_loss = float(signal.get("stop_loss", 0) or 0)
+            score = int(signal.get("score", 0) or 0)
+            confidence = float(signal.get("confidence", 50) or 50)
+
+            # حساب نسبة المخاطرة/عائد
+            if entry_price > 0 and stop_loss > 0:
+                if signal.get("side") == "LONG":
+                    rr_ratio = abs(entry_price - stop_loss) / entry_price
+                else:
+                    rr_ratio = abs(stop_loss - entry_price) / entry_price
+                rr_ratio = round(1 / max(rr_ratio, 0.001), 4) if rr_ratio > 0 else 0
+            else:
+                rr_ratio = 0
+
+            with self.db.get_write_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO signal_verification_log
+                    (symbol, signal_side, strategy, entry_price, stop_loss, 
+                     score, confidence, trend, predicted_wr, risk_reward_ratio,
+                     mode, entry_indicators, rejection_reason)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                    (
+                        symbol,
+                        signal.get("side", "UNKNOWN"),
+                        signal.get("strategy", "unknown"),
+                        entry_price,
+                        stop_loss,
+                        score,
+                        confidence,
+                        trend,
+                        predicted_wr,
+                        rr_ratio,
+                        mode,
+                        json.dumps(entry_indicators or {}),
+                        rejection_reason,
+                    ),
+                )
+
+            self.logger.info(
+                f"   📝 [{symbol}] Signal logged for verification: {signal.get('side')} @ {entry_price:.4f}"
+            )
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to log signal for verification: {e}")
+
     def _scan_for_entries(self) -> List[Dict]:
         """
         البحث عن فرص دخول جديدة
@@ -282,6 +355,23 @@ class ScannerMixin:
                                 sig_score_val
                             } | "
                             f"WR={predicted_wr:.0%} | Trend: {trend}"
+                        )
+
+                        # 📝 تسجيل الإشارة للتحقق
+                        current_mode = (
+                            "backtest"
+                            if backtest_mode
+                            else (
+                                "production_validation" if validation_mode else "normal"
+                            )
+                        )
+                        self._log_signal_for_verification(
+                            symbol=symbol,
+                            signal=signal,
+                            predicted_wr=predicted_wr,
+                            trend=trend,
+                            mode=current_mode,
+                            entry_indicators=entry_indicators,
                         )
 
                 except Exception as e:

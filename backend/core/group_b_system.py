@@ -460,11 +460,15 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         - production_validation_mode=True: يستخدم BACKTEST_SYMBOLS (14 رمز من الاختبار الخلفي)
         - backtest_mode=True: يستخدم BACKTEST_SYMBOLS مع تخطي كل البوابات
         - الوضع العادي: يستخدم successful_coins أو DEFAULT_SYMBOLS_POOL
-        """
-        # 🎯 PRODUCTION VALIDATION MODE: استخدام الرموز الـ 14 من الاختبار الخلفي
-        if self.config.get("production_validation_mode", False) or self.config.get(
-            "backtest_mode", False
-        ):
+        """  # 🎯 PRODUCTION VALIDATION MODE: استخدام الرموز الـ 14 من الاختبار الخلفي
+        validation_mode = (
+            _os.environ.get("TRADING_PRODUCTION_VALIDATION", "true").lower() == "true"
+        )
+        backtest_mode = (
+            _os.environ.get("TRADING_BACKTEST_MODE", "false").lower() == "true"
+        )
+
+        if validation_mode or backtest_mode:
             self.logger.info(
                 f"🔬 PRODUCTION VALIDATION: Using {len(BACKTEST_SYMBOLS)} validated symbols"
             )
