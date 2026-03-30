@@ -40,9 +40,7 @@ def _get_vol_analyzer():
 
             _vol_analyzer = VolatilityAnalyzer()
         except Exception as e:
-            logger.warning(
-                f"VolatilityAnalyzer unavailable, using fixed SL: {e}"
-            )
+            logger.warning(f"VolatilityAnalyzer unavailable, using fixed SL: {e}")
     return _vol_analyzer
 
 
@@ -144,11 +142,7 @@ def _supertrend(high, low, close, period=10, multiplier=3.0):
             else:
                 st.iloc[i] = min(
                     upper_band.iloc[i],
-                    (
-                        st.iloc[i - 1]
-                        if st.iloc[i - 1] > 0
-                        else upper_band.iloc[i]
-                    ),
+                    (st.iloc[i - 1] if st.iloc[i - 1] > 0 else upper_band.iloc[i]),
                 )
                 direction.iloc[i] = -1
         else:
@@ -158,11 +152,7 @@ def _supertrend(high, low, close, period=10, multiplier=3.0):
             else:
                 st.iloc[i] = max(
                     lower_band.iloc[i],
-                    (
-                        st.iloc[i - 1]
-                        if st.iloc[i - 1] > 0
-                        else lower_band.iloc[i]
-                    ),
+                    (st.iloc[i - 1] if st.iloc[i - 1] > 0 else lower_band.iloc[i]),
                 )
                 direction.iloc[i] = 1
 
@@ -190,9 +180,7 @@ def _adx_calc(high, low, close, period=14):
     for i in range(1, n):
         h_diff = hv[i] - hv[i - 1]
         l_diff = lv[i - 1] - lv[i]
-        tr[i] = max(
-            hv[i] - lv[i], abs(hv[i] - cv[i - 1]), abs(lv[i] - cv[i - 1])
-        )
+        tr[i] = max(hv[i] - lv[i], abs(hv[i] - cv[i - 1]), abs(lv[i] - cv[i - 1]))
         plus_dm[i] = h_diff if (h_diff > l_diff and h_diff > 0) else 0
         minus_dm[i] = l_diff if (l_diff > h_diff and l_diff > 0) else 0
 
@@ -201,14 +189,12 @@ def _adx_calc(high, low, close, period=14):
     smooth_minus = np.zeros(n)
 
     if n > period:
-        smooth_tr[period] = np.mean(tr[1: period + 1])
-        smooth_plus[period] = np.mean(plus_dm[1: period + 1])
-        smooth_minus[period] = np.mean(minus_dm[1: period + 1])
+        smooth_tr[period] = np.mean(tr[1 : period + 1])
+        smooth_plus[period] = np.mean(plus_dm[1 : period + 1])
+        smooth_minus[period] = np.mean(minus_dm[1 : period + 1])
         for i in range(period + 1, n):
             smooth_tr[i] = (smooth_tr[i - 1] * (period - 1) + tr[i]) / period
-            smooth_plus[i] = (
-                smooth_plus[i - 1] * (period - 1) + plus_dm[i]
-            ) / period
+            smooth_plus[i] = (smooth_plus[i - 1] * (period - 1) + plus_dm[i]) / period
             smooth_minus[i] = (
                 smooth_minus[i - 1] * (period - 1) + minus_dm[i]
             ) / period
@@ -225,7 +211,7 @@ def _adx_calc(high, low, close, period=14):
     adx = np.zeros(n)
     start_idx = period * 2
     if start_idx < n:
-        adx[start_idx] = np.mean(dx[period: start_idx + 1])
+        adx[start_idx] = np.mean(dx[period : start_idx + 1])
         for i in range(start_idx + 1, n):
             adx[i] = (adx[i - 1] * (period - 1) + dx[i]) / period
 
@@ -254,15 +240,15 @@ class ScalpingV7Engine:
     def __init__(self, config: Dict = None):
         self.config = {**V7_CONFIG, **(config or {})}
         self.logger = logging.getLogger(f"{__name__}.ScalpingV7Engine")
-        self.logger.info(f"🚀 ScalpingV7Engine initialized | " f"SL={
-            self.config['sl_pct'] *
-            100}% | " f"Trail={
-            self.config['trailing_activation'] *
-            100}%/{
-            self.config['trailing_distance'] *
-            100}% | " f"Confluence≥{
-            self.config['min_confluence']} | " f"MaxPos={
-            self.config['max_positions']}")
+        self.logger.info(
+            f"🚀 ScalpingV7Engine initialized | "
+            f"SL={self.config['sl_pct'] * 100}% | "
+            f"Trail={self.config['trailing_activation'] * 100}%/{
+                self.config['trailing_distance'] * 100
+            }% | "
+            f"Confluence≥{self.config['min_confluence']} | "
+            f"MaxPos={self.config['max_positions']}"
+        )
 
     # ============================================================
     # DATA PREPARATION
@@ -293,17 +279,13 @@ class ScalpingV7Engine:
         df["atr"] = _atr(df["high"], df["low"], df["close"])
 
         # SuperTrend
-        df["st"], df["st_dir"] = _supertrend(
-            df["high"], df["low"], df["close"]
-        )
+        df["st"], df["st_dir"] = _supertrend(df["high"], df["low"], df["close"])
 
         # Bollinger Bands
         df["bbu"], df["bbm"], df["bbl"] = _bbands(df["close"])
 
         # ADX
-        df["adx"], df["pdi"], df["mdi"] = _adx_calc(
-            df["high"], df["low"], df["close"]
-        )
+        df["adx"], df["pdi"], df["mdi"] = _adx_calc(df["high"], df["low"], df["close"])
 
         # Volume
         df["vol_ma"] = df["volume"].rolling(20).mean()
@@ -333,7 +315,7 @@ class ScalpingV7Engine:
         Returns: 'UP', 'DOWN', or 'NEUTRAL'
         """
         if idx == -1:
-            idx = len(df) - 1
+            idx = len(df) - 2
 
         if idx < 20:
             return "NEUTRAL"
@@ -433,7 +415,7 @@ class ScalpingV7Engine:
         Blocked strategies: pullback (-$11), vol_expand (-$7)
         """
         blocked = self.config.get("blocked_cognitive", [])
-        ds = df.iloc[max(0, idx - 60): idx + 1]
+        ds = df.iloc[max(0, idx - 60) : idx + 1]
         if len(ds) < 20:
             return None
 
@@ -452,9 +434,7 @@ class ScalpingV7Engine:
         if pd.isna(adx_val):
             adx_val = 20
         vol = ds["volume"]
-        vol_avg = (
-            vol.rolling(20).mean().iloc[-1] if len(vol) >= 20 else vol.mean()
-        )
+        vol_avg = vol.rolling(20).mean().iloc[-1] if len(vol) >= 20 else vol.mean()
         vr = vol.iloc[-1] / vol_avg if vol_avg > 0 else 1
 
         # Strategy 1: Trend Continuation LONG
@@ -568,7 +548,7 @@ class ScalpingV7Engine:
             return signal
 
         try:
-            df_slice = df.iloc[max(0, idx - 50): idx + 1]
+            df_slice = df.iloc[max(0, idx - 50) : idx + 1]
             vol_result = va.analyze(df_slice)
             atr = vol_result.get("atr", 0)
             if atr <= 0:
@@ -609,20 +589,13 @@ class ScalpingV7Engine:
 
         # MACD crossover bullish
         if not pd.isna(row["macd_l"]) and not pd.isna(prev["macd_l"]):
-            if (
-                prev["macd_l"] < prev["macd_s"]
-                and row["macd_l"] > row["macd_s"]
-            ):
+            if prev["macd_l"] < prev["macd_s"] and row["macd_l"] > row["macd_s"]:
                 timing.append("macd_x")
                 score += 2
 
         # RSI bounce from oversold
         if not pd.isna(row["rsi"]) and not pd.isna(prev["rsi"]):
-            if (
-                prev["rsi"] < 35
-                and row["rsi"] > prev["rsi"]
-                and row["rsi"] < 55
-            ):
+            if prev["rsi"] < 35 and row["rsi"] > prev["rsi"] and row["rsi"] < 55:
                 timing.append("rsi_bounce")
                 score += 2
 
@@ -639,22 +612,14 @@ class ScalpingV7Engine:
 
         # Breakout with volume
         if not pd.isna(row.get("res20")):
-            prev_res = df["high"].iloc[max(0, idx - 21): idx - 1].max()
-            if (
-                not pd.isna(prev_res)
-                and current > prev_res
-                and row["vol_r"] > 1.5
-            ):
+            prev_res = df["high"].iloc[max(0, idx - 21) : idx - 1].max()
+            if not pd.isna(prev_res) and current > prev_res and row["vol_r"] > 1.5:
                 timing.append("breakout")
                 score += 2
 
         # Bollinger Band bounce
         if not pd.isna(row["bbl"]) and not pd.isna(prev["bbl"]):
-            if (
-                prev["low"] <= prev["bbl"]
-                and current > row["bbl"]
-                and row["bull"]
-            ):
+            if prev["low"] <= prev["bbl"] and current > row["bbl"] and row["bull"]:
                 timing.append("bb_bounce")
                 score += 2
 
@@ -803,20 +768,13 @@ class ScalpingV7Engine:
 
         # MACD crossover bearish
         if not pd.isna(row["macd_l"]) and not pd.isna(prev["macd_l"]):
-            if (
-                prev["macd_l"] > prev["macd_s"]
-                and row["macd_l"] < row["macd_s"]
-            ):
+            if prev["macd_l"] > prev["macd_s"] and row["macd_l"] < row["macd_s"]:
                 timing.append("macd_x_bear")
                 score += 2
 
         # RSI rejection from overbought
         if not pd.isna(row["rsi"]) and not pd.isna(prev["rsi"]):
-            if (
-                prev["rsi"] > 65
-                and row["rsi"] < prev["rsi"]
-                and row["rsi"] > 45
-            ):
+            if prev["rsi"] > 65 and row["rsi"] < prev["rsi"] and row["rsi"] > 45:
                 timing.append("rsi_reject")
                 score += 2
 
@@ -833,22 +791,14 @@ class ScalpingV7Engine:
 
         # Breakdown with volume
         if not pd.isna(row.get("sup20")):
-            prev_sup = df["low"].iloc[max(0, idx - 21): idx - 1].min()
-            if (
-                not pd.isna(prev_sup)
-                and current < prev_sup
-                and row["vol_r"] > 1.5
-            ):
+            prev_sup = df["low"].iloc[max(0, idx - 21) : idx - 1].min()
+            if not pd.isna(prev_sup) and current < prev_sup and row["vol_r"] > 1.5:
                 timing.append("breakdown")
                 score += 2
 
         # Bollinger Band rejection
         if not pd.isna(row["bbu"]) and not pd.isna(prev["bbu"]):
-            if (
-                prev["high"] >= prev["bbu"]
-                and current < row["bbu"]
-                and not row["bull"]
-            ):
+            if prev["high"] >= prev["bbu"] and current < row["bbu"] and not row["bull"]:
                 timing.append("bb_reject")
                 score += 2
 
@@ -1110,9 +1060,7 @@ class ScalpingV7Engine:
                 pnl = (cl - entry) / entry
                 if pnl > 0.003:
                     # SuperTrend flip bearish
-                    if not pd.isna(row["st_dir"]) and not pd.isna(
-                        prev["st_dir"]
-                    ):
+                    if not pd.isna(row["st_dir"]) and not pd.isna(prev["st_dir"]):
                         if prev["st_dir"] == 1 and row["st_dir"] == -1:
                             rev_score += 3
                     # Bearish engulfing
@@ -1124,9 +1072,7 @@ class ScalpingV7Engine:
                     ):
                         rev_score += 2
                     # MACD cross bearish
-                    if not pd.isna(row["macd_l"]) and not pd.isna(
-                        prev["macd_l"]
-                    ):
+                    if not pd.isna(row["macd_l"]) and not pd.isna(prev["macd_l"]):
                         if (
                             prev["macd_l"] > prev["macd_s"]
                             and row["macd_l"] < row["macd_s"]
@@ -1136,9 +1082,7 @@ class ScalpingV7Engine:
                 pnl = (entry - cl) / entry
                 if pnl > 0.003:
                     # SuperTrend flip bullish
-                    if not pd.isna(row["st_dir"]) and not pd.isna(
-                        prev["st_dir"]
-                    ):
+                    if not pd.isna(row["st_dir"]) and not pd.isna(prev["st_dir"]):
                         if prev["st_dir"] == -1 and row["st_dir"] == 1:
                             rev_score += 3
                     # Bullish engulfing
@@ -1150,9 +1094,7 @@ class ScalpingV7Engine:
                     ):
                         rev_score += 2
                     # MACD cross bullish
-                    if not pd.isna(row["macd_l"]) and not pd.isna(
-                        prev["macd_l"]
-                    ):
+                    if not pd.isna(row["macd_l"]) and not pd.isna(prev["macd_l"]):
                         if (
                             prev["macd_l"] < prev["macd_s"]
                             and row["macd_l"] > row["macd_s"]
@@ -1180,9 +1122,7 @@ class ScalpingV7Engine:
             }
 
         # Stagnant position (configurable hours, less than threshold movement)
-        pnl_now = (
-            (cl - entry) / entry if side == "LONG" else (entry - cl) / entry
-        )
+        pnl_now = (cl - entry) / entry if side == "LONG" else (entry - cl) / entry
         stagnant_hours = self.config.get("stagnant_hours", 4)
         stagnant_threshold = self.config.get("stagnant_threshold", 0.002)
         if hold_hours >= stagnant_hours and abs(pnl_now) < stagnant_threshold:
