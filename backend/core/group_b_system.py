@@ -306,6 +306,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             "require_quality": True,
             "position_size_pct": 0.06,
             "max_positions": strategy_cfg.get("max_positions", 5),
+            # 🎯 PRODUCTION VALIDATION MODE: محاذاة نتائج الاختبار الخلفي
+            "production_validation_mode": _os.environ.get(
+                "TRADING_PRODUCTION_VALIDATION", "true"
+            ).lower()
+            == "true",
             "backtest_mode": _os.environ.get("TRADING_BACKTEST_MODE", "false").lower()
             == "true",
             "symbols_pool": self._get_trading_symbols(),
@@ -451,15 +456,17 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         """
         الحصول على قائمة العملات للتداول من قاعدة البيانات
 
-        ✅ يحمّل من successful_coins مع ترتيب محافظ وآمن
-        ✅ لا يغير منطق الاستراتيجية — فقط يحسن universe selection
-
-        🎯 BACKTEST MODE: يرجع BACKTEST_SYMBOLS إذا backtest_mode=True
+        🎯 PRODUCTION VALIDATION MODE:
+        - production_validation_mode=True: يستخدم BACKTEST_SYMBOLS (14 رمز من الاختبار الخلفي)
+        - backtest_mode=True: يستخدم BACKTEST_SYMBOLS مع تخطي كل البوابات
+        - الوضع العادي: يستخدم successful_coins أو DEFAULT_SYMBOLS_POOL
         """
-        # 🎯 BACKTEST MODE: استخدام الرموز الـ 14 من الاختبار الخلفي
-        if self.config.get("backtest_mode", False):
+        # 🎯 PRODUCTION VALIDATION MODE: استخدام الرموز الـ 14 من الاختبار الخلفي
+        if self.config.get("production_validation_mode", False) or self.config.get(
+            "backtest_mode", False
+        ):
             self.logger.info(
-                f"🎯 BACKTEST MODE: Using {len(BACKTEST_SYMBOLS)} symbols from backtest validation"
+                f"🔬 PRODUCTION VALIDATION: Using {len(BACKTEST_SYMBOLS)} validated symbols"
             )
             return BACKTEST_SYMBOLS.copy()
 

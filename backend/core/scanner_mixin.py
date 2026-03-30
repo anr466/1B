@@ -66,32 +66,47 @@ class ScannerMixin:
 
         ✅ Phase 0+1: Risk Protection مفعّلة
 
-        🎯 BACKTEST MODE: إذا backtest_mode=True في الإعدادات،
-        يتم تخطي معظم بوابات الحماية لمحاكاة الاختبار الخلفي.
+        🎯 PRODUCTION VALIDATION MODE:
+        - يفحش: Daily Loss, Max Drawdown, Cooldown ( حماية أساسية)
+        - يتخطى: WR Gate, Liquidity Filter (للسماح بتوليد الإشارات)
+        - يحتفظ: Max Positions, Directional Stress
         """
         entries = []
         symbols_to_scan = self.config["symbols_pool"]
         strategy_name = self.strategy.name if self.strategy else "none"
 
-        # 🎯 BACKTEST MODE: للتصحيح ومحاذاة نتائج الاختبار الخلفي
+        # 🎯 PRODUCTION VALIDATION MODE: محاذاة نتائج الاختبار الخلفي
+        validation_mode = self.config.get("production_validation_mode", False)
         backtest_mode = self.config.get("backtest_mode", False)
 
         if backtest_mode:
             self.logger.info(
                 f"\n🎯 [{strategy_name}] BACKTEST MODE - Scanning {len(symbols_to_scan)} symbols"
             )
+        elif validation_mode:
+            self.logger.info(
+                f"\n🔬 [{strategy_name}] PRODUCTION VALIDATION - Scanning {len(symbols_to_scan)} symbols"
+            )
         else:
             self.logger.info(
                 f"\n🔍 [{strategy_name}] Scanning {len(symbols_to_scan)} symbols for entries..."
             )
 
-        # ===== Phase 0+1: فحص بوابات الحماية =====
+        # ===== Phase 0: فحص بوابات الحماية الأساسية (دائماً مفعلة) =====
         portfolio = self._load_user_portfolio()
         balance = portfolio.get("balance", 0)
         risk_balance = portfolio.get("total_value", balance)
         open_positions = self._get_open_positions()
 
-        # 🎯 BACKTEST MODE: تخطي بوابة الحماية اليومية (للتصحيح فقط)
+        # 🔒 حماية أساسية: حد أقصى للصفقات المفتوحة
+        max_open = self.config.get("max_positions", 5)
+        if len(open_positions) >= max_open:
+            self.logger.info(
+                f"   🛡️ Max positions reached ({len(open_positions)}/{max_open})"
+            )
+            return entries
+
+        # 🔒 حماية أساسية: Cooldown بعد خسائر متتالية
         if not backtest_mode:
             can_trade, gate_reason = self._check_risk_gates(
                 open_positions, risk_balance
@@ -100,29 +115,25 @@ class ScannerMixin:
                 self.logger.info(f"   🛡️ Risk Gate BLOCKED: {gate_reason}")
                 return entries
 
-            # فحص حالة السوق العامة أولاً (عبر BTC)
+        # 🌡️ فحص حالة السوق - تحذير فقط في validation_mode
+        if not backtest_mode and not validation_mode:
             market_ok = self._check_market_regime()
             if not market_ok:
                 self.logger.info(
                     "   ⚠️ Market regime unfavorable - skipping new entries"
                 )
                 return entries
-        else:
-            # في وضع الاختبار الخلفي، نستخدم حد أقصى للصفقات المفتوحة فقط
-            max_open = self.config.get("max_positions", 5)
-            if len(open_positions) >= max_open:
-                self.logger.info(
-                    f"   🛡️ BACKTEST: Max positions reached ({len(open_positions)}/{max_open})"
-                )
-                return entries
+        elif validation_mode:
+            # في validation_mode: نفحص السوق لكن لا نمنع الإشارات
+            self._check_market_regime()  # تسجيل الحالة فقط
 
         # 📈 فلتر ساعات التداول (التعلم التكيّفي)
-        if self.optimizer:
+        if self.optimizer and not backtest_mode:
             try:
                 hour_ok, hour_reason = self.optimizer.is_good_trading_hour(
                     self.user_id, bool(self.is_demo_trading)
                 )
-                if not hour_ok:
+                if not hour_ok and not validation_mode:
                     self.logger.warning(
                         f"   📈 Adaptive hour warning (non-blocking): {hour_reason}"
                     )
@@ -214,8 +225,8 @@ class ScannerMixin:
                         )
 
                         # ===== Phase 1: Capital Stress — فحص تكدس الاتجاه ====
-                        # 🎯 BACKTEST MODE: تخطي فحص التكدس الاتجاهي
-                        if not backtest_mode:
+                        # 🔒 حماية أساسية في الوضع العادي فقط
+                        if not backtest_mode and not validation_mode:
                             dir_ok, dir_reason = self._check_directional_stress(
                                 open_positions, signal["side"]
                             )
@@ -232,9 +243,14 @@ class ScannerMixin:
                         signal["_entry_indicators"] = entry_indicators
 
                         # 📈 تقييم جودة الإشارة (التعلم التكيّفي)
-                        # 🎯 BACKTEST MODE: تخطي WR Gate
+                        # 🎯 validation_mode/backtest_mode: تخطي WR Gate للسماح بالإشارات
                         predicted_wr = 0.5
-                        if not backtest_mode and self.optimizer and entry_indicators:
+                        if (
+                            not backtest_mode
+                            and not validation_mode
+                            and self.optimizer
+                            and entry_indicators
+                        ):
                             try:
                                 sig_score = self.optimizer.score_signal(
                                     self.user_id,
@@ -299,8 +315,8 @@ class ScannerMixin:
 
                     filtered_signal = sig
 
-                    # 🎯 BACKTEST MODE: تخطي فلتر السيولة
-                    if not backtest_mode:
+                    # 🎯 validation_mode/backtest_mode: تخطي فلتر السيولة للسماح بالإشارات
+                    if not backtest_mode and not validation_mode:
                         # فلتر السيولة/المعرفة — يعمل فقط إذا كان موجوداً على
                         # النظام
                         if (
@@ -342,9 +358,9 @@ class ScannerMixin:
                                 )
                                 filtered_signal = sig
 
-                    # ✅ FIX: Re-check risk gates before actual entry (TOCTOU prevention)
-                    # 🎯 BACKTEST MODE: تخطي فحص المخاطر الثاني
-                    if not backtest_mode:
+                    # 🔒 حماية أساسية: فحص المخاطر قبل الدخول الفعلي (TOCTOU prevention)
+                    # 🎯 validation_mode/backtest_mode: تخطي فحص المخاطر الثاني
+                    if not backtest_mode and not validation_mode:
                         open_positions_for_entry = self._get_open_positions()
                         portfolio_for_entry = self._load_user_portfolio()
                         risk_balance_for_entry = portfolio_for_entry.get(
