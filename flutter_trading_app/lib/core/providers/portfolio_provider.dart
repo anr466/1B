@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
+import 'package:trading_app/core/models/system_status_model.dart';
 import 'package:trading_app/core/models/trade_model.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
@@ -45,6 +46,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   final Ref _ref;
   bool _disposed = false;
   bool _busy = false;
+  Timer? _pollingTimer;
   final Debouncer _debouncer = Debouncer(
     duration: const Duration(milliseconds: 500),
   );
@@ -56,6 +58,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
         ),
       ) {
     load();
+    _startPolling();
     // Listen to auth state changes to reload trading state when user changes
     _ref.listen<AuthState>(authProvider, (previous, next) {
       if (previous?.user?.id != next.user?.id) {
@@ -63,11 +66,64 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
         load();
       }
     });
+    // Listen to system status changes to sync systemRunning/systemState
+    _ref.listen<AsyncValue<SystemStatusModel>>(systemStatusProvider, (
+      previous,
+      next,
+    ) {
+      if (!next.hasValue) return;
+      final systemStatus = next.value!;
+      if (!_disposed) {
+        _setStateSafely(
+          state.copyWith(
+            systemRunning: systemStatus.isEffectivelyRunning,
+            systemState: systemStatus.state.toUpperCase(),
+          ),
+        );
+      }
+    });
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!_disposed) {
+        _loadSilent();
+      }
+    });
+  }
+
+  Future<void> _loadSilent() async {
+    if (_disposed) return;
+    final auth = _ref.read(authProvider);
+    final user = auth.user;
+    if (user == null) return;
+
+    try {
+      final repo = _ref.read(settingsRepositoryProvider);
+      final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
+      final settings = await repo.getSettings(user.id, mode: mode);
+
+      if (_disposed) return;
+      // Silent update - keep UI stable, just sync state
+      _setStateSafely(
+        state.copyWith(
+          enabled: settings.tradingEnabled,
+          systemRunning: settings.systemRunning,
+          systemState: settings.systemState,
+          isLoading: false,
+        ),
+      );
+      _syncAuthTrading(settings.tradingEnabled);
+    } catch (_) {
+      // Silent fail during polling - keep last known state
+    }
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _pollingTimer?.cancel();
     _debouncer.dispose();
     super.dispose();
   }
@@ -287,6 +343,8 @@ class PortfolioRefreshCoordinator extends StateNotifier<int> {
     _ref.invalidate(portfolioProvider);
     _ref.invalidate(statsProvider);
     _ref.invalidate(activePositionsProvider);
+    // Note: accountTradingProvider has its own polling, so we don't invalidate it here
+    // to avoid redundant API calls
   }
 
   void refresh() => _invalidateAll();
