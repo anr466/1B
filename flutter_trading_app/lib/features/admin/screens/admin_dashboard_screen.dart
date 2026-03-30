@@ -87,7 +87,7 @@ class AdminDashboardScreen extends ConsumerWidget {
                         context,
                         cs,
                         BrandIcons.chart,
-                        'التحكم في التداول',
+                        'التحكم بالنظام',
                         RouteNames.tradingControl,
                       ),
 
@@ -154,7 +154,7 @@ class AdminDashboardScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'حالة التداول',
+                  'حالة النظام', // changed from 'حالة التداول'
                   style: TypographyTokens.bodySmall(
                     cs.onSurface.withValues(alpha: 0.6),
                   ),

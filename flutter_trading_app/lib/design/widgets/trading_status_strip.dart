@@ -4,8 +4,12 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
-/// Unified Trading Status Strip — shows trading enabled/disabled state
-/// تصميم صافي — لا يعتمد على منطق أعمال محدد
+/// ────────────────────────────────────────────────────────────────
+/// Trading Status Strip — شريط حالة تفعيل التداول الشخصي
+/// ────────────────────────────────────────────────────────────────
+/// ⚠️ هذا المكون يعرض تفعيل التداول الشخصي للمستخدم (trading_enabled)
+/// لا يعرض حالة النظام الخلفي (system_status.trading_state)
+/// ────────────────────────────────────────────────────────────────
 class TradingStatusStrip extends StatelessWidget {
   final bool? enabled;
   final bool isLoading;
@@ -26,9 +30,10 @@ class TradingStatusStrip extends StatelessWidget {
     final active = enabled ?? false;
     final statusTone = active ? cs.primary : cs.tertiary;
     final badgeType = active ? BadgeType.success : BadgeType.warning;
+    // تسمية واضحة: تفعيل التداول الشخصي (user-level)
     final subtitle = active
-        ? 'النظام ينفذ صفقات جديدة'
-        : 'النظام يراقب الصفقات المفتوحة فقط';
+        ? 'يفتح صفقات جديدة تلقائياً'
+        : 'لن يفتح صفقات جديدة';
 
     return IntrinsicHeight(
       child: Container(
@@ -79,14 +84,14 @@ class TradingStatusStrip extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'حالة التداول',
+                          'تداول حسابي', // changed from 'حالة التداول'
                           style: TypographyTokens.bodySmall(
                             cs.onSurface.withValues(alpha: 0.8),
                           ).copyWith(fontWeight: FontWeight.w600),
                         ),
                         if (!isLoadingState)
                           StatusBadge(
-                            text: active ? 'مفعل' : 'متوقف',
+                            text: active ? 'مفعّل' : 'معطّل',
                             type: badgeType,
                           ),
                       ],

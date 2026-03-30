@@ -280,6 +280,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   // ──────────────────────────────────────────────────────────────
   //  ACCOUNT TRADING STRIP (user quick toggle)
+  //  تفعيل/تعطيل التداول الشخصي - خاص بكل مستخدم
+  //  DISTINCT from system control (admin-only)
   // ──────────────────────────────────────────────────────────────
   Widget _buildAccountTradingStrip(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
@@ -293,12 +295,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final canEnable = tradingState.systemRunning;
     final statusTone = enabled ? cs.primary : cs.tertiary;
     final badgeType = enabled ? BadgeType.success : BadgeType.warning;
-    final label = enabled ? 'مفعل' : 'متوقف';
+    // تسمية واضحة: تفعيل التداول الشخصي (user-level)
+    final label = enabled ? 'مفعّل' : 'معطّل';
     final subtitle = !canEnable && !enabled
-        ? 'تعذر التفعيل لأن النظام العام ${tradingState.systemState == 'ERROR' ? 'في حالة خطأ' : 'متوقف'}'
+        ? 'لا يمكن التفعيل - النظام متوقف'
         : enabled
-        ? 'النظام ينفذ صفقات جديدة'
-        : 'التداول معطل لحسابك';
+        ? 'يفتح صفقات جديدة تلقائياً'
+        : 'لن يفتح صفقات جديدة';
     final isDark = cs.brightness == Brightness.dark;
 
     return IntrinsicHeight(
@@ -341,7 +344,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'حالة التداول',
+                          'تداول حسابي', // renamed from 'حالة التداول' for clarity
                           style: TypographyTokens.bodySmall(
                             cs.onSurface.withValues(alpha: 0.8),
                           ).copyWith(fontWeight: FontWeight.w600),

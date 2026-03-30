@@ -18,7 +18,15 @@ import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
-/// Trading Control Screen — التحكم بالتداول (تشغيل/إيقاف/طوارئ/ML)
+/// ────────────────────────────────────────────────────────────────
+/// Trading Control Screen — التحكم بالنظام (تشغيل/إيقاف المحرك الخلفي)
+/// ────────────────────────────────────────────────────────────────
+/// ⚠️ للإدمن فقط - التحكم في نظام التداول الخلفي
+/// هذا يختلف عن "تفعيل التداول" الخاص بالمستخدم
+/// - تشغيل النظام: يبدأ محرك التداول الخلفي (RUNNING)
+/// - إيقاف النظام: يوقف المحرك (STOPPED/HALTING)
+/// - لا يؤثر على trading_enabled الخاص بالمستخدمين
+/// ────────────────────────────────────────────────────────────────
 final _tradingControlActionBusyProvider = StateProvider.autoDispose<bool>(
   (ref) => false,
 );
@@ -40,7 +48,7 @@ class TradingControlScreen extends ConsumerWidget {
         body: SafeArea(
           child: Column(
             children: [
-              AppScreenHeader(title: 'التحكم بالتداول', showBack: true),
+              AppScreenHeader(title: 'التحكم بالنظام', showBack: true),
               Expanded(
                 child: RefreshIndicator(
                   color: cs.primary,
@@ -133,10 +141,11 @@ class TradingControlScreen extends ConsumerWidget {
         ? BadgeType.error
         : BadgeType.warning;
 
+    // تسمية واضحة لحالة النظام (ليست حالة تداول المستخدم)
     final stateLabel = effectivelyRunning
         ? 'يعمل'
         : isRunning
-        ? 'جارٍ التفعيل...'
+        ? 'جارٍ التشغيل...'
         : isHalting
         ? 'جارٍ التصفية...'
         : isError
@@ -164,7 +173,7 @@ class TradingControlScreen extends ConsumerWidget {
                     : cs.tertiary,
               ),
               const SizedBox(width: SpacingTokens.md),
-              Text('حالة التداول', style: TypographyTokens.h3(cs.onSurface)),
+              Text('حالة النظام', style: TypographyTokens.h3(cs.onSurface)),
               const SizedBox(width: SpacingTokens.sm),
               StatusBadge(text: stateLabel, type: badgeType),
             ],
@@ -368,15 +377,15 @@ class TradingControlScreen extends ConsumerWidget {
         child: AlertDialog(
           title: Text(
             isStopping
-                ? 'إيقاف التداول'
-                : (isResuming ? 'استئناف التداول' : 'تشغيل التداول'),
+                ? 'إيقاف النظام'
+                : (isResuming ? 'استئناف النظام' : 'تشغيل النظام'),
           ),
           content: Text(
             isStopping
-                ? 'سيتحول النظام لحالة التصفية. سيتمكن من فتح صفقات جديدة. الصفقات المفتوحة ستستمر في الإدارة حتى الإغلاق.'
+                ? 'سيتوقف محرك التداول. سيستمر في إدارة الصفقات المفتوحة حتى إغلاقها. لن يفتح صفقات جديدة.'
                 : (isResuming
                       ? 'سيستأنف النظام فتح الصفقات الجديدة.'
-                      : 'سيبدأ النظام في فتح صفقات جديدة تلقائياً.'),
+                      : 'سيبدأ محرك التداول في فتح صفقات جديدة تلقائياً.'),
           ),
           actions: [
             TextButton(

@@ -130,7 +130,10 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                   const SizedBox(height: SpacingTokens.md),
                 ],
 
-                // تفعيل التداول - مرتبط بإعدادات التداول
+                // ──────────────────────────────────────────────────────────────
+                // تفعيل التداول الشخصي - خاص بحساب المستخدم
+                // ملاحظة: هذا يختلف عن تشغيل النظام (خاص بالأدمن)
+                // ──────────────────────────────────────────────────────────
                 AppCard(
                   padding: const EdgeInsets.all(SpacingTokens.md),
                   child: Column(
@@ -143,14 +146,14 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'تفعيل التداول',
+                                  'تفعيل التداول التلقائي',
                                   style: TypographyTokens.body(cs.onSurface),
                                 ),
                                 const SizedBox(height: SpacingTokens.xxs),
                                 Text(
                                   s.tradingEnabled
-                                      ? 'النظام يفتح صفقات جديدة تلقائياً'
-                                      : 'التداول متوقف حالياً',
+                                      ? 'يفتح صفقات جديدة تلقائياً'
+                                      : 'لن يفتح صفقات جديدة',
                                   style: TypographyTokens.caption(
                                     cs.onSurface.withValues(alpha: 0.5),
                                   ),
