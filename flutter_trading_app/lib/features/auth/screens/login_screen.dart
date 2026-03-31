@@ -234,6 +234,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       // Clear tokens and force logout on biometric fail per security spec
       await ref.read(authProvider.notifier).forceUnauthenticated();
       await ref.read(storageServiceProvider).clearBiometricCredentials();
+      if (!mounted) return;
       AppSnackbar.show(
         context,
         message: 'فشل التحقق من البصمة. تم تسجيل الخروج للأمان.',
