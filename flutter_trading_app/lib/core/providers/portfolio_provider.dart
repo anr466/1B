@@ -250,7 +250,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
 
 /// Admin portfolio mode — 'demo' | 'real' (only relevant when isAdmin == true)
 /// Regular users always see their single portfolio (no mode switching)
-final adminPortfolioModeProvider = StateProvider<String>((ref) => 'real');
+/// Default is 'demo' since admin demo account is the one actively trading
+final adminPortfolioModeProvider = StateProvider<String>((ref) => 'demo');
 
 final accountTradingProvider =
     StateNotifierProvider<AccountTradingNotifier, AccountTradingState>((ref) {
