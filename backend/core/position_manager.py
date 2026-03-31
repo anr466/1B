@@ -1040,6 +1040,8 @@ class PositionManagerMixin:
         if self.optimizer:
             try:
                 size_mult = self.optimizer.get_position_size_multiplier(
+                    user_id=self.user_id,
+                    is_demo=bool(self.is_demo_trading),
                     consecutive_losses=self.daily_state.get("consecutive_losses", 0),
                     daily_pnl=self.daily_state.get("daily_pnl", 0),
                 )
