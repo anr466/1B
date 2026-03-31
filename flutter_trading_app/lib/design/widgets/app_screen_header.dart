@@ -42,11 +42,9 @@ class AppScreenHeader extends StatelessWidget {
           if (showBack) ...[
             GestureDetector(
               onTap: () {
-                // Use GoRouter's pop if available, otherwise use Navigator
+                // Only pop if there's a page to go back to
                 if (context.canPop()) {
-                  context.pop();
-                } else {
-                  Navigator.of(context).maybePop();
+                  GoRouter.of(context).pop();
                 }
               },
               behavior: HitTestBehavior.opaque,

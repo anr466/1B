@@ -162,8 +162,9 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                                 onSubmitted: (_) =>
                                     _method == 'sms' ? null : _sendOtp(),
                                 validator: (v) {
-                                  if (v == null || v.trim().isEmpty)
+                                  if (v == null || v.trim().isEmpty) {
                                     return 'مطلوب';
+                                  }
                                   if (!v.contains('@')) {
                                     return 'بريد إلكتروني غير صالح';
                                   }
