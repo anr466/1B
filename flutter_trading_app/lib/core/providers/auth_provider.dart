@@ -234,11 +234,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
           .read(settingsRepositoryProvider)
           .getSettings(user.id);
       final resolvedMode = settings.activePortfolio == 'demo' ? 'demo' : 'real';
+      // Debug: print resolved mode
+      print(
+        '🔍 _syncAdminPortfolioMode: activePortfolio=${settings.activePortfolio}, resolvedMode=$resolvedMode',
+      );
       _ref.read(adminPortfolioModeProvider.notifier).state = resolvedMode;
       updateCurrentUser(user.copyWith(tradingMode: resolvedMode));
-    } catch (_) {
+    } catch (e) {
       // Fallback to login response mode on settings API failure
       final fallbackMode = user.tradingMode == 'demo' ? 'demo' : 'real';
+      print('⚠️ _syncAdminPortfolioMode error: $e, fallbackMode=$fallbackMode');
       _ref.read(adminPortfolioModeProvider.notifier).state = fallbackMode;
     }
   }
