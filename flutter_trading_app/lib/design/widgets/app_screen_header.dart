@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 
@@ -40,7 +41,14 @@ class AppScreenHeader extends StatelessWidget {
           // ─── Back button ────────────────────────
           if (showBack) ...[
             GestureDetector(
-              onTap: () => Navigator.of(context).maybePop(),
+              onTap: () {
+                // Use GoRouter's pop if available, otherwise use Navigator
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  Navigator.of(context).maybePop();
+                }
+              },
               behavior: HitTestBehavior.opaque,
               child: SizedBox(
                 width: 44,
