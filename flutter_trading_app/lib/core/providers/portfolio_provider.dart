@@ -240,6 +240,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     final auth = _ref.read(authProvider);
     final currentUser = auth.user;
     if (currentUser == null) return;
+    // Only update if the value actually changed to avoid triggering rebuild loops
+    if (currentUser.tradingEnabled == enabled) return;
     _ref
         .read(authProvider.notifier)
         .updateCurrentUser(currentUser.copyWith(tradingEnabled: enabled));
