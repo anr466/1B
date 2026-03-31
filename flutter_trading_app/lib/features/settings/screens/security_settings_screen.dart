@@ -10,6 +10,7 @@ import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/flow_stepper.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
@@ -327,118 +328,118 @@ class _SecuritySettingsScreenState
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text('الأمان', style: TypographyTokens.h3(cs.onSurface)),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(SpacingTokens.base),
-          children: [
-            FlowStepper(
-              title: 'إعدادات الأمان',
-              steps: const ['اختيار العملية', 'التحقق', 'الإتمام'],
-              currentStep: 0,
-            ),
-            const SizedBox(height: SpacingTokens.lg),
-            // ─── Biometric Toggle ────────────────────
-            AppCard(
-              padding: const EdgeInsets.symmetric(
-                horizontal: SpacingTokens.base,
-                vertical: SpacingTokens.sm,
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(SpacingTokens.base),
+            children: [
+              AppScreenHeader(title: 'الأمان', showBack: true),
+              FlowStepper(
+                title: 'إعدادات الأمان',
+                steps: const ['اختيار العملية', 'التحقق', 'الإتمام'],
+                currentStep: 0,
               ),
-              child: Row(
-                children: [
-                  BrandIcon(BrandIcons.shield, size: 22, color: cs.primary),
-                  const SizedBox(width: SpacingTokens.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'تسجيل الدخول بالبصمة',
-                          style: TypographyTokens.body(cs.onSurface),
-                        ),
-                        const SizedBox(height: SpacingTokens.xxs),
-                        Text(
-                          'دخول سريع بدون كلمة مرور • النوع: $_biometricTypeLabel',
-                          style: TypographyTokens.caption(
-                            cs.onSurface.withValues(alpha: 0.4),
+              const SizedBox(height: SpacingTokens.lg),
+              // ─── Biometric Toggle ────────────────────
+              AppCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: SpacingTokens.base,
+                  vertical: SpacingTokens.sm,
+                ),
+                child: Row(
+                  children: [
+                    BrandIcon(BrandIcons.shield, size: 22, color: cs.primary),
+                    const SizedBox(width: SpacingTokens.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'تسجيل الدخول بالبصمة',
+                            style: TypographyTokens.body(cs.onSurface),
                           ),
+                          const SizedBox(height: SpacingTokens.xxs),
+                          Text(
+                            'دخول سريع بدون كلمة مرور • النوع: $_biometricTypeLabel',
+                            style: TypographyTokens.caption(
+                              cs.onSurface.withValues(alpha: 0.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _biometricEnabled,
+                      onChanged: _isBusy ? null : _toggleBiometric,
+                      activeTrackColor: cs.primary,
+                      thumbColor: WidgetStatePropertyAll(
+                        _biometricEnabled
+                            ? cs.onPrimary
+                            : cs.onSurface.withValues(alpha: 0.3),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: SpacingTokens.lg),
+              const AppSectionLabel(text: 'إجراءات آمنة'),
+              const SizedBox(height: SpacingTokens.sm),
+
+              // ─── Change Password ─────────────────────
+              _secureActionItem(
+                cs,
+                BrandIcons.lock,
+                'تغيير كلمة المرور',
+                'يتطلب كلمة المرور الحالية ثم رمز تحقق عبر البريد المرتبط بالحساب',
+                _sendChangePasswordOtp,
+              ),
+
+              // ─── Change Email ────────────────────────
+              _secureActionItem(
+                cs,
+                BrandIcons.key,
+                'تغيير البريد الإلكتروني',
+                'يتم إرسال رمز التحقق إلى البريد الإلكتروني الجديد',
+                _sendChangeEmailOtp,
+              ),
+
+              const SizedBox(height: SpacingTokens.lg),
+              const AppSectionLabel(text: 'الجلسات'),
+              const SizedBox(height: SpacingTokens.sm),
+
+              // ─── Active Sessions Info ────────────────
+              AppCard(
+                padding: const EdgeInsets.all(SpacingTokens.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        BrandIcon(BrandIcons.eye, size: 20, color: cs.primary),
+                        const SizedBox(width: SpacingTokens.sm),
+                        Text(
+                          'الجلسة الحالية',
+                          style: TypographyTokens.body(cs.onSurface),
                         ),
                       ],
                     ),
-                  ),
-                  Switch(
-                    value: _biometricEnabled,
-                    onChanged: _isBusy ? null : _toggleBiometric,
-                    activeTrackColor: cs.primary,
-                    thumbColor: WidgetStatePropertyAll(
-                      _biometricEnabled
-                          ? cs.onPrimary
-                          : cs.onSurface.withValues(alpha: 0.3),
+                    const SizedBox(height: SpacingTokens.sm),
+                    Text(
+                      'نشطة الآن',
+                      style: TypographyTokens.bodySmall(cs.primary),
                     ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: SpacingTokens.lg),
-            const AppSectionLabel(text: 'إجراءات آمنة'),
-            const SizedBox(height: SpacingTokens.sm),
-
-            // ─── Change Password ─────────────────────
-            _secureActionItem(
-              cs,
-              BrandIcons.lock,
-              'تغيير كلمة المرور',
-              'يتطلب كلمة المرور الحالية ثم رمز تحقق عبر البريد المرتبط بالحساب',
-              _sendChangePasswordOtp,
-            ),
-
-            // ─── Change Email ────────────────────────
-            _secureActionItem(
-              cs,
-              BrandIcons.key,
-              'تغيير البريد الإلكتروني',
-              'يتم إرسال رمز التحقق إلى البريد الإلكتروني الجديد',
-              _sendChangeEmailOtp,
-            ),
-
-            const SizedBox(height: SpacingTokens.lg),
-            const AppSectionLabel(text: 'الجلسات'),
-            const SizedBox(height: SpacingTokens.sm),
-
-            // ─── Active Sessions Info ────────────────
-            AppCard(
-              padding: const EdgeInsets.all(SpacingTokens.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      BrandIcon(BrandIcons.eye, size: 20, color: cs.primary),
-                      const SizedBox(width: SpacingTokens.sm),
-                      Text(
-                        'الجلسة الحالية',
-                        style: TypographyTokens.body(cs.onSurface),
+                    const SizedBox(height: SpacingTokens.xs),
+                    Text(
+                      'بيانات الدخول تُدار تلقائيًا — فعّل "تذكرني" في شاشة الدخول لحفظها',
+                      style: TypographyTokens.caption(
+                        cs.onSurface.withValues(alpha: 0.45),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: SpacingTokens.sm),
-                  Text(
-                    'نشطة الآن',
-                    style: TypographyTokens.bodySmall(cs.primary),
-                  ),
-                  const SizedBox(height: SpacingTokens.xs),
-                  Text(
-                    'بيانات الدخول تُدار تلقائيًا — فعّل "تذكرني" في شاشة الدخول لحفظها',
-                    style: TypographyTokens.caption(
-                      cs.onSurface.withValues(alpha: 0.45),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

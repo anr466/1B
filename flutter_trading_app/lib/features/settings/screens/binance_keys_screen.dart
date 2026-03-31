@@ -9,6 +9,7 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_input.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/registration_stepper.dart';
 
@@ -165,15 +166,10 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'مفاتيح Binance',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-        ),
         body: SafeArea(
           child: Column(
             children: [
+              AppScreenHeader(title: 'مفاتيح Binance', showBack: true),
               const RegistrationStepper(currentStep: 2),
               Expanded(
                 child: SingleChildScrollView(

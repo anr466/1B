@@ -15,6 +15,7 @@ import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/navigation/route_names.dart';
 import 'package:trading_app/features/auth/widgets/countdown_timer.dart';
 import 'package:trading_app/main.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 
 /// OTP Verification Screen — 6 خانات + عداد 60s + إعادة إرسال
 class OtpVerificationScreen extends ConsumerStatefulWidget {
@@ -463,116 +464,124 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(_screenTitle, style: TypographyTokens.h3(cs.onSurface)),
-        ),
         body: SafeArea(
           child: Column(
             children: [
-              if (_type == 'registration')
-                FlowStepper(
-                  title: VerificationFlowMetadata.registration.title,
-                  steps: VerificationFlowMetadata.registration.steps,
-                  currentStep: 1,
-                ),
-              if (_type != 'registration' &&
-                  (_isSecureSettingsFlow || _hasCustomFlowSteps))
-                FlowStepper(
-                  title: _screenTitle,
-                  steps: _flowSteps,
-                  currentStep: 1,
-                ),
+              AppScreenHeader(title: _screenTitle, showBack: true),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: SpacingTokens.lg,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: SpacingTokens.xl),
-                        // ─── Instructions ──────────────────────
-                        Text(
-                          'أدخل رمز التحقق',
-                          style: TypographyTokens.h2(cs.onSurface),
-                          textAlign: TextAlign.center,
+                child: Column(
+                  children: [
+                    if (_type == 'registration')
+                      FlowStepper(
+                        title: VerificationFlowMetadata.registration.title,
+                        steps: VerificationFlowMetadata.registration.steps,
+                        currentStep: 1,
+                      ),
+                    if (_type != 'registration' &&
+                        (_isSecureSettingsFlow || _hasCustomFlowSteps))
+                      FlowStepper(
+                        title: _screenTitle,
+                        steps: _flowSteps,
+                        currentStep: 1,
+                      ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: SpacingTokens.lg,
                         ),
-                        const SizedBox(height: SpacingTokens.sm),
-                        Text(
-                          _screenSubtitle,
-                          style: TypographyTokens.bodySmall(
-                            cs.onSurface.withValues(alpha: 0.5),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-
-                        const SizedBox(height: SpacingTokens.xl),
-
-                        // ─── OTP Input ─────────────────────────
-                        Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: PinCodeTextField(
-                            appContext: context,
-                            length: 6,
-                            onChanged: (value) => _otpCode = value,
-                            onCompleted: (_) => _verifyOtp(),
-                            keyboardType: TextInputType.number,
-                            animationType: AnimationType.fade,
-                            pinTheme: PinTheme(
-                              shape: PinCodeFieldShape.box,
-                              borderRadius: BorderRadius.circular(
-                                SpacingTokens.radiusMd,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: SpacingTokens.xl),
+                              // ─── Instructions ──────────────────────
+                              Text(
+                                'أدخل رمز التحقق',
+                                style: TypographyTokens.h2(cs.onSurface),
+                                textAlign: TextAlign.center,
                               ),
-                              fieldHeight: 56,
-                              fieldWidth: 48,
-                              activeFillColor: cs.surfaceContainerHighest,
-                              inactiveFillColor: cs.surfaceContainerHighest,
-                              selectedFillColor: cs.surfaceContainerHighest,
-                              activeColor: cs.primary,
-                              inactiveColor: cs.outline,
-                              selectedColor: cs.primary,
-                            ),
-                            enableActiveFill: true,
-                            cursorColor: cs.primary,
-                            textStyle: TypographyTokens.h2(cs.onSurface),
+                              const SizedBox(height: SpacingTokens.sm),
+                              Text(
+                                _screenSubtitle,
+                                style: TypographyTokens.bodySmall(
+                                  cs.onSurface.withValues(alpha: 0.5),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+
+                              const SizedBox(height: SpacingTokens.xl),
+
+                              // ─── OTP Input ─────────────────────────
+                              Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: PinCodeTextField(
+                                  appContext: context,
+                                  length: 6,
+                                  onChanged: (value) => _otpCode = value,
+                                  onCompleted: (_) => _verifyOtp(),
+                                  keyboardType: TextInputType.number,
+                                  animationType: AnimationType.fade,
+                                  pinTheme: PinTheme(
+                                    shape: PinCodeFieldShape.box,
+                                    borderRadius: BorderRadius.circular(
+                                      SpacingTokens.radiusMd,
+                                    ),
+                                    fieldHeight: 56,
+                                    fieldWidth: 48,
+                                    activeFillColor: cs.surfaceContainerHighest,
+                                    inactiveFillColor:
+                                        cs.surfaceContainerHighest,
+                                    selectedFillColor:
+                                        cs.surfaceContainerHighest,
+                                    activeColor: cs.primary,
+                                    inactiveColor: cs.outline,
+                                    selectedColor: cs.primary,
+                                  ),
+                                  enableActiveFill: true,
+                                  cursorColor: cs.primary,
+                                  textStyle: TypographyTokens.h2(cs.onSurface),
+                                ),
+                              ),
+
+                              const SizedBox(height: SpacingTokens.lg),
+
+                              // ─── Verify Button ─────────────────────
+                              AppButton(
+                                label: 'تحقق',
+                                onPressed: _otpCode.length == 6
+                                    ? _verifyOtp
+                                    : null,
+                                isLoading: _isLoading,
+                              ),
+
+                              const SizedBox(height: SpacingTokens.lg),
+
+                              // ─── Resend ────────────────────────────
+                              Center(
+                                child: _canResend
+                                    ? TextButton(
+                                        onPressed: _resendOtp,
+                                        child: Text(
+                                          'إعادة إرسال الرمز',
+                                          style: TypographyTokens.bodySmall(
+                                            cs.primary,
+                                          ),
+                                        ),
+                                      )
+                                    : CountdownTimer(
+                                        key: ValueKey(_resendKey),
+                                        seconds: 60,
+                                        onFinished: () =>
+                                            setState(() => _canResend = true),
+                                      ),
+                              ),
+                              const SizedBox(height: SpacingTokens.md),
+                            ],
                           ),
                         ),
-
-                        const SizedBox(height: SpacingTokens.lg),
-
-                        // ─── Verify Button ─────────────────────
-                        AppButton(
-                          label: 'تحقق',
-                          onPressed: _otpCode.length == 6 ? _verifyOtp : null,
-                          isLoading: _isLoading,
-                        ),
-
-                        const SizedBox(height: SpacingTokens.lg),
-
-                        // ─── Resend ────────────────────────────
-                        Center(
-                          child: _canResend
-                              ? TextButton(
-                                  onPressed: _resendOtp,
-                                  child: Text(
-                                    'إعادة إرسال الرمز',
-                                    style: TypographyTokens.bodySmall(
-                                      cs.primary,
-                                    ),
-                                  ),
-                                )
-                              : CountdownTimer(
-                                  key: ValueKey(_resendKey),
-                                  seconds: 60,
-                                  onFinished: () =>
-                                      setState(() => _canResend = true),
-                                ),
-                        ),
-                        const SizedBox(height: SpacingTokens.md),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ],

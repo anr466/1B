@@ -6,6 +6,7 @@ import 'package:trading_app/core/constants/verification_types.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_input.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
@@ -100,97 +101,97 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'نسيت كلمة المرور',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-        ),
         body: SafeArea(
           child: Column(
             children: [
-              FlowStepper(
-                title: 'استعادة كلمة المرور',
-                steps: const [
-                  'إدخال البريد',
-                  'رمز التحقق',
-                  'كلمة المرور الجديدة',
-                ],
-                currentStep: 0,
-              ),
+              AppScreenHeader(title: 'نسيت كلمة المرور', showBack: true),
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: SpacingTokens.lg,
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: SpacingTokens.xl),
-                        Text(
-                          'اختر طريقة الاستعادة ثم أدخل بياناتك',
-                          style: TypographyTokens.body(
-                            cs.onSurface.withValues(alpha: 0.6),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: SpacingTokens.xl),
-
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(
-                              value: 'email',
-                              label: Text('البريد الإلكتروني'),
-                            ),
-                            ButtonSegment(
-                              value: 'sms',
-                              label: Text('رسالة SMS'),
-                            ),
-                          ],
-                          selected: {_method},
-                          onSelectionChanged: (v) {
-                            if (v.isEmpty) return;
-                            setState(() => _method = v.first);
-                          },
-                        ),
-                        const SizedBox(height: SpacingTokens.md),
-
-                        AppInput(
-                          controller: _emailCtrl,
-                          label: 'البريد الإلكتروني',
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) =>
-                              _method == 'sms' ? null : _sendOtp(),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) return 'مطلوب';
-                            if (!v.contains('@')) {
-                              return 'بريد إلكتروني غير صالح';
-                            }
-                            return null;
-                          },
-                        ),
-                        if (_method == 'sms') ...[
-                          const SizedBox(height: SpacingTokens.md),
-                          AppInput(
-                            controller: _phoneCtrl,
-                            label: 'رقم الجوال (اختياري)',
-                            keyboardType: TextInputType.phone,
-                            textInputAction: TextInputAction.done,
-                            onSubmitted: (_) => _sendOtp(),
-                          ),
-                        ],
-                        const SizedBox(height: SpacingTokens.lg),
-                        AppButton(
-                          label: 'إرسال رمز التحقق',
-                          onPressed: _sendOtp,
-                          isLoading: _isLoading,
-                        ),
+                child: Column(
+                  children: [
+                    FlowStepper(
+                      title: 'استعادة كلمة المرور',
+                      steps: const [
+                        'إدخال البريد',
+                        'رمز التحقق',
+                        'كلمة المرور الجديدة',
                       ],
+                      currentStep: 0,
                     ),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: SpacingTokens.lg,
+                        ),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: SpacingTokens.xl),
+                              Text(
+                                'اختر طريقة الاستعادة ثم أدخل بياناتك',
+                                style: TypographyTokens.body(
+                                  cs.onSurface.withValues(alpha: 0.6),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: SpacingTokens.xl),
+                              SegmentedButton<String>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: 'email',
+                                    label: Text('البريد الإلكتروني'),
+                                  ),
+                                  ButtonSegment(
+                                    value: 'sms',
+                                    label: Text('رسالة SMS'),
+                                  ),
+                                ],
+                                selected: {_method},
+                                onSelectionChanged: (v) {
+                                  if (v.isEmpty) return;
+                                  setState(() => _method = v.first);
+                                },
+                              ),
+                              const SizedBox(height: SpacingTokens.md),
+                              AppInput(
+                                controller: _emailCtrl,
+                                label: 'البريد الإلكتروني',
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) =>
+                                    _method == 'sms' ? null : _sendOtp(),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty)
+                                    return 'مطلوب';
+                                  if (!v.contains('@')) {
+                                    return 'بريد إلكتروني غير صالح';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              if (_method == 'sms') ...[
+                                const SizedBox(height: SpacingTokens.md),
+                                AppInput(
+                                  controller: _phoneCtrl,
+                                  label: 'رقم الجوال (اختياري)',
+                                  keyboardType: TextInputType.phone,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => _sendOtp(),
+                                ),
+                              ],
+                              const SizedBox(height: SpacingTokens.lg),
+                              AppButton(
+                                label: 'إرسال رمز التحقق',
+                                onPressed: _sendOtp,
+                                isLoading: _isLoading,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

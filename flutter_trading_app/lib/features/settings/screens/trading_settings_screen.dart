@@ -12,6 +12,7 @@ import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 
 /// Settings Provider
 final settingsDataProvider = FutureProvider.autoDispose<SettingsModel>((
@@ -99,126 +100,140 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'إعدادات التداول',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-        ),
-        body: settingsAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(SpacingTokens.base),
-            child: LoadingShimmer(itemCount: 4, itemHeight: 80),
-          ),
-          error: (e, _) => ErrorState(
-            message: e.toString(),
-            onRetry: () => ref.invalidate(settingsDataProvider),
-          ),
-          data: (s) {
-            return ListView(
-              padding: const EdgeInsets.all(SpacingTokens.base),
-              children: [
-                if (auth.isAdmin) ...[
-                  _PortfolioModeSwitcher(
-                    currentMode: s.activePortfolio,
-                    hasBinanceKeys: s.hasBinanceKeys,
-                    hasConfiguredDbKeys: s.hasConfiguredDbKeys,
-                    keysRequiredForCurrentMode: s.keysRequiredForCurrentMode,
-                    isLoading: _isSwitchingMode,
-                    onModeSelected: (mode) => _changeTradingMode(mode),
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppScreenHeader(title: 'إعدادات التداول', showBack: true),
+              Expanded(
+                child: settingsAsync.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(SpacingTokens.base),
+                    child: LoadingShimmer(itemCount: 4, itemHeight: 80),
                   ),
-                  const SizedBox(height: SpacingTokens.md),
-                ],
-
-                // ──────────────────────────────────────────────────────────────
-                // تفعيل التداول الشخصي - خاص بحساب المستخدم
-                // ملاحظة: هذا يختلف عن تشغيل النظام (خاص بالأدمن)
-                // ──────────────────────────────────────────────────────────
-                AppCard(
-                  padding: const EdgeInsets.all(SpacingTokens.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'تفعيل التداول التلقائي',
-                                  style: TypographyTokens.body(cs.onSurface),
-                                ),
-                                const SizedBox(height: SpacingTokens.xxs),
-                                Text(
-                                  s.tradingEnabled
-                                      ? 'يفتح صفقات جديدة تلقائياً'
-                                      : 'لن يفتح صفقات جديدة',
-                                  style: TypographyTokens.caption(
-                                    cs.onSurface.withValues(alpha: 0.5),
-                                  ),
-                                ),
-                              ],
-                            ),
+                  error: (e, _) => ErrorState(
+                    message: e.toString(),
+                    onRetry: () => ref.invalidate(settingsDataProvider),
+                  ),
+                  data: (s) {
+                    return ListView(
+                      padding: const EdgeInsets.all(SpacingTokens.base),
+                      children: [
+                        if (auth.isAdmin) ...[
+                          _PortfolioModeSwitcher(
+                            currentMode: s.activePortfolio,
+                            hasBinanceKeys: s.hasBinanceKeys,
+                            hasConfiguredDbKeys: s.hasConfiguredDbKeys,
+                            keysRequiredForCurrentMode:
+                                s.keysRequiredForCurrentMode,
+                            isLoading: _isSwitchingMode,
+                            onModeSelected: (mode) => _changeTradingMode(mode),
                           ),
-                          Switch.adaptive(
-                            value: s.tradingEnabled,
-                            onChanged:
-                                (!settingsAsync.isLoading &&
-                                    !settingsAsync.hasError)
-                                ? _onTradingToggle
-                                : null,
-                          ),
+                          const SizedBox(height: SpacingTokens.md),
                         ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: SpacingTokens.md),
-
-                // حالة المخاطرة اليومية
-                _DailyRiskCard(dailyStatus: ref.watch(dailyStatusProvider)),
-                const SizedBox(height: SpacingTokens.md),
-
-                AppCard(
-                  padding: const EdgeInsets.all(SpacingTokens.md),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.auto_awesome, color: cs.primary, size: 24),
-                      const SizedBox(width: SpacingTokens.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'ملخص التحكم',
-                              style: TypographyTokens.body(cs.onSurface),
-                            ),
-                            const SizedBox(height: SpacingTokens.xxs),
-                            Text(
-                              'هذه الشاشة مخصصة فقط لتفعيل التداول واختيار المحفظة النشطة ومراجعة حالة المخاطرة اليومية.',
-                              style: TypographyTokens.caption(
-                                cs.onSurface.withValues(alpha: 0.5),
+                        // ──────────────────────────────────────────────────────────────
+                        // تفعيل التداول الشخصي - خاص بحساب المستخدم
+                        // ملاحظة: هذا يختلف عن تشغيل النظام (خاص بالأدمن)
+                        // ──────────────────────────────────────────────────────────
+                        AppCard(
+                          padding: const EdgeInsets.all(SpacingTokens.md),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'تفعيل التداول التلقائي',
+                                          style: TypographyTokens.body(
+                                            cs.onSurface,
+                                          ),
+                                        ),
+                                        const SizedBox(
+                                          height: SpacingTokens.xxs,
+                                        ),
+                                        Text(
+                                          s.tradingEnabled
+                                              ? 'يفتح صفقات جديدة تلقائياً'
+                                              : 'لن يفتح صفقات جديدة',
+                                          style: TypographyTokens.caption(
+                                            cs.onSurface.withValues(alpha: 0.5),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Switch.adaptive(
+                                    value: s.tradingEnabled,
+                                    onChanged:
+                                        (!settingsAsync.isLoading &&
+                                            !settingsAsync.hasError)
+                                        ? _onTradingToggle
+                                        : null,
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: SpacingTokens.xs),
-                            Text(
-                              'الدخول والخروج وحجم الصفقة وإدارة المخاطر التفصيلية تُدار من محرك التداول الخلفي والاستراتيجية النشطة لتجنب التعارض أو السلوك المضلل.',
-                              style: TypographyTokens.caption(
-                                cs.onSurface.withValues(alpha: 0.45),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(height: SpacingTokens.md),
+                        // حالة المخاطرة اليومية
+                        _DailyRiskCard(
+                          dailyStatus: ref.watch(dailyStatusProvider),
+                        ),
+                        const SizedBox(height: SpacingTokens.md),
+                        AppCard(
+                          padding: const EdgeInsets.all(SpacingTokens.md),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: cs.primary,
+                                size: 24,
+                              ),
+                              const SizedBox(width: SpacingTokens.md),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'ملخص التحكم',
+                                      style: TypographyTokens.body(
+                                        cs.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: SpacingTokens.xxs),
+                                    Text(
+                                      'هذه الشاشة مخصصة فقط لتفعيل التداول واختيار المحفظة النشطة ومراجعة حالة المخاطرة اليومية.',
+                                      style: TypographyTokens.caption(
+                                        cs.onSurface.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                    const SizedBox(height: SpacingTokens.xs),
+                                    Text(
+                                      'الدخول والخروج وحجم الصفقة وإدارة المخاطر التفصيلية تُدار من محرك التداول الخلفي والاستراتيجية النشطة لتجنب التعارض أو السلوك المضلل.',
+                                      style: TypographyTokens.caption(
+                                        cs.onSurface.withValues(alpha: 0.45),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: SpacingTokens.xl),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: SpacingTokens.xl),
-              ],
-            );
-          },
+              ),
+            ],
+          ),
         ),
       ),
     );

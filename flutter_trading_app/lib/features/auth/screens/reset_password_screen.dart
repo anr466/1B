@@ -5,6 +5,7 @@ import 'package:trading_app/core/constants/ux_messages.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/services/api_service.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_input.dart';
@@ -95,106 +96,107 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: cs.surface,
-        appBar: AppBar(
-          title: Text(
-            'كلمة مرور جديدة',
-            style: TypographyTokens.h3(cs.onSurface),
-          ),
-        ),
         body: SafeArea(
           child: Column(
             children: [
-              FlowStepper(
-                title: 'استعادة كلمة المرور',
-                steps: const [
-                  'إدخال البريد',
-                  'رمز التحقق',
-                  'كلمة المرور الجديدة',
-                ],
-                currentStep: 2,
-              ),
+              AppScreenHeader(title: 'كلمة مرور جديدة', showBack: true),
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: SpacingTokens.lg,
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: SpacingTokens.xl),
-                        Text(
-                          'أدخل كلمة المرور الجديدة',
-                          style: TypographyTokens.body(
-                            cs.onSurface.withValues(alpha: 0.6),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: SpacingTokens.xl),
-
-                        AppInput(
-                          controller: _passwordCtrl,
-                          label: 'كلمة المرور الجديدة',
-                          obscureText: _obscure1,
-                          textInputAction: TextInputAction.next,
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscure1
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              color: cs.onSurface.withValues(alpha: 0.4),
-                              size: 20,
-                            ),
-                            onPressed: () =>
-                                setState(() => _obscure1 = !_obscure1),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'مطلوب';
-                            if (!_isStrongPassword(v)) {
-                              return '8 أحرف على الأقل وتحتوي حرف كبير وصغير ورقم';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: SpacingTokens.md),
-
-                        AppInput(
-                          controller: _confirmCtrl,
-                          label: 'تأكيد كلمة المرور',
-                          obscureText: _obscure2,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _resetPassword(),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscure2
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              color: cs.onSurface.withValues(alpha: 0.4),
-                              size: 20,
-                            ),
-                            onPressed: () =>
-                                setState(() => _obscure2 = !_obscure2),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'مطلوب';
-                            if (v != _passwordCtrl.text) {
-                              return 'كلمة المرور غير متطابقة';
-                            }
-                            return null;
-                          },
-                        ),
-
-                        const SizedBox(height: SpacingTokens.lg),
-
-                        AppButton(
-                          label: 'تغيير كلمة المرور',
-                          onPressed: _resetPassword,
-                          isLoading: _isLoading,
-                        ),
+                child: Column(
+                  children: [
+                    FlowStepper(
+                      title: 'استعادة كلمة المرور',
+                      steps: const [
+                        'إدخال البريد',
+                        'رمز التحقق',
+                        'كلمة المرور الجديدة',
                       ],
+                      currentStep: 2,
                     ),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: SpacingTokens.lg,
+                        ),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: SpacingTokens.xl),
+                              Text(
+                                'أدخل كلمة المرور الجديدة',
+                                style: TypographyTokens.body(
+                                  cs.onSurface.withValues(alpha: 0.6),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: SpacingTokens.xl),
+
+                              AppInput(
+                                controller: _passwordCtrl,
+                                label: 'كلمة المرور الجديدة',
+                                obscureText: _obscure1,
+                                textInputAction: TextInputAction.next,
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscure1
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: cs.onSurface.withValues(alpha: 0.4),
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscure1 = !_obscure1),
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.isEmpty) return 'مطلوب';
+                                  if (!_isStrongPassword(v)) {
+                                    return '8 أحرف على الأقل وتحتوي حرف كبير وصغير ورقم';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: SpacingTokens.md),
+
+                              AppInput(
+                                controller: _confirmCtrl,
+                                label: 'تأكيد كلمة المرور',
+                                obscureText: _obscure2,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) => _resetPassword(),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscure2
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: cs.onSurface.withValues(alpha: 0.4),
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscure2 = !_obscure2),
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.isEmpty) return 'مطلوب';
+                                  if (v != _passwordCtrl.text) {
+                                    return 'كلمة المرور غير متطابقة';
+                                  }
+                                  return null;
+                                },
+                              ),
+
+                              const SizedBox(height: SpacingTokens.lg),
+
+                              AppButton(
+                                label: 'تغيير كلمة المرور',
+                                onPressed: _resetPassword,
+                                isLoading: _isLoading,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

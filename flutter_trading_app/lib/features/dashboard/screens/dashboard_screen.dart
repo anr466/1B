@@ -141,7 +141,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 const BrandLogo.mini(size: 14),
                 const SizedBox(width: 4),
                 Text(
-                  'TRADING',
+                  'تداول',
                   style: TypographyTokens.caption(
                     cs.onSurface.withValues(alpha: 0.50),
                   ).copyWith(letterSpacing: 2.0, fontSize: 10),
