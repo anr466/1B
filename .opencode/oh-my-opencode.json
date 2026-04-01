@@ -3,6 +3,7 @@
   "context_injection": {
     "files": [
       "AGENTS.md",
+      "CLAUDE.md",
       ".windsurfrules",
       ".TRADING_BOT_SYSTEM_DESIGN_v1.2.md"
     ],
@@ -10,6 +11,7 @@
       "pattern": "**/*.dart",
       "contexts": [
         "AGENTS.md",
+        "CLAUDE.md",
         ".windsurfrules"
       ]
     },
@@ -17,6 +19,7 @@
       "pattern": "**/*.py",
       "contexts": [
         "AGENTS.md",
+        "CLAUDE.md",
         ".windsurfrules"
       ]
     },
@@ -24,6 +27,26 @@
       "auto_inject": true,
       "show_source": true
     }
+  },
+  "skills": {
+    "path": "/Users/anr/.agents/skills",
+    "auto_load": true,
+    "relevant_skills": [
+      "@brainstorming",
+      "@test-driven-development",
+      "@debugging-strategies",
+      "@security-auditor",
+      "@lint-and-validate",
+      "@frontend-design",
+      "@api-design-principles",
+      "@create-pr",
+      "@planning",
+      "@implementation",
+      "@review",
+      "@refactoring",
+      "@testing",
+      "@documentation"
+    ]
   },
   "hooks": {
     "disabled_hooks": []

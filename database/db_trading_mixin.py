@@ -731,6 +731,9 @@ class DbTradingMixin:
         if entry_commission is None:
             entry_commission = position_size * 0.001 if bool(is_demo) else 0
 
+        # Initialize highest_price to entry_price for proper trailing stop calculation
+        initial_highest = entry_price
+
         try:
             cursor = conn.execute(
                 """
@@ -756,7 +759,7 @@ class DbTradingMixin:
                     position_size,
                     position_type,
                     timeframe,
-                    0,
+                    initial_highest,
                     signal_metadata,
                 ),
             )
@@ -1021,18 +1024,12 @@ class DbTradingMixin:
 
         # الحصول على الرصيد الأولي
         try:
-            if is_demo_flag:
-                init_cursor = conn.execute(
-                    "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
-                    (user_id,),
-                )
-            else:
-                init_cursor = conn.execute(
-                    """
-                    SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
-                """,
-                    (user_id, is_demo_flag),
-                )
+            init_cursor = conn.execute(
+                """
+                SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
+            """,
+                (user_id, is_demo_flag),
+            )
             initial_balance_row = init_cursor.fetchone()
         except Exception as e:
             self.logger.error(f"❌ Error fetching initial balance: {e}")
@@ -1138,40 +1135,6 @@ class DbTradingMixin:
                 is_demo_flag,
             ),
         )
-
-        if is_demo_flag:
-            conn.execute(
-                """
-                INSERT INTO demo_accounts (
-                    user_id, initial_balance, available_balance, invested_balance,
-                    total_balance, total_profit_loss, total_profit_loss_percentage,
-                    total_trades, winning_trades, losing_trades, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id) DO UPDATE SET
-                    initial_balance = EXCLUDED.initial_balance,
-                    available_balance = EXCLUDED.available_balance,
-                    invested_balance = EXCLUDED.invested_balance,
-                    total_balance = EXCLUDED.total_balance,
-                    total_profit_loss = EXCLUDED.total_profit_loss,
-                    total_profit_loss_percentage = EXCLUDED.total_profit_loss_percentage,
-                    total_trades = EXCLUDED.total_trades,
-                    winning_trades = EXCLUDED.winning_trades,
-                    losing_trades = EXCLUDED.losing_trades,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (
-                    user_id,
-                    initial_balance,
-                    available_for_withdrawal,
-                    invested_balance,
-                    total_balance,
-                    total_pnl,
-                    portfolio_growth_pct,
-                    total_trades,
-                    winning_trades,
-                    losing_trades,
-                ),
-            )
 
         return True
 
@@ -1295,40 +1258,6 @@ class DbTradingMixin:
                         is_demo_flag,
                     ),
                 )
-
-                if is_demo_flag:
-                    conn.execute(
-                        """
-                        INSERT INTO demo_accounts (
-                            user_id, initial_balance, available_balance, invested_balance,
-                            total_balance, total_profit_loss, total_profit_loss_percentage,
-                            total_trades, winning_trades, losing_trades, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                        ON CONFLICT (user_id) DO UPDATE SET
-                            initial_balance = EXCLUDED.initial_balance,
-                            available_balance = EXCLUDED.available_balance,
-                            invested_balance = EXCLUDED.invested_balance,
-                            total_balance = EXCLUDED.total_balance,
-                            total_profit_loss = EXCLUDED.total_profit_loss,
-                            total_profit_loss_percentage = EXCLUDED.total_profit_loss_percentage,
-                            total_trades = EXCLUDED.total_trades,
-                            winning_trades = EXCLUDED.winning_trades,
-                            losing_trades = EXCLUDED.losing_trades,
-                            updated_at = CURRENT_TIMESTAMP
-                        """,
-                        (
-                            user_id,
-                            initial_balance,
-                            new_balance,
-                            invested_balance,
-                            total_balance,
-                            total_pnl,
-                            portfolio_growth_pct,
-                            total_trades,
-                            winning_trades,
-                            losing_trades,
-                        ),
-                    )
 
                 return True
         except Exception as e:

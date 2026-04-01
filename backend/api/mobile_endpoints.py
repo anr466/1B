@@ -228,12 +228,8 @@ def get_user_portfolio(user_id):
 
         def load_portfolio_base_balances(owner_id, demo_flag):
             try:
-                if demo_flag == 1:
-                    base_query = "SELECT initial_balance, total_balance, invested_balance FROM demo_accounts WHERE user_id = %s"
-                    rows = db.execute_query(base_query, (owner_id,))
-                else:
-                    base_query = "SELECT initial_balance, total_balance, invested_balance FROM portfolio WHERE user_id = %s AND is_demo = %s"
-                    rows = db.execute_query(base_query, (owner_id, demo_flag))
+                base_query = "SELECT initial_balance, total_balance, invested_balance FROM portfolio WHERE user_id = %s AND is_demo = %s"
+                rows = db.execute_query(base_query, (owner_id, demo_flag == 1))
                 if rows and len(rows) > 0:
                     return rows[0]
             except Exception:
@@ -504,12 +500,8 @@ def get_user_stats(user_id):
 
         def load_stats_base_balances(owner_id, demo_flag):
             try:
-                if demo_flag == 1:
-                    base_query = "SELECT initial_balance, total_balance FROM demo_accounts WHERE user_id = %s"
-                    rows = db.execute_query(base_query, (owner_id,))
-                else:
-                    base_query = "SELECT initial_balance, total_balance FROM portfolio WHERE user_id = %s AND is_demo = %s"
-                    rows = db.execute_query(base_query, (owner_id, demo_flag))
+                base_query = "SELECT initial_balance, total_balance FROM portfolio WHERE user_id = %s AND is_demo = %s"
+                rows = db.execute_query(base_query, (owner_id, demo_flag == 1))
                 if rows and len(rows) > 0:
                     return rows[0]
             except Exception:
@@ -631,16 +623,12 @@ def get_user_stats(user_id):
         pnl_snapshot = db._calculate_user_pnl(portfolio_owner_id, is_demo)
 
         if is_demo:
-            initial_balance_query = """
-                SELECT initial_balance, total_balance,
-                       NULL::DOUBLE PRECISION as first_trade_balance,
-                       NULL::TIMESTAMPTZ as first_trade_at,
-                       'demo_account_seed' as initial_balance_source
-                FROM demo_accounts
-                WHERE user_id = %s
-            """
             portfolio_result = db.execute_query(
-                initial_balance_query,
+                """
+                SELECT initial_balance, total_balance, first_trade_balance, first_trade_at, initial_balance_source
+                FROM portfolio
+                WHERE user_id = %s AND is_demo = TRUE
+                """,
                 (portfolio_owner_id,),
             )
         else:

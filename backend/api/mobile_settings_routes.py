@@ -350,6 +350,19 @@ def register_mobile_settings_routes(bp, shared):
             requested_mode = request.args.get("mode")
 
             # ═══════════════════════════════════════════════════════════════
+            # ✅ Exclusive Mode Logic: Disable other mode when enabling one
+            # ═══════════════════════════════════════════════════════════════
+            trading_enabled = data.get("tradingEnabled", False)
+            if trading_enabled and requested_mode in {"demo", "real"}:
+                other_mode = "real" if requested_mode == "demo" else "demo"
+                other_is_demo = requested_mode == "demo"
+                with db.get_connection() as conn:
+                    conn.execute(
+                        "UPDATE user_settings SET trading_enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s AND is_demo = %s",
+                        (user_id, not other_is_demo),
+                    )
+
+            # ═══════════════════════════════════════════════════════════════
             # ✅ FIX: تطبيع أسماء الحقول — القبول بـ snake_case و camelCase
             # Frontend interceptor يحوّل كل المفاتيح إلى snake_case تلقائياً
             # لكن الكود أدناه يقرأ camelCase — لذلك نطبّع هنا
@@ -503,7 +516,8 @@ def register_mobile_settings_routes(bp, shared):
                 current_mode = current_context["trading_mode"]
                 current_is_demo = bool(current_context["is_demo"])
 
-                # ✅ استثناء الأدمن في الوضع التجريبي: لا يحتاج مفاتيح Binance
+                # Admin demo mode: skip Binance keys check (only for demo)
+                # Admin real mode: requires keys like regular users
                 skip_binance_check = is_admin_user and current_is_demo
 
                 if not skip_binance_check:

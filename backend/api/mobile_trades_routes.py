@@ -940,16 +940,10 @@ def register_mobile_trades_routes(bp, shared):
             )
 
             with db.get_connection() as conn:
-                if is_demo:
-                    portfolio_balance_row = conn.execute(
-                        "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
-                        (portfolio_owner_id,),
-                    ).fetchone()
-                else:
-                    portfolio_balance_row = conn.execute(
-                        "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = FALSE ORDER BY updated_at DESC LIMIT 1",
-                        (portfolio_owner_id,),
-                    ).fetchone()
+                portfolio_balance_row = conn.execute(
+                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s ORDER BY updated_at DESC LIMIT 1",
+                    (portfolio_owner_id, is_demo),
+                ).fetchone()
 
                 # fallback: في real mode فقط، يمكن استخدام آخر رصيد Binance إن
                 # لم تتوفر محفظة

@@ -842,10 +842,9 @@ class PositionManagerMixin:
                 )
 
                 # 2. تحديث رصيد المحفظة (على نفس الاتصال)
-                # ملاحظة: demo_accounts هو المصدر، portfolio.is_demo=TRUE يتم مزامنته
                 if position_is_demo:
                     balance_row = conn.execute(
-                        "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+                        "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1",
                         (self.user_id,),
                     ).fetchone()
                 else:

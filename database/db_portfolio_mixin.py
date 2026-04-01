@@ -1011,21 +1011,19 @@ class DbPortfolioMixin:
             return 0
 
     def _get_admin_portfolio(self, user_id: int, is_demo) -> Dict[str, Any]:
-        """جلب بيانات محفظة الأدمن التجريبية من جدول demo_accounts كمصدر الحقيقة الوحيد"""
+        """جلب بيانات محفظة الأدمن من جدول portfolio"""
         try:
             with self.get_write_connection() as conn:
-                self._ensure_demo_account(conn, user_id)
-                self._sync_demo_account_to_portfolio_on_conn(conn, user_id)
                 portfolio_result = conn.execute(
                     """
                     SELECT total_balance, available_balance, invested_balance,
                            initial_balance, total_profit_loss, total_profit_loss_percentage,
                            updated_at
-                    FROM demo_accounts
-                    WHERE user_id = %s
+                    FROM portfolio
+                    WHERE user_id = %s AND is_demo = %s
                     LIMIT 1
                 """,
-                    (user_id,),
+                    (user_id, bool(is_demo)),
                 ).fetchone()
 
                 if not portfolio_result:
@@ -1128,11 +1126,11 @@ class DbPortfolioMixin:
                     "tradesCount": trades_count,
                     "winRate": f"{win_rate:.1f}%",
                     "firstTradeDate": first_trade_date,
-                    "initialBalanceSource": "demo_account_seed",
+                    "initialBalanceSource": "portfolio",
                     "hasKeys": False,
                     "currency": "USD",
                     "mode": "demo" if is_demo else "real",
-                    "source": "demo_accounts",
+                    "source": "portfolio",
                     "lastUpdate": last_update,
                 }
         except Exception as e:

@@ -180,7 +180,8 @@ class ScannerMixin:
             return entries
 
         # 🔒 حماية أساسية: Cooldown بعد خسائر متتالية
-        if not backtest_mode:
+        # 🎯 production_validation_mode: تخطي Cooldown للسماح باختبار الاستراتيجية
+        if not backtest_mode and not validation_mode:
             can_trade, gate_reason = self._check_risk_gates(
                 open_positions, risk_balance
             )

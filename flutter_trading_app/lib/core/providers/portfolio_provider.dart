@@ -200,22 +200,31 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     }
 
     final previous = state.enabled ?? user.tradingEnabled;
+    final isAdmin = auth.isAdmin;
+    final currentMode = isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
 
     // Optimistic update - only update UI, not auth state yet
     _setStateSafely(state.copyWith(enabled: enabled, isLoading: true));
 
     try {
       final repo = _ref.read(settingsRepositoryProvider);
-      final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
+
+      // Exclusive mode logic for Admin: enable one mode = disable other
+      if (isAdmin && enabled && currentMode != null) {
+        final otherMode = currentMode == 'demo' ? 'real' : 'demo';
+        await repo.updateSettings(user.id, {
+          'tradingEnabled': false,
+        }, mode: otherMode);
+      }
+
       await repo.updateSettings(user.id, {
         'tradingEnabled': enabled,
-      }, mode: mode);
+      }, mode: currentMode);
 
-      final settings = await repo.getSettings(user.id, mode: mode);
+      final settings = await repo.getSettings(user.id, mode: currentMode);
 
       if (_disposed) return true;
 
-      // Update both UI and Auth state AFTER API success
       _setStateSafely(
         state.copyWith(
           enabled: settings.tradingEnabled,
@@ -228,7 +237,6 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
       return true;
     } catch (_) {
       if (_disposed) return false;
-      // Revert UI but NOT auth state (auth wasn't updated optimistically)
       _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
       return false;
     } finally {

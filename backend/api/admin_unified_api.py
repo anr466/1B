@@ -1476,16 +1476,10 @@ def close_position(position_id):
             user_id = int(position["user_id"])
             is_demo = int(position["is_demo"] or 0)
             with get_safe_connection() as balance_conn:
-                if is_demo:
-                    bal_row = balance_conn.execute(
-                        "SELECT available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
-                        (user_id,),
-                    ).fetchone()
-                else:
-                    bal_row = balance_conn.execute(
-                        "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = FALSE LIMIT 1",
-                        (user_id,),
-                    ).fetchone()
+                bal_row = balance_conn.execute(
+                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
+                    (user_id, bool(is_demo)),
+                ).fetchone()
             if bal_row is not None:
                 available_before = float(bal_row[0] or 0)
                 returned_amount = pnl
