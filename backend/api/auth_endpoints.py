@@ -26,11 +26,11 @@ import time
 import re
 from flask import Blueprint, request, jsonify, g
 
+logger = get_logger(__name__)
+
 # إضافة مسار المشروع
 sys.path.append(
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
 
@@ -67,9 +67,9 @@ try:
     from backend.utils.simple_email_otp_service import SimpleEmailOTPService
 
     otp_service = SimpleEmailOTPService()
-    print("✅ SimpleEmailOTPService initialized successfully")
+    logger.info("✅ SimpleEmailOTPService initialized successfully")
 except ImportError as e:
-    print(f"❌ Failed to import SimpleEmailOTPService: {e}")
+    logger.warning(f"❌ Failed to import SimpleEmailOTPService: {e}")
     otp_service = None
 
 try:
@@ -94,9 +94,6 @@ try:
     security_audit = get_security_audit_service()
 except ImportError:
     security_audit = None
-
-# إعداد Logger
-logger = get_logger(__name__)
 
 # إنشاء Blueprint
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -302,9 +299,7 @@ def send_otp():
         email = data.get("email", "").strip().lower()
         operation_type = data.get("operation_type", "register")
         otp_purpose = (
-            "password_reset"
-            if operation_type == "reset_password"
-            else "registration"
+            "password_reset" if operation_type == "reset_password" else "registration"
         )
         phone = (
             data.get("phone")
@@ -337,15 +332,14 @@ def send_otp():
                     {
                         "success": False,
                         "error": "تم إرسال عدة رموز تحقق. يرجى الانتظار 15 دقيقة قبل المحاولة مرة أخرى.",
-                    }),
+                    }
+                ),
                 429,
             )
 
         # إرسال OTP
         if otp_service:
-            success, otp_code = otp_service.send_email_otp(
-                email, purpose=otp_purpose
-            )
+            success, otp_code = otp_service.send_email_otp(email, purpose=otp_purpose)
 
             if success:
                 # ✅ إرسال حسب الطريقة المختارة
@@ -356,9 +350,7 @@ def send_otp():
                             if operation_type == "reset_password"
                             else "التحقق"
                         )
-                        message = (
-                            f"رمز {purpose_msg}: {otp_code}\nصالح لمدة 5 دقائق"
-                        )
+                        message = f"رمز {purpose_msg}: {otp_code}\nصالح لمدة 5 دقائق"
                         sms_service.send_sms(phone, message)
                         logger.info(f"📱 تم إرسال OTP عبر SMS إلى {phone}")
                     except Exception as sms_err:
@@ -383,9 +375,7 @@ def send_otp():
                 masked_target = email
                 if method == "sms" and phone:
                     masked_target = (
-                        phone[:4] + "****" + phone[-2:]
-                        if len(phone) > 6
-                        else phone
+                        phone[:4] + "****" + phone[-2:] if len(phone) > 6 else phone
                     )
                 elif email and "@" in email:
                     masked_target = email[:2] + "***@" + email.split("@")[1]
@@ -393,8 +383,9 @@ def send_otp():
                 return jsonify(
                     {
                         "success": True,
-                        "message": f'تم إرسال رمز التحقق إلى {
-                            "هاتفك" if method == "sms" else "إيميلك"}',
+                        "message": f"تم إرسال رمز التحقق إلى {
+                            'هاتفك' if method == 'sms' else 'إيميلك'
+                        }",
                         "method": method,
                         "masked_target": masked_target,
                         "email": email,
@@ -402,9 +393,7 @@ def send_otp():
                 )
             else:
                 return (
-                    jsonify(
-                        {"success": False, "error": "فشل في إرسال رمز التحقق"}
-                    ),
+                    jsonify({"success": False, "error": "فشل في إرسال رمز التحقق"}),
                     500,
                 )
         else:
@@ -442,16 +431,12 @@ def verify_email_internal():
         otp_code = (data.get("otp_code") or data.get("otp") or "").strip()
         operation_type = data.get("operation_type", "register")
         otp_purpose = (
-            "password_reset"
-            if operation_type == "reset_password"
-            else "registration"
+            "password_reset" if operation_type == "reset_password" else "registration"
         )
 
         if not email or not otp_code:
             return (
-                jsonify(
-                    {"success": False, "error": "الإيميل ورمز OTP مطلوبان"}
-                ),
+                jsonify({"success": False, "error": "الإيميل ورمز OTP مطلوبان"}),
                 400,
             )
 
@@ -481,9 +466,7 @@ def verify_email_internal():
                     )
                 else:
                     return (
-                        jsonify(
-                            {"success": False, "error": "المستخدم غير موجود"}
-                        ),
+                        jsonify({"success": False, "error": "المستخدم غير موجود"}),
                         404,
                     )
             else:
@@ -523,9 +506,7 @@ def resend_otp():
         email = data.get("email", "").strip().lower()
         operation_type = data.get("operation_type", "register")
         otp_purpose = (
-            "password_reset"
-            if operation_type == "reset_password"
-            else "registration"
+            "password_reset" if operation_type == "reset_password" else "registration"
         )
 
         if not email:
@@ -540,19 +521,13 @@ def resend_otp():
             )
 
         # إرسال OTP جديد
-        success, otp_code = otp_service.send_email_otp(
-            email, purpose=otp_purpose
-        )
+        success, otp_code = otp_service.send_email_otp(email, purpose=otp_purpose)
 
         if success:
-            return jsonify(
-                {"success": True, "message": "تم إرسال رمز جديد للإيميل"}
-            )
+            return jsonify({"success": True, "message": "تم إرسال رمز جديد للإيميل"})
         else:
             return (
-                jsonify(
-                    {"success": False, "error": "فشل في إرسال رمز التحقق"}
-                ),
+                jsonify({"success": False, "error": "فشل في إرسال رمز التحقق"}),
                 500,
             )
 
@@ -594,9 +569,7 @@ def send_verification_email():
                 )
             else:
                 return (
-                    jsonify(
-                        {"success": False, "error": "فشل في إرسال بريد التحقق"}
-                    ),
+                    jsonify({"success": False, "error": "فشل في إرسال بريد التحقق"}),
                     500,
                 )
         else:
@@ -740,19 +713,17 @@ def login_user():
                     "UPDATE users SET password_hash = %s WHERE id = %s",
                     (new_hash, user["id"]),
                 )
-                logger.info(f"✅ Password hash upgraded to bcrypt for user {
-                    user['id']}")
-            except Exception as upgrade_err:
-                logger.warning(
-                    f"⚠️ Password hash upgrade failed: {upgrade_err}"
+                logger.info(
+                    f"✅ Password hash upgraded to bcrypt for user {user['id']}"
                 )
+            except Exception as upgrade_err:
+                logger.warning(f"⚠️ Password hash upgrade failed: {upgrade_err}")
 
         logger.debug(
             f"🔐 Login attempt - User: {user.get('username')}, Password match: {password_match}"
         )
         if not password_match:
-            logger.warning(f"❌ Password mismatch for user: {
-                user.get('username')}")
+            logger.warning(f"❌ Password mismatch for user: {user.get('username')}")
 
             # ✅ تسجيل محاولة الدخول الفاشلة
             if security_audit:
@@ -782,7 +753,8 @@ def login_user():
                         "error": "يجب تفعيل البريد الإلكتروني أولاً. يرجى التحقق من بريدك الإلكتروني.",
                         "requires_verification": True,
                         "email": user.get("email"),
-                    }),
+                    }
+                ),
                 403,
             )
 
@@ -850,11 +822,7 @@ def get_verification_methods():
     """✅ جلب طرق التحقق المتاحة لإيميل معين (قبل المصادقة)"""
     try:
         data = request.get_json(silent=True) or {}
-        email = (
-            (data.get("email") or request.args.get("email") or "")
-            .strip()
-            .lower()
-        )
+        email = (data.get("email") or request.args.get("email") or "").strip().lower()
 
         if not email:
             return jsonify({"success": False, "error": "الإيميل مطلوب"}), 400
@@ -870,9 +838,7 @@ def get_verification_methods():
             phone = user.get("phone_number")
             if phone:
                 masked_phone = (
-                    phone[:4] + "****" + phone[-2:]
-                    if len(phone) > 6
-                    else "****"
+                    phone[:4] + "****" + phone[-2:] if len(phone) > 6 else "****"
                 )
                 options.append(
                     {
@@ -884,9 +850,7 @@ def get_verification_methods():
 
             if user.get("email"):
                 e = user["email"]
-                masked_email = (
-                    e[:2] + "***@" + e.split("@")[1] if "@" in e else "***"
-                )
+                masked_email = e[:2] + "***@" + e.split("@")[1] if "@" in e else "***"
                 options.append(
                     {
                         "method": "email",
@@ -936,9 +900,7 @@ def verify_phone_token():
         )
         if requested_user_id and str(requested_user_id) != str(auth_user_id):
             return (
-                jsonify(
-                    {"success": False, "error": "غير مصرح بتحديث مستخدم آخر"}
-                ),
+                jsonify({"success": False, "error": "غير مصرح بتحديث مستخدم آخر"}),
                 403,
             )
 
@@ -960,15 +922,11 @@ def verify_phone_token():
 
             if not auth_user_id:
                 return (
-                    jsonify(
-                        {"success": False, "error": "تعذر تحديد المستخدم"}
-                    ),
+                    jsonify({"success": False, "error": "تعذر تحديد المستخدم"}),
                     401,
                 )
 
-            sms_service.update_user_verification_status(
-                auth_user_id, phone_number
-            )
+            sms_service.update_user_verification_status(auth_user_id, phone_number)
             return jsonify(
                 {
                     "success": True,
@@ -1014,9 +972,7 @@ def validate_session():
         jwt_secret = os.getenv("JWT_SECRET_KEY")
         if not jwt_secret:
             return (
-                jsonify(
-                    {"success": False, "message": "Server configuration error"}
-                ),
+                jsonify({"success": False, "message": "Server configuration error"}),
                 500,
             )
         from ..utils.jwt_manager import JWTManager
@@ -1050,9 +1006,7 @@ def validate_session():
 
             if not user:
                 return (
-                    jsonify(
-                        {"success": False, "message": "المستخدم غير موجود"}
-                    ),
+                    jsonify({"success": False, "message": "المستخدم غير موجود"}),
                     401,
                 )
 
@@ -1102,9 +1056,7 @@ def refresh_token():
         jwt_secret = os.getenv("JWT_SECRET_KEY")
         if not jwt_secret:
             return (
-                jsonify(
-                    {"success": False, "error": "Server configuration error"}
-                ),
+                jsonify({"success": False, "error": "Server configuration error"}),
                 500,
             )
         from ..utils.jwt_manager import JWTManager
@@ -1221,9 +1173,7 @@ def delete_account():
             payload = verify_token(token)
             if not payload:
                 return (
-                    jsonify(
-                        {"success": False, "error": "التوكن غير صالح أو منتهي"}
-                    ),
+                    jsonify({"success": False, "error": "التوكن غير صالح أو منتهي"}),
                     401,
                 )
             user_id = payload.get("user_id")
@@ -1239,18 +1189,14 @@ def delete_account():
         # 4. التحقق من التأكيد
         if confirmation != "DELETE":
             return (
-                jsonify(
-                    {"success": False, "error": "يجب كتابة DELETE للتأكيد"}
-                ),
+                jsonify({"success": False, "error": "يجب كتابة DELETE للتأكيد"}),
                 400,
             )
 
         # 5. التحقق من كلمة المرور
         if not password:
             return (
-                jsonify(
-                    {"success": False, "error": "كلمة المرور مطلوبة للتأكيد"}
-                ),
+                jsonify({"success": False, "error": "كلمة المرور مطلوبة للتأكيد"}),
                 400,
             )
 
@@ -1276,17 +1222,12 @@ def delete_account():
 
             if not _verify_pw(password, user["password_hash"]):
                 return (
-                    jsonify(
-                        {"success": False, "error": "كلمة المرور غير صحيحة"}
-                    ),
+                    jsonify({"success": False, "error": "كلمة المرور غير صحيحة"}),
                     401,
                 )
 
             # 7. منع حذف حساب الأدمن الرئيسي
-            if (
-                user["username"] == "admin_user"
-                or user["email"] == "admin@test.com"
-            ):
+            if user["username"] == "admin_user" or user["email"] == "admin@test.com":
                 return (
                     jsonify(
                         {
@@ -1302,8 +1243,9 @@ def delete_account():
             cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             conn.commit()
 
-            logger.info(f"✅ تم حذف حساب المستخدم {user_id} ({
-                user['username']}) نهائياً")
+            logger.info(
+                f"✅ تم حذف حساب المستخدم {user_id} ({user['username']}) نهائياً"
+            )
 
             return jsonify(
                 {

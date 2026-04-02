@@ -28,6 +28,16 @@ class _MainShellState extends ConsumerState<MainShell> {
   ];
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final location = GoRouterState.of(context).matchedLocation;
+    final idx = _userRoutes.indexOf(location);
+    if (idx >= 0 && idx != _currentIndex) {
+      setState(() => _currentIndex = idx);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
     final isAdmin = auth.isAdmin;
@@ -35,13 +45,6 @@ class _MainShellState extends ConsumerState<MainShell> {
     final barHeight = ResponsiveUtils.isTablet(context)
         ? SpacingTokens.tabBarHeight + 8
         : SpacingTokens.tabBarHeight;
-
-    // Sync index with current route
-    final location = GoRouterState.of(context).matchedLocation;
-    final idx = _userRoutes.indexOf(location);
-    if (idx >= 0 && idx != _currentIndex) {
-      _currentIndex = idx;
-    }
 
     return Scaffold(
       key: const Key('main_shell'),

@@ -673,14 +673,6 @@ _aux_blueprints = [
             ).ml_learning_bp
         ),
     ),
-    (
-        "Portfolio (Flask)",
-        lambda: (
-            __import__(
-                "backend.api.portfolio_endpoints_flask", fromlist=["portfolio_bp"]
-            ).portfolio_bp
-        ),
-    ),
 ]
 
 for name, loader in _aux_blueprints:
