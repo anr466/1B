@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
@@ -290,10 +291,11 @@ final portfolioProvider = FutureProvider.autoDispose<PortfolioModel>((
     throw Exception('غير مصادق');
   }
   final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  // Debug: print mode being used
-  print(
-    '🔍 portfolioProvider: userId=${auth.user!.id}, isAdmin=${auth.isAdmin}, mode=$mode',
-  );
+  if (kDebugMode) {
+    debugPrint(
+      '🔍 portfolioProvider: userId=${auth.user!.id}, isAdmin=${auth.isAdmin}, mode=$mode',
+    );
+  }
   final repo = ref.watch(portfolioRepositoryProvider);
   return repo.getPortfolio(auth.user!.id, mode: mode);
 });
