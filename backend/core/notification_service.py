@@ -4,8 +4,6 @@ from typing import Optional
 
 class NotificationService:
     def __init__(self, db=None):
-        # Lazy-injected DB wrapper; can be replaced with a real DB wrapper
-        # later
         self.db = db
 
     def log_delivery(
@@ -15,12 +13,38 @@ class NotificationService:
         status: str,
         delivered_at: Optional[str] = None,
     ) -> None:
-        """Log a delivery attempt for a notification to ensure idempotency and tracing."""
         delivered_at = delivered_at or datetime.utcnow().isoformat()
-        # Placeholder: insert into notification_delivery_log table
-        # In future, replace with actual DB insert using DB wrapper
-        return None
+        if not self.db:
+            return
+        try:
+            with self.db.get_write_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO notification_delivery_log (user_id, notification_id, status, delivered_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (user_id, notification_id, status, delivered_at),
+                )
+                conn.commit()
+        except Exception:
+            pass
 
     def is_duplicate(self, user_id: int, notification_id: int) -> bool:
-        # Placeholder: check notification_delivery_log for existing delivery
-        return False
+        if not self.db:
+            return False
+        try:
+            with self.db.get_read_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM notification_delivery_log
+                    WHERE user_id = %s AND notification_id = %s AND status = 'delivered'
+                    """,
+                    (user_id, notification_id),
+                )
+                row = cursor.fetchone()
+                return row[0] > 0 if row else False
+        except Exception:
+            return False

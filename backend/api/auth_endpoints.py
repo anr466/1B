@@ -212,14 +212,47 @@ def update_user_password(user_id: int, password_hash: str):
 
 
 def save_password_reset_request(user_id: int, otp_code: str):
-    """حفظ طلب استعادة كلمة المرور"""
     try:
-        # يمكن حفظ طلبات الاستعادة في جدول منفصل للمراقبة
-        # هنا نكتفي بتسجيل العملية
-        log_error(f"طلب استعادة كلمة المرور للمستخدم {user_id}")
-
+        with db_manager.get_write_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO password_reset_requests (user_id, token, expires_at)
+                VALUES (%s, %s, NOW() + INTERVAL '15 minutes')
+                """,
+                (user_id, otp_code),
+            )
+            conn.commit()
+            logger.info(f"✅ Password reset request saved for user {user_id}")
     except Exception as e:
         log_error(f"خطأ في حفظ طلب الاستعادة: {e}")
+
+
+def verify_password_reset_otp(user_id: int, otp_code: str) -> bool:
+    try:
+        with db_manager.get_read_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id FROM password_reset_requests
+                WHERE user_id = %s AND token = %s
+                  AND expires_at > NOW() AND used = FALSE
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (user_id, otp_code),
+            )
+            row = cursor.fetchone()
+            if row:
+                cursor.execute(
+                    "UPDATE password_reset_requests SET used = TRUE WHERE id = %s",
+                    (row[0],),
+                )
+                conn.commit()
+                return True
+            return False
+    except Exception as e:
+        log_error(f"خطأ في التحقق من رمز الاستعادة: {e}")
+        return False
 
 
 def cleanup_verification_data(email: str):
