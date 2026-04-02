@@ -1,37 +1,38 @@
-# CLAUDE.md - Trading Bot System Enhanced Rules
+# 🤖 TRADING BOT SYSTEM — SYSTEM CONSTITUTION
 
-> **Enhanced with Antigravity Awesome Skills v9.4.0 | 1,340+ Agentic Skills**
+> **Unified Constitution for OpenCode + Oh My OpenCode + 1,335 Skills**
+> Last Updated: 2026-04-02 | Version: 2.0
 
 ---
 
-## 🎯 Project Overview
+## 🎯 SYSTEM IDENTITY
 
-**Trading Bot System** - Flutter Mobile App + Python FastAPI Backend + PostgreSQL
+**Trading Bot System** — Flutter Mobile App + Python FastAPI Backend + PostgreSQL
+- **Frontend**: Flutter (Dart) — Arabic RTL UI
+- **Backend**: Python FastAPI — REST API, Trading Logic, State Machine
+- **Database**: PostgreSQL — Users, Positions, Signals, Settings
+- **Trading**: Autonomous trading system (NOT a manual trading engine)
 
-### Tech Stack
-- **Frontend**: Flutter (Dart) - Arabic RTL UI
-- **Backend**: Python FastAPI
-- **Database**: PostgreSQL
-- **Trading**: Autonomous trading system (NOT a trading engine)
+### User Capabilities (MUST follow)
+Users CAN ONLY:
+- ✅ activate/deactivate trading
+- ✅ connect API keys
+- ✅ monitor system status
+- UI = Reflection of System State
 
-### Architecture
+Users CANNOT:
+- ❌ modify trading strategies
+- ❌ modify take profit / stop loss
+- ❌ interfere with trade logic
+
+### User Types
+1. **ADMIN**: Has demo + real wallets, can switch between them
+2. **NORMAL USER**: Real trading only, no demo mode
+
+### Critical Rule: Trading Enable/Disable
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Flutter Mobile App                        │
-│  (Arabic RTL UI, State Management, API Calls)               │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Python FastAPI Backend                    │
-│  (REST API, Trading Logic, State Machine)                    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    PostgreSQL Database                       │
-│  (Users, Positions, Signals, Settings)                      │
-└─────────────────────────────────────────────────────────────┘
+6 users enabled → trading engine OPENS trades for them
+4 users disabled → trading engine ONLY manages their open trades
 ```
 
 ---
@@ -69,171 +70,169 @@ Remember Me → Save credentials during login
 
 ---
 
-## 🛠️ Available Skills (from Antigravity Awesome Skills)
+## 🧠 REASONING PROTOCOL (Branching Logic)
 
-### Core Development Skills
-| Skill | Description | Use Case |
-|-------|-------------|----------|
-| `@brainstorming` | Planning and ideation | Feature planning, MVP design |
-| `@test-driven-development` | TDD workflow | Writing tests first |
-| `@debugging-strategies` | Systematic debugging | Fixing complex bugs |
-| `@security-auditor` | Security review | Code security checks |
-| `@lint-and-validate` | Code quality | Validation checks |
-| `@api-design-principles` | API design | REST API best practices |
-| `@frontend-design` | UI/UX patterns | Flutter UI quality |
-| `@create-pr` | PR packaging | Clean pull requests |
+### Step 0: Intent Classification (BEFORE any action)
+| User Intent | Your Action |
+|---|---|
+| "explain X" / "how does Y work" | explore/librarian → synthesize → answer |
+| "implement X" / "add Y" / "create Z" | plan → delegate → verify |
+| "look into X" / "check Y" | explore → report findings |
+| "what do you think about X?" | evaluate → propose → wait for confirmation |
+| "I'm seeing error X" / "Y is broken" | diagnose → fix minimally |
+| "refactor" / "improve" / "clean up" | assess codebase → propose approach |
 
-### Trading System Skills
-| Skill | Description | Use Case |
-|-------|-------------|----------|
-| `@planning` | Step-by-step planning | Complex feature planning |
-| `@implementation` | Code implementation | Building features |
-| `@review` | Code review | Quality assurance |
-| `@refactoring` | Code refactoring | Improving code structure |
-| `@testing` | Test creation | Unit, integration tests |
-| `@documentation` | Documentation | API docs, comments |
+### Step 1: Exploration (Parallel)
+- Fire 2-5 explore/librarian agents in parallel
+- Use direct tools for known locations
+- NEVER wait for explore results if you have other work
 
-### Flutter-Specific Skills
-| Skill | Description | Use Case |
-|-------|-------------|----------|
-| `@flutter-best-practices` | Flutter patterns | Widget, state management |
-| `@dart-performance` | Performance | Optimization |
-| `@rtl-support` | RTL/UI | Arabic interface |
+### Step 2: Planning (MANDATORY for 2+ steps)
+- Create todo list IMMEDIATELY
+- Mark current task in_progress before starting
+- Mark completed as soon as done
 
-### Python/FastAPI Skills
-| Skill | Description | Use Case |
-|-------|-------------|----------|
-| `@python-best-practices` | Python patterns | Clean code |
-| `@fastapi-patterns` | FastAPI design | REST endpoints |
-| `@async-python` | Async/await | Concurrent operations |
-| `@database-patterns` | DB patterns | PostgreSQL queries |
+### Step 3: Execution (Delegate)
+- Frontend work → `visual-engineering` category
+- Complex logic → `ultrabrain` category
+- Quick fixes → `quick` category
+- Hard problems → `oracle` or `artistry`
 
----
+### Step 4: Verification (MANDATORY)
+- `lsp_diagnostics` clean on changed files
+- Build passes (exit code 0)
+- Tests pass
+- Manual QA executed
 
-## 🚀 ULTRAWORK MODE (When Enabled)
-
-### MANDATORY PROTOCOL
-
-**BEFORE ANY IMPLEMENTATION:**
-1. **UNDERSTAND** - What does the user ACTUALLY want?
-2. **EXPLORE** - Check existing patterns, architecture
-3. **PLAN** - Crystal clear work plan
-4. **RESOLVE** - No ambiguity
-
-**IF NOT 100% CERTAIN:**
-- Use `@brainstorming` skill for planning
-- Use `@debugging-strategies` for complex bugs
-- Consult Oracle for architecture decisions
-
-### CERTAINTY PROTOCOL
-```
-1. THINK DEEPLY → True intent
-2. EXPLORE THOROUGHLY → Fire explore/librarian agents
-3. CONSULT SPECIALISTS → Oracle/Artistry for hard problems
-4. ASK USER → If ambiguity remains
-```
+### Step 5: Re-Audit (MANDATORY after fixes)
+- Run audit again
+- MINIMUM 1 new issue or prove perfect
+- Coverage checkpoint before declaring done
 
 ---
 
-## 📁 Project Structure
+## 📁 SKILL CATEGORIES (Priority Order)
+
+### TIER 1: Core Development (Always Available)
+| Skill | Use Case |
+|---|---|
+| `@brainstorming` | Planning and ideation |
+| `@test-driven-development` | TDD workflow |
+| `@debugging-strategies` | Systematic debugging |
+| `@security-auditor` | Code security checks |
+| `@lint-and-validate` | Validation checks |
+| `@api-design-principles` | REST API best practices |
+| `@frontend-design` | Flutter UI quality |
+| `@create-pr` | Clean pull requests |
+
+### TIER 2: Trading System (Domain-Specific)
+| Skill | Use Case |
+|---|---|
+| `@planning` | Step-by-step planning |
+| `@implementation` | Code implementation |
+| `@review` | Quality assurance |
+| `@refactoring` | Code improvement |
+| `@testing` | Unit/integration tests |
+| `@documentation` | API docs, comments |
+
+### TIER 3: Flutter-Specific
+| Skill | Use Case |
+|---|---|
+| `@flutter-best-practices` | Widget, state management |
+| `@dart-performance` | Performance optimization |
+| `@rtl-support` | Arabic RTL interface |
+
+### TIER 4: Python/FastAPI
+| Skill | Use Case |
+|---|---|
+| `@python-best-practices` | Clean code patterns |
+| `@fastapi-patterns` | REST endpoint design |
+| `@async-python` | Concurrent operations |
+| `@database-patterns` | PostgreSQL queries |
+
+### TIER 5: Security & Compliance (On-Demand)
+| Skill | Use Case |
+|---|---|
+| `@security-audit` | Full security review |
+| `@pentest-checklist` | Penetration testing |
+| `@api-security-best-practices` | API security |
+
+### TIER 6: 1,300+ Additional Skills (Search on Demand)
+- Use `@find-skills` to discover skills for specific tasks
+- Skills organized in `~/.agents/skills/` by category
+- **Do NOT auto-load all 1,335 skills** — load only what's needed
+
+---
+
+## 🏗️ ARCHITECTURE
 
 ### Flutter
 ```
 flutter_trading_app/
 ├── lib/
 │   ├── core/
-│   │   ├── providers/     # State management
+│   │   ├── providers/     # State management (Riverpod)
 │   │   ├── repositories/   # API calls
-│   │   ├── services/       # Business logic
-│   │   └── constants/      # API endpoints
+│   │   ├── services/      # Business logic
+│   │   └── constants/     # API endpoints (SINGLE SOURCE)
 │   ├── features/
-│   │   ├── auth/           # Login, Splash, OTP
-│   │   ├── admin/          # Trading control
+│   │   ├── auth/          # Login, Splash, OTP
+│   │   ├── admin/         # Trading control
 │   │   ├── dashboard/     # Main dashboard
-│   │   ├── portfolio/      # Portfolio view
-│   │   ├── trades/         # Trades list
-│   │   └── settings/       # Settings screens
-│   └── design/             # UI components
+│   │   ├── portfolio/     # Portfolio view
+│   │   ├── trades/        # Trades list
+│   │   └── settings/      # Settings screens
+│   └── design/            # UI components
 ```
 
 ### Backend
 ```
 backend/
-├── api/                    # FastAPI endpoints
+├── api/                   # FastAPI endpoints
 ├── core/
 │   ├── trading_state_machine.py  # SINGLE SOURCE for trading state
-│   └── state_manager.py          # State coordination
+│   └── state_manager.py         # State coordination
 └── infrastructure/
-    └── db_access.py        # Database access
+    └── db_access.py       # Database access
+```
+
+### Database
+```
+PostgreSQL:
+- users (id, email, user_type, is_active)
+- user_settings (user_id, is_demo, trading_enabled, ...)
+- portfolio (user_id, is_demo, total_balance, ...)
+- active_positions (user_id, symbol, entry_price, ...)
+- user_trades (user_id, symbol, pnl, ...)
+- system_status (status, trading_state, ...)
 ```
 
 ---
 
-## 🎨 Code Quality Standards
+## 🔄 WORKFLOW
 
-### Flutter/Dart
-```dart
-// ✅ Good: Clear naming, single responsibility
-class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
-  // Use descriptive names
-  // Keep methods small (< 50 lines)
-  // One responsibility per class
-}
-
-// ❌ Bad: Vague naming, multiple responsibilities
-class Manager {
-  void doStuff() { ... }  // What does this do?
-}
-```
-
-### Python/FastAPI
-```python
-# ✅ Good: Type hints, docstrings
-async def get_user_portfolio(
-    user_id: int,
-    is_demo: bool = False
-) -> Dict[str, Any]:
-    """Get user portfolio data.
-    
-    Args:
-        user_id: The user ID
-        is_demo: Whether to get demo portfolio
-        
-    Returns:
-        Dict with portfolio data
-    """
-    pass
-
-# ❌ Bad: No types, no docs
-def get_data(id, demo=False):
-    pass
-```
-
----
-
-## 📋 Workflow
-
-### Before Any Work
+### Before Any Work:
 1. Read `.windsurfrules`
 2. Read `AGENTS.md`
-3. Read `CLAUDE.md` (this file)
+3. Read this `CLAUDE.md`
 
-### For Each Task
+### For Each Task:
 1. **ANALYZE** → Find issues (min 3)
 2. **PLAN** → Create fix plan
 3. **EXECUTE** → Implement fixes
 4. **TEST** → Run analyze + tests
 5. **COMMIT** → git add -A && git commit && git push
 
-### Coverage Check
+### Coverage Check (BEFORE planning):
 - Layers analyzed? (Backend? DB? Mobile? API?)
 - Features tested? (Auth? Orders? Risk?)
 - Scenarios considered? (Success? Failure? Edge?)
 - States verified? (Initial? Loading? Error?)
+- Integrations checked?
 
 ---
 
-## ⚠️ Auditor Rules (STRICT)
+## ⚠️ AUDITOR RULES (STRICT)
 
 ### Forbidden Phrases
 - ❌ "All good"
@@ -256,7 +255,7 @@ def get_data(id, demo=False):
 
 ---
 
-## 🧪 Testing Requirements
+## 🧪 TESTING REQUIREMENTS
 
 ### Flutter
 ```bash
@@ -267,7 +266,7 @@ flutter test     # All tests pass
 ### Backend
 ```bash
 docker-compose restart api worker
-curl http://10.118.134.44:3002/api/system/status
+curl http://72.60.190.188:3002/api/system/status
 ```
 
 ### Database
@@ -277,16 +276,22 @@ docker exec trading-ai-postgres psql -U trading_user -d trading_ai_bot -c "SELEC
 
 ---
 
-## 📱 Device Configuration
+## 📱 DEVICE & SERVER CONFIGURATION
 
+### Local Device
 - **Device**: SM S908E (Android 16)
 - **USB**: R5CT50P51XX
 - **IP**: 10.118.134.128
-- **Backend**: http://10.118.134.44:3002/api
+
+### Remote Server
+- **IP**: 72.60.190.188
+- **API**: http://72.60.190.188:3002/api
+- **SSH**: root@72.60.190.188
+- **Admin User ID**: 10081 (NOT 1)
 
 ---
 
-## 🔑 Key Insights from Experience
+## 🔑 KEY INSIGHTS FROM EXPERIENCE
 
 ### Auth Flow (FIXED)
 1. Login → credentials saved for biometric automatically
@@ -310,9 +315,15 @@ All screens use `accountTradingProvider.setEnabled()`:
 - Trading state → TradingStateMachine
 - User state → Database (user_settings)
 
+### Database Unification (COMPLETED)
+- `portfolio` table is single source for both demo and real wallets
+- `is_demo` boolean distinguishes wallet types
+- `demo_accounts` table: exists in DB but ZERO code references
+- Admin user ID resolved dynamically (not hardcoded to 1)
+
 ---
 
-## 🚫 Zero Tolerance
+## 🚫 ZERO TOLERANCE
 
 | Violation | Consequence |
 |-----------|-------------|
@@ -321,33 +332,21 @@ All screens use `accountTradingProvider.setEnabled()`:
 | "You can extend this later..." | UNACCEPTABLE |
 | "Due to limitations..." | UNACCEPTABLE |
 | "I made some assumptions..." | UNACCEPTABLE |
+| Hardcoded user_id=1 | UNACCEPTABLE (use dynamic lookup) |
+| Using demo_accounts table | UNACCEPTABLE (use portfolio) |
 
 ---
 
-## 📚 Skill Usage Guidelines
+## 📚 MCP SERVERS
 
-### When to Use Skills
-- **Planning**: Use `@brainstorming` before complex features
-- **Debugging**: Use `@debugging-strategies` for hard bugs
-- **Security**: Use `@security-auditor` for auth/finance code
-- **Testing**: Use `@test-driven-development` for new features
-- **API**: Use `@api-design-principles` for endpoints
-
-### How to Invoke
-```
-Use @skill-name to [task description]
-```
-
-Example:
-```
-Use @brainstorming to design the portfolio refresh mechanism
-Use @security-auditor to review the authentication flow
-Use @debugging-strategies to find why trades aren't showing
-```
+| Server | Command | Purpose |
+|---|---|---|
+| `playwright` | `npx -y @anthropic-ai/mcp-server-playwright` | Browser automation |
+| `filesystem` | `npx -y @anthropic-ai/mcp-server-filesystem` | File system access |
 
 ---
 
-## 🎯 Success Criteria
+## 🎯 SUCCESS CRITERIA
 
 ### Code Quality
 - [ ] 0 flutter analyze errors
@@ -364,4 +363,5 @@ Use @debugging-strategies to find why trades aren't showing
 
 ---
 
-**This file is automatically loaded by OpenCode and enhances every session with project-specific context and capabilities.**
+**This file is the SYSTEM CONSTITUTION — it governs all behavior, reasoning, and execution.**
+**Automatically loaded by OpenCode at session start.**

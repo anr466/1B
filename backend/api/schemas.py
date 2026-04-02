@@ -113,9 +113,7 @@ class ChangePasswordRequest(BaseModel):
     @validator("new_password")
     def passwords_different(cls, v, values):
         if "current_password" in values and v == values["current_password"]:
-            raise ValueError(
-                "كلمة المرور الجديدة يجب أن تكون مختلفة عن القديمة"
-            )
+            raise ValueError("كلمة المرور الجديدة يجب أن تكون مختلفة عن القديمة")
         return v
 
 
@@ -127,9 +125,7 @@ class ChangePasswordRequest(BaseModel):
 class UserSettingsUpdate(BaseModel):
     """تحديث إعدادات المستخدم"""
 
-    trading_enabled: Optional[bool] = Field(
-        None, description="تفعيل/تعطيل التداول"
-    )
+    trading_enabled: Optional[bool] = Field(None, description="تفعيل/تعطيل التداول")
     max_trade_amount: Optional[float] = Field(
         None,
         ge=5.0,
@@ -146,9 +142,7 @@ class UserSettingsUpdate(BaseModel):
     max_open_trades: Optional[int] = Field(
         None, ge=1, le=50, description="عدد الصفقات المفتوحة المسموح (1-50)"
     )
-    trading_mode: Optional[TradingMode] = Field(
-        None, description="وضع التداول"
-    )
+    trading_mode: Optional[TradingMode] = Field(None, description="وضع التداول")
     max_daily_loss_pct: Optional[float] = Field(
         None, ge=1.0, le=50.0, description="حد الخسارة اليومية (1-50%)"
     )
@@ -160,9 +154,7 @@ class UserSettingsUpdate(BaseModel):
             and values["stop_loss_percentage"] is not None
         ):
             if v <= values["stop_loss_percentage"]:
-                raise ValueError(
-                    "نسبة جني الربح يجب أن تكون أكبر من نسبة وقف الخسارة"
-                )
+                raise ValueError("نسبة جني الربح يجب أن تكون أكبر من نسبة وقف الخسارة")
         return v
 
     class Config:
@@ -205,7 +197,7 @@ class BinanceKeysCreate(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "user_id": 1,
+                "user_id": 10081,
                 "api_key": "your_binance_api_key_here",
                 "api_secret": "your_binance_api_secret_here",
             }
@@ -247,11 +239,7 @@ class TradesQueryParams(BaseModel):
 
     @validator("date_to")
     def date_to_after_date_from(cls, v, values):
-        if (
-            v is not None
-            and "date_from" in values
-            and values["date_from"] is not None
-        ):
+        if v is not None and "date_from" in values and values["date_from"] is not None:
             if v < values["date_from"]:
                 raise ValueError("تاريخ النهاية يجب أن يكون بعد تاريخ البداية")
         return v
@@ -299,19 +287,11 @@ class ProfileUpdate(BaseModel):
 class NotificationSettingsUpdate(BaseModel):
     """تحديث إعدادات الإشعارات"""
 
-    trade_opened: Optional[bool] = Field(
-        None, description="إشعار عند فتح صفقة"
-    )
-    trade_closed: Optional[bool] = Field(
-        None, description="إشعار عند إغلاق صفقة"
-    )
-    profit_alert: Optional[bool] = Field(
-        None, description="إشعار عند تحقيق ربح"
-    )
+    trade_opened: Optional[bool] = Field(None, description="إشعار عند فتح صفقة")
+    trade_closed: Optional[bool] = Field(None, description="إشعار عند إغلاق صفقة")
+    profit_alert: Optional[bool] = Field(None, description="إشعار عند تحقيق ربح")
     loss_alert: Optional[bool] = Field(None, description="إشعار عند خسارة")
-    low_balance: Optional[bool] = Field(
-        None, description="إشعار عند انخفاض الرصيد"
-    )
+    low_balance: Optional[bool] = Field(None, description="إشعار عند انخفاض الرصيد")
     system_alerts: Optional[bool] = Field(None, description="إشعارات النظام")
     daily_summary: Optional[bool] = Field(None, description="ملخص يومي")
     weekly_summary: Optional[bool] = Field(None, description="ملخص أسبوعي")
@@ -451,9 +431,7 @@ def validate_pagination_params(page: int, limit: int) -> tuple:
     return page, limit
 
 
-def validate_date_range(
-    date_from: Optional[str], date_to: Optional[str]
-) -> tuple:
+def validate_date_range(date_from: Optional[str], date_to: Optional[str]) -> tuple:
     """التحقق من صحة نطاق التاريخ"""
     if date_from:
         try:

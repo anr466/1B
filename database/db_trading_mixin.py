@@ -1165,18 +1165,10 @@ class DbTradingMixin:
                 losing_trades = stats_row[3] if stats_row else 0
 
                 # الحصول على الرصيد الأولي
-                if is_demo_flag:
-                    initial_balance_row = conn.execute(
-                        "SELECT initial_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
-                        (user_id,),
-                    ).fetchone()
-                else:
-                    initial_balance_row = conn.execute(
-                        """
-                        SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s
-                    """,
-                        (user_id, is_demo_flag),
-                    ).fetchone()
+                initial_balance_row = conn.execute(
+                    "SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
+                    (user_id, is_demo_flag),
+                ).fetchone()
                 initial_balance = (
                     float(initial_balance_row[0] or 0.0) if initial_balance_row else 0.0
                 )

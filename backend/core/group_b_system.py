@@ -180,7 +180,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
     5. تسجيل كل شيء في قاعدة البيانات
     """
 
-    def __init__(self, user_id: int = 1, requested_mode: Optional[str] = None):
+    def __init__(self, user_id: int = None, requested_mode: Optional[str] = None):
         """
         تهيئة نظام التداول
 

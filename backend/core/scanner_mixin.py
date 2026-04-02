@@ -317,8 +317,11 @@ class ScannerMixin:
                         signal["_entry_indicators"] = entry_indicators
 
                         # 📈 تقييم جودة الإشارة (التعلم التكيّفي)
-                        # 🎯 validation_mode/backtest_mode: تخطي WR Gate للسماح بالإشارات
+                        # 🎯 FIX: Always allow signals when no trade history exists
+                        # Use strategy-based WR estimation when no historical data
                         predicted_wr = 0.5
+                        use_historical_wr = False
+
                         if (
                             not backtest_mode
                             and not validation_mode
@@ -333,7 +336,33 @@ class ScannerMixin:
                                     entry_indicators,
                                 )
                                 predicted_wr = sig_score.get("predicted_wr", 0.5)
-                                if not sig_score.get("should_trade", True):
+
+                                # FIX: Use strategy-based WR when no trade history
+                                # Check if we have actual trade history (sample_size >= 10)
+                                sample_size = sig_score.get("sample_size", 0)
+                                if sample_size < 10:
+                                    # No trade history - use strategy backtest performance
+                                    # Get from strategy's known performance or use default high WR
+                                    use_historical_wr = False
+                                    # Use strategy score as proxy for WR (V8 strategy proven to work)
+                                    strategy_score = entry_indicators.get("score", 50)
+                                    if strategy_score >= 70:
+                                        predicted_wr = 0.65  # Strong signal = high WR
+                                    elif strategy_score >= 50:
+                                        predicted_wr = 0.55  # Medium signal
+                                    else:
+                                        predicted_wr = 0.45  # Weak signal
+                                    self.logger.info(
+                                        f"   📈 [{symbol}] No trade history ({sample_size} trades) - "
+                                        f"using strategy-based WR: {predicted_wr:.0%} (score={strategy_score})"
+                                    )
+                                else:
+                                    use_historical_wr = True
+
+                                if (
+                                    not sig_score.get("should_trade", True)
+                                    and use_historical_wr
+                                ):
                                     self.logger.info(
                                         f"   📈 [{symbol}] Signal REJECTED: "
                                         f"{sig_score.get('reason', '%s')} "

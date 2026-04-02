@@ -34,68 +34,24 @@ class DbPortfolioMixin:
 
         conn.execute(
             """
-            INSERT INTO demo_accounts (
-                user_id, initial_balance, available_balance, invested_balance,
-                total_balance, total_profit_loss, total_profit_loss_percentage,
-                total_trades, winning_trades, losing_trades, updated_at
-            ) VALUES (%s, %s, %s, 0.0, %s, 0.0, 0.0, 0, 0, 0, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id) DO NOTHING
-            """,
-            (
-                user_id,
-                self.DEMO_ACCOUNT_INITIAL_BALANCE,
-                self.DEMO_ACCOUNT_INITIAL_BALANCE,
-                self.DEMO_ACCOUNT_INITIAL_BALANCE,
-            ),
-        )
-
-    def _sync_demo_account_to_portfolio_on_conn(self, conn, user_id: int) -> None:
-        self._ensure_demo_account(conn, user_id)
-        demo_row = conn.execute(
-            """
-            SELECT initial_balance, available_balance, invested_balance, total_balance,
-                   total_profit_loss, total_profit_loss_percentage,
-                   total_trades, winning_trades, losing_trades
-            FROM demo_accounts
-            WHERE user_id = %s
-            LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
-
-        if not demo_row:
-            return
-
-        conn.execute(
-            """
             INSERT INTO portfolio (
                 user_id, is_demo, total_balance, available_balance, invested_balance,
                 total_profit_loss, total_profit_loss_percentage, initial_balance,
                 total_trades, winning_trades, losing_trades, updated_at
             ) VALUES (%s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id, is_demo) DO UPDATE SET
-                total_balance = EXCLUDED.total_balance,
-                available_balance = EXCLUDED.available_balance,
-                invested_balance = EXCLUDED.invested_balance,
-                total_profit_loss = EXCLUDED.total_profit_loss,
-                total_profit_loss_percentage = EXCLUDED.total_profit_loss_percentage,
-                initial_balance = EXCLUDED.initial_balance,
-                total_trades = EXCLUDED.total_trades,
-                winning_trades = EXCLUDED.winning_trades,
-                losing_trades = EXCLUDED.losing_trades,
-                updated_at = CURRENT_TIMESTAMP
+            ON CONFLICT (user_id, is_demo) DO NOTHING
             """,
             (
                 user_id,
-                float(demo_row[3] or 0.0),
-                float(demo_row[1] or 0.0),
-                float(demo_row[2] or 0.0),
-                float(demo_row[4] or 0.0),
-                float(demo_row[5] or 0.0),
-                float(demo_row[0] or self.DEMO_ACCOUNT_INITIAL_BALANCE),
-                int(demo_row[6] or 0),
-                int(demo_row[7] or 0),
-                int(demo_row[8] or 0),
+                self.DEMO_ACCOUNT_INITIAL_BALANCE,
+                self.DEMO_ACCOUNT_INITIAL_BALANCE,
+                0.0,
+                0.0,
+                0.0,
+                self.DEMO_ACCOUNT_INITIAL_BALANCE,
+                0,
+                0,
+                0,
             ),
         )
 
@@ -105,7 +61,7 @@ class DbPortfolioMixin:
         self._ensure_demo_account(conn, user_id)
 
         current_demo = conn.execute(
-            "SELECT initial_balance, available_balance FROM demo_accounts WHERE user_id = %s LIMIT 1",
+            "SELECT initial_balance, available_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1",
             (user_id,),
         ).fetchone()
         initial_balance = (
@@ -155,7 +111,7 @@ class DbPortfolioMixin:
 
         conn.execute(
             """
-            UPDATE demo_accounts
+            UPDATE portfolio
             SET initial_balance = %s,
                 available_balance = %s,
                 invested_balance = %s,
@@ -166,7 +122,7 @@ class DbPortfolioMixin:
                 winning_trades = %s,
                 losing_trades = %s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = %s
+            WHERE user_id = %s AND is_demo = TRUE
             """,
             (
                 initial_balance,
@@ -211,7 +167,7 @@ class DbPortfolioMixin:
 
         conn.execute(
             """
-            UPDATE demo_accounts
+            UPDATE portfolio
             SET initial_balance = %s,
                 available_balance = %s,
                 invested_balance = 0.0,
@@ -221,10 +177,8 @@ class DbPortfolioMixin:
                 total_trades = 0,
                 winning_trades = 0,
                 losing_trades = 0,
-                last_reset_at = CURRENT_TIMESTAMP,
-                reset_count = COALESCE(reset_count, 0) + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = %s
+            WHERE user_id = %s AND is_demo = TRUE
             """,
             (
                 resolved_initial_balance,
@@ -383,7 +337,7 @@ class DbPortfolioMixin:
                             [f"{key} = %s" for key in demo_updates.keys()]
                         )
                         conn.execute(
-                            f"UPDATE demo_accounts SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s",
+                            f"UPDATE portfolio SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s AND is_demo = TRUE",
                             list(demo_updates.values()) + [user_id],
                         )
                 try:
@@ -526,7 +480,7 @@ class DbPortfolioMixin:
                     or self.DEMO_ACCOUNT_INITIAL_BALANCE,
                 )
                 self.logger.info(
-                    f"تمت إعادة تهيئة الحساب التجريبي للمستخدم {user_id} من المصدر الموحد demo_accounts"
+                    f"تمت إعادة تهيئة الحساب التجريبي للمستخدم {user_id} من المصدر الموحد portfolio"
                 )
 
                 # PostgreSQL aborts entire transaction on error — use SAVEPOINT for optional cleanup
@@ -1432,7 +1386,7 @@ class DbPortfolioMixin:
             self.logger.error(f"خطأ في حذف مفاتيح Binance: {e}")
             return False
 
-    def reset_demo_account(self, user_id: int = 1):
+    def reset_demo_account(self, user_id: int = None):
         """إعادة ضبط بيانات الحساب للأدمن - مسح جميع البيانات وإعادة الرصيد إلى 1000$"""
         try:
             with self.get_write_connection() as conn:

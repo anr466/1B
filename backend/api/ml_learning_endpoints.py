@@ -25,9 +25,7 @@ except (ImportError, ModuleNotFoundError):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             return (
-                jsonify(
-                    {"success": False, "error": "Auth system unavailable"}
-                ),
+                jsonify({"success": False, "error": "Auth system unavailable"}),
                 503,
             )
 
@@ -91,7 +89,7 @@ def get_system_health():
     """
     try:
         # يمكن جلب هذا من جميع المستخدمين أو مستخدم محدد
-        user_id = request.args.get("user_id", type=int, default=1)
+        user_id = request.args.get("user_id", type=int)
 
         from backend.ml.smart_incremental_learning import get_learning_system
 
@@ -131,7 +129,7 @@ def get_combination_details(combination):
         }
     """
     try:
-        user_id = request.args.get("user_id", type=int, default=1)
+        user_id = request.args.get("user_id", type=int)
 
         from backend.ml.smart_incremental_learning import get_learning_system
 
@@ -212,9 +210,7 @@ def get_learning_summary():
                 "total_users": total_users,
                 "total_signals": total_signals,
                 "average_win_rate": (
-                    sum(all_win_rates) / len(all_win_rates)
-                    if all_win_rates
-                    else 0
+                    sum(all_win_rates) / len(all_win_rates) if all_win_rates else 0
                 ),
                 "active_users": total_users,
             }
@@ -250,7 +246,7 @@ def trigger_health_check():
     """
     try:
         data = request.get_json() or {}
-        user_id = data.get("user_id", 1)
+        user_id = data.get("user_id")
 
         from backend.ml.smart_incremental_learning import get_learning_system
         from backend.infrastructure.db_access import get_db_manager

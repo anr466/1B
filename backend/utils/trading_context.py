@@ -1,6 +1,21 @@
 from typing import Any, Dict, Optional
 
 
+def get_admin_user_id(db) -> Optional[int]:
+    """Resolve the first active admin user_id dynamically.
+
+    Replaces all hardcoded user_id=1 references.
+    Works regardless of whether admin is id=1, 10081, or any other value.
+    """
+    try:
+        rows = db.execute_query(
+            "SELECT id FROM users WHERE user_type = 'admin' AND is_active = TRUE ORDER BY id LIMIT 1"
+        )
+        return int(rows[0]["id"]) if rows else None
+    except Exception:
+        return None
+
+
 def is_admin_user(db, user_id: int) -> bool:
     user_data = db.get_user_by_id(user_id)
     return bool(user_data and user_data.get("user_type") == "admin")
