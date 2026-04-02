@@ -238,3 +238,23 @@ tests/reports/device_captures/
 tmp_user_settings_sync_result.txt
 flutter_trading_app/.metadata
 backend/ml/saved_models/*.incompatible_*.bak
+
+# 🗑️ MISC CLEANUP
+# ==========================================
+# Temporary analysis files
+FLUTTER_ANALYSIS.md
+screenshot*.png
+tmp/
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.playwright-mcp/
+.mcp/
+
+# Build artifacts
+web/
+ecosystem.config.js
+
+# Old SSH helper (use SSH config instead)
+add_ssh_key.sh
