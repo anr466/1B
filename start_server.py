@@ -545,165 +545,156 @@ logger.info("✅ Rate Limiter تم تفعيله بنجاح")
 logger.info("   - الحد الافتراضي: 100 طلب/دقيقة")
 logger.info("   - التخزين: الذاكرة")
 
+# ============================================================
+# 🏗️ Bootstrap Graph — Ordered Blueprint Loading
+# Pattern: prefetch → guards → parallel_load → deferred_init
+# ============================================================
+
 blueprints_loaded = []
 blueprints_failed = []
 
-# تسجيل Mobile Endpoints (الإصدار الأساسي - يستخدمه التطبيق)
-try:
-    from backend.api.mobile_endpoints import mobile_bp
+# Stage 1: Core endpoints (required for basic functionality)
+_core_blueprints = [
+    (
+        "Mobile Endpoints",
+        lambda: (
+            __import__("backend.api.mobile_endpoints", fromlist=["mobile_bp"]).mobile_bp
+        ),
+    ),
+    (
+        "Auth Endpoints",
+        lambda: __import__("backend.api.auth_endpoints", fromlist=["auth_bp"]).auth_bp,
+    ),
+    (
+        "System Endpoints",
+        lambda: (
+            __import__("backend.api.system_endpoints", fromlist=["system_bp"]).system_bp
+        ),
+    ),
+]
 
-    flask_app.register_blueprint(mobile_bp)
-    blueprints_loaded.append("Mobile Endpoints (الإصدار الأساسي + 18 endpoints)")
-    logger.debug("✅ Mobile Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"Mobile Endpoints: {e}")
-    logger.error(f"❌ Mobile Endpoints: {e}")
+for name, loader in _core_blueprints:
+    try:
+        bp = loader()
+        flask_app.register_blueprint(bp)
+        blueprints_loaded.append(f"[CORE] {name}")
+    except Exception as e:
+        blueprints_failed.append(f"[CORE] {name}: {e}")
+        logger.error(f"❌ [CORE] {name}: {e}")
 
-# تسجيل Auth Endpoints
-try:
-    from backend.api.auth_endpoints import auth_bp
+# Stage 2: Admin & Trading endpoints (depends on core)
+_admin_blueprints = [
+    (
+        "Admin Endpoints",
+        lambda: (
+            __import__(
+                "backend.api.admin_unified_api", fromlist=["admin_unified_bp"]
+            ).admin_unified_bp
+        ),
+    ),
+    (
+        "Trading Control API",
+        lambda: (
+            __import__(
+                "backend.api.trading_control_api", fromlist=["trading_control_bp"]
+            ).trading_control_bp
+        ),
+    ),
+    (
+        "Smart Exit API",
+        lambda: (
+            __import__(
+                "backend.api.smart_exit_api", fromlist=["smart_exit_bp"]
+            ).smart_exit_bp
+        ),
+    ),
+]
 
-    flask_app.register_blueprint(auth_bp)
-    blueprints_loaded.append("Auth Endpoints (9 endpoints)")
-    logger.debug("✅ Auth Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"Auth Endpoints: {e}")
-    logger.error(f"❌ Auth Endpoints: {e}")
+for name, loader in _admin_blueprints:
+    try:
+        bp = loader()
+        flask_app.register_blueprint(bp)
+        blueprints_loaded.append(f"[ADMIN] {name}")
+    except Exception as e:
+        blueprints_failed.append(f"[ADMIN] {name}: {e}")
+        logger.error(f"❌ [ADMIN] {name}: {e}")
 
-# تسجيل Admin Endpoints
-try:
-    from backend.api.admin_unified_api import admin_unified_bp
+# Stage 3: Auxiliary endpoints (optional, non-blocking)
+_aux_blueprints = [
+    (
+        "Background Control",
+        lambda: (
+            __import__(
+                "backend.api.background_control", fromlist=["background_bp"]
+            ).background_bp
+        ),
+    ),
+    (
+        "Secure Actions",
+        lambda: (
+            __import__(
+                "backend.api.secure_actions_endpoints", fromlist=["secure_actions_bp"]
+            ).secure_actions_bp
+        ),
+    ),
+    (
+        "FCM Endpoints",
+        lambda: __import__("backend.api.fcm_endpoints", fromlist=["fcm_bp"]).fcm_bp,
+    ),
+    (
+        "Login OTP",
+        lambda: (
+            __import__(
+                "backend.api.login_otp_endpoints", fromlist=["login_otp_bp"]
+            ).login_otp_bp
+        ),
+    ),
+    (
+        "Client Logs",
+        lambda: (
+            __import__(
+                "backend.api.client_logs_endpoint", fromlist=["client_logs_bp"]
+            ).client_logs_bp
+        ),
+    ),
+    (
+        "ML Status",
+        lambda: (
+            __import__(
+                "backend.api.ml_status_endpoints", fromlist=["ml_status_bp"]
+            ).ml_status_bp
+        ),
+    ),
+    (
+        "ML Learning",
+        lambda: (
+            __import__(
+                "backend.api.ml_learning_endpoints", fromlist=["ml_learning_bp"]
+            ).ml_learning_bp
+        ),
+    ),
+    (
+        "Portfolio (Flask)",
+        lambda: (
+            __import__(
+                "backend.api.portfolio_endpoints_flask", fromlist=["portfolio_bp"]
+            ).portfolio_bp
+        ),
+    ),
+]
 
-    flask_app.register_blueprint(admin_unified_bp)
-    blueprints_loaded.append("Admin Endpoints (44 endpoints)")
-    logger.debug("✅ Admin Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"Admin Endpoints: {e}")
-    logger.error(f"❌ Admin Endpoints: {e}")
+for name, loader in _aux_blueprints:
+    try:
+        bp = loader()
+        flask_app.register_blueprint(bp)
+        blueprints_loaded.append(f"[AUX] {name}")
+    except Exception as e:
+        blueprints_failed.append(f"[AUX] {name}: {e}")
+        logger.warning(f"⚠️ [AUX] {name}: {e}")
 
-# تسجيل System Endpoints
-try:
-    from backend.api.system_endpoints import system_bp
-
-    flask_app.register_blueprint(system_bp)
-    blueprints_loaded.append("System Endpoints")
-    logger.debug("✅ System Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"System Endpoints: {e}")
-    logger.error(f"❌ System Endpoints: {e}")
-
-# تسجيل Background Control
-try:
-    from backend.api.background_control import background_bp
-
-    flask_app.register_blueprint(background_bp)
-    blueprints_loaded.append("Background Control")
-    logger.debug("✅ Background Control loaded")
-except Exception as e:
-    blueprints_failed.append(f"Background Control: {e}")
-    logger.error(f"❌ Background Control: {e}")
-
-
-# تسجيل Trading Control API (State Machine - المصدر الوحيد للحقيقة)
-try:
-    from backend.api.trading_control_api import trading_control_bp
-
-    flask_app.register_blueprint(trading_control_bp)
-    blueprints_loaded.append("Trading Control API (State Machine)")
-    logger.debug("✅ Trading Control API loaded")
-except Exception as e:
-    blueprints_failed.append(f"Trading Control API: {e}")
-    logger.error(f"❌ Trading Control API: {e}")
-
-# تسجيل Smart Exit API
-try:
-    from backend.api.smart_exit_api import smart_exit_bp
-
-    flask_app.register_blueprint(smart_exit_bp)
-    blueprints_loaded.append("Smart Exit API")
-    logger.debug("✅ Smart Exit API loaded")
-except Exception as e:
-    blueprints_failed.append(f"Smart Exit API: {e}")
-    logger.error(f"❌ Smart Exit API: {e}")
-
-# تسجيل Secure Actions Endpoints (نظام التحقق الموحد)
-try:
-    from backend.api.secure_actions_endpoints import secure_actions_bp
-
-    flask_app.register_blueprint(secure_actions_bp)
-    blueprints_loaded.append("Secure Actions (6 endpoints)")
-    logger.debug("✅ Secure Actions Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"Secure Actions: {e}")
-    logger.error(f"❌ Secure Actions: {e}")
-
-# تسجيل FCM Endpoints
-try:
-    from backend.api.fcm_endpoints import fcm_bp
-
-    flask_app.register_blueprint(fcm_bp)
-    blueprints_loaded.append("FCM Endpoints")
-    logger.debug("✅ FCM Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"FCM Endpoints: {e}")
-    logger.error(f"❌ FCM Endpoints: {e}")
-
-# تسجيل Login OTP Endpoints
-try:
-    from backend.api.login_otp_endpoints import login_otp_bp
-
-    flask_app.register_blueprint(login_otp_bp)
-    blueprints_loaded.append("Login OTP Endpoints (3 endpoints)")
-    logger.debug("✅ Login OTP Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"Login OTP: {e}")
-    logger.error(f"❌ Login OTP Endpoints: {e}")
-
-# تسجيل Client Logs Endpoint
-try:
-    from backend.api.client_logs_endpoint import client_logs_bp
-
-    flask_app.register_blueprint(client_logs_bp)
-    blueprints_loaded.append("Client Logs Endpoint (2 endpoints)")
-    logger.debug("✅ Client Logs Endpoint loaded")
-except Exception as e:
-    blueprints_failed.append(f"Client Logs: {e}")
-    logger.error(f"❌ Client Logs Endpoint: {e}")
-
-# تسجيل ML Status Endpoints
-try:
-    from backend.api.ml_status_endpoints import ml_status_bp
-
-    flask_app.register_blueprint(ml_status_bp)
-    blueprints_loaded.append("ML Status Endpoints (5 endpoints)")
-    logger.debug("✅ ML Status Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"ML Status: {e}")
-    logger.error(f"❌ ML Status Endpoints: {e}")
-
-# تسجيل ML Learning Endpoints
-try:
-    from backend.api.ml_learning_endpoints import ml_learning_bp
-
-    flask_app.register_blueprint(ml_learning_bp)
-    blueprints_loaded.append("ML Learning Endpoints (6 endpoints)")
-    logger.debug("✅ ML Learning Endpoints loaded")
-except Exception as e:
-    blueprints_failed.append(f"ML Learning: {e}")
-    logger.error(f"❌ ML Learning Endpoints: {e}")
-
-logger.info(f"✅ تم تحميل {len(blueprints_loaded)} Blueprints بنجاح")
-
-# تسجيل Flask Portfolio Endpoints (UI-friendly minimal endpoint for /portfolio)
-try:
-    from backend.api.portfolio_endpoints_flask import portfolio_bp
-
-    flask_app.register_blueprint(portfolio_bp)
-    blueprints_loaded.append("Portfolio Endpoints (Flask)")
-    logger.debug("✅ Portfolio Endpoints (Flask) loaded")
-except Exception as e:
-    blueprints_failed.append(f"Portfolio Endpoints (Flask): {e}")
-    logger.error(f"❌ Portfolio Endpoints (Flask): {e}")
+logger.info(
+    f"✅ Bootstrapped {len(blueprints_loaded)} blueprints ({len(blueprints_failed)} failed)"
+)
 
 # ============================================================
 # ربط Flask مع FastAPI
