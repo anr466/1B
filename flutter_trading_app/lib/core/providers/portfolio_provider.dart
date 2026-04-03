@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
@@ -283,26 +282,17 @@ final dailyStatusProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
 });
 
 /// Portfolio data provider — passes mode for admin users
-final portfolioProvider = FutureProvider.autoDispose<PortfolioModel>((
-  ref,
-) async {
+final portfolioProvider = FutureProvider<PortfolioModel>((ref) async {
   final auth = ref.watch(authProvider);
   if (!auth.isAuthenticated || auth.user == null) {
     throw Exception('غير مصادق');
   }
   final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  if (kDebugMode) {
-    debugPrint(
-      '🔍 portfolioProvider: userId=${auth.user!.id}, isAdmin=${auth.isAdmin}, mode=$mode',
-    );
-  }
   final repo = ref.watch(portfolioRepositoryProvider);
   return repo.getPortfolio(auth.user!.id, mode: mode);
 });
 
-final activePositionsProvider = FutureProvider.autoDispose<List<TradeModel>>((
-  ref,
-) async {
+final activePositionsProvider = FutureProvider<List<TradeModel>>((ref) async {
   final auth = ref.watch(authProvider);
   if (!auth.isAuthenticated || auth.user == null) {
     throw Exception('غير مصادق');
@@ -313,14 +303,15 @@ final activePositionsProvider = FutureProvider.autoDispose<List<TradeModel>>((
 });
 
 /// Successful (qualified) coins provider
-final successfulCoinsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-      final auth = ref.watch(authProvider);
-      if (!auth.isAuthenticated || auth.user == null) return [];
-      final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-      final repo = ref.watch(portfolioRepositoryProvider);
-      return repo.getSuccessfulCoins(auth.user!.id, mode: mode);
-    });
+final successfulCoinsProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
+  final auth = ref.watch(authProvider);
+  if (!auth.isAuthenticated || auth.user == null) return [];
+  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
+  final repo = ref.watch(portfolioRepositoryProvider);
+  return repo.getSuccessfulCoins(auth.user!.id, mode: mode);
+});
 
 /// Stats data provider — passes mode for admin users
 /// ✅ NOT autoDispose for auto-refresh support
