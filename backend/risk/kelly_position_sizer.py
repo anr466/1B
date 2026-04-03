@@ -67,11 +67,11 @@ class KellyPositionSizer:
                 win_rate = historical_performance.get("winning_trades", 0) / max(
                     historical_performance.get("total_trades", 1), 1
                 )
-                avg_win = historical_performance.get(
-                    "avg_win_pct", self.default_avg_win
+                avg_win = (
+                    historical_performance.get("avg_win_pct") or self.default_avg_win
                 )
                 avg_loss = abs(
-                    historical_performance.get("avg_loss_pct", self.default_avg_loss)
+                    historical_performance.get("avg_loss_pct") or self.default_avg_loss
                 )
                 avg_rr = avg_win / max(avg_loss, 0.001)
                 confidence = "HIGH"
@@ -85,7 +85,7 @@ class KellyPositionSizer:
             kelly_pct = raw_kelly * 0.5
 
             # تطبيق الحدود (min_position_pct و max_position_pct كلاهما عشري)
-            effective_max = min(self.max_position_pct, max_position_pct)
+            effective_max = min(self.max_position_pct, max_position_pct or 0.15)
             kelly_pct = max(self.min_position_pct, min(kelly_pct, effective_max))
 
             return {
@@ -113,16 +113,14 @@ class KellyPositionSizer:
             win_rate = winning_trades / total_trades
             loss_rate = 1 - win_rate
 
-            avg_win_pct = perf.get("avg_win_pct", self.default_avg_win)
-            avg_loss_pct = abs(perf.get("avg_loss_pct", self.default_avg_loss))
+            avg_win_pct = perf.get("avg_win_pct") or self.default_avg_win
+            avg_loss_pct = abs(perf.get("avg_loss_pct") or self.default_avg_loss)
 
-            # Kelly Formula
             if avg_win_pct == 0:
                 return 0.02
 
             kelly = (win_rate * avg_win_pct - loss_rate * avg_loss_pct) / avg_win_pct
 
-            # التأكد من قيمة موجبة
             kelly = max(0.01, kelly)
 
             return kelly
