@@ -43,11 +43,11 @@ V8_CONFIG = {
     # === ENTRY: Keep V7.1 proven system, block only verified losers ===
     "v8_block_reversal": True,
     "v8_block_long_in_downtrend": True,
-    # === EXIT: Production Settings (PF=1.44, WR=61.2%, R:R=1.08)
+    # === EXIT: Production Settings - FIXED trailing activation >= distance
     # Breakeven
     "breakeven_trigger": 0.0015,  # Aggressive BE at +0.15%
-    # Trailing
-    "trailing_activation": 0.001,  # Activate trail at +0.1%
+    # Trailing - activation MUST be >= distance to prevent exit below entry
+    "trailing_activation": 0.002,  # Activate trail at +0.2% (was 0.1% — BUG FIX)
     "trailing_distance": 0.0015,  # 0.15% base distance
     # Progressive trail tightening (verified optimal)
     "v8_progressive_trail": {
@@ -75,19 +75,21 @@ V8_CONFIG = {
 # Portfolio mode configs
 AGGRESSIVE_CONFIG = {
     **V8_CONFIG,
-    "position_size_pct": 0.08,  # 8% per trade
-    "max_positions": 7,  # More concurrent
-    "max_hold_hours": 4,  # Even shorter
-    "trailing_distance": 0.001,  # Tighter trailing
+    "position_size_pct": 0.08,
+    "max_positions": 7,
+    "max_hold_hours": 4,
+    "trailing_activation": 0.0015,
+    "trailing_distance": 0.001,
 }
 
 CONSERVATIVE_CONFIG = {
     **V8_CONFIG,
-    "position_size_pct": 0.04,  # 4% per trade
-    "max_positions": 3,  # Fewer concurrent
-    "max_hold_hours": 10,  # Longer hold allowed
-    "trailing_distance": 0.002,  # Wider trailing
-    "breakeven_trigger": 0.003,  # Later BE
+    "position_size_pct": 0.04,
+    "max_positions": 3,
+    "max_hold_hours": 10,
+    "trailing_activation": 0.0025,
+    "trailing_distance": 0.002,
+    "breakeven_trigger": 0.003,
 }
 
 
