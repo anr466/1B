@@ -554,6 +554,8 @@ class PositionManagerMixin:
                             tag in rc_upper for tag in ["SL", "STOP_LOSS", "EMERGENCY"]
                         ):
                             use_exit_confirmation = True
+                        elif "TRAILING" in rc_upper:
+                            use_exit_confirmation = True
 
                     if use_exit_confirmation:
                         try:
@@ -562,13 +564,18 @@ class PositionManagerMixin:
                             )
                             if conf.get("decision") == "HOLD":
                                 self.logger.info(
-                                    f"   💧 [{
-                                        symbol
-                                    }] ExitConfirmation HOLD: exit_score={
-                                        conf.get('exit_score', 0):.1f} "
-                                    f"hold_score={conf.get('hold_score', 0):.1f}"
+                                    f"   💧 [{symbol}] ExitConfirmation HOLD: "
+                                    f"exit={conf.get('exit_score', 0):.1f} "
+                                    f"hold={conf.get('hold_score', 0):.1f}"
+                                )
+                                self._log_exit_decision(
+                                    symbol, position, exit_result, conf, "HOLD"
                                 )
                                 return None
+                            else:
+                                self._log_exit_decision(
+                                    symbol, position, exit_result, conf, "EXIT"
+                                )
                         except Exception as e:
                             self.logger.warning(
                                 f"⚠️ ExitConfirmation error for {symbol}: {e}"
@@ -1341,3 +1348,58 @@ class PositionManagerMixin:
             self.logger.debug(f"   🛡️ SL updated to ${new_sl:.4f} (breakeven)")
         except Exception as e:
             self.logger.error(f"Error updating stop loss: {e}")
+
+    def _log_exit_decision(
+        self,
+        symbol: str,
+        position: dict,
+        exit_result: dict,
+        confirmation: dict,
+        decision: str,
+    ):
+        """تسجيل قرار الخروج/البقاء للتعلم لاحقاً"""
+        try:
+            entry_price = float(position.get("entry_price", 0) or 0)
+            current_price = float(exit_result.get("exit_price", 0) or 0)
+            side = str(position.get("position_type", "long")).upper()
+
+            if side == "SHORT":
+                pnl_at_decision = (
+                    (entry_price - current_price) / entry_price
+                    if entry_price > 0
+                    else 0
+                )
+            else:
+                pnl_at_decision = (
+                    (current_price - entry_price) / entry_price
+                    if entry_price > 0
+                    else 0
+                )
+
+            with self.db.get_write_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO signal_verification_log
+                    (symbol, signal_side, strategy, entry_price, stop_loss,
+                     score, confidence, trend, predicted_wr, risk_reward_ratio,
+                     mode, entry_indicators, rejection_reason)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        symbol,
+                        side,
+                        "exit_confirmation",
+                        entry_price,
+                        position.get("stop_loss", 0),
+                        confirmation.get("exit_score", 0),
+                        confirmation.get("hold_score", 0),
+                        position.get("signal_type", "unknown"),
+                        pnl_at_decision,
+                        0,
+                        "exit_decision",
+                        None,
+                        f"decision={decision}|reason={exit_result.get('reason', '')}",
+                    ),
+                )
+        except Exception as e:
+            self.logger.debug(f"Exit decision log skipped: {e}")
