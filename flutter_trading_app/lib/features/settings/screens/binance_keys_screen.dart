@@ -117,6 +117,37 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
     final auth = ref.read(authProvider);
     if (auth.user == null) return;
 
+    final cs = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: cs.surfaceContainerHighest,
+          title: Text(
+            'تأكيد حفظ المفاتيح',
+            style: TypographyTokens.h3(cs.onSurface),
+          ),
+          content: Text(
+            'سيتم استبدال المفاتيح الحالية بالمفاتيح الجديدة. هل أنت متأكد؟',
+            style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('تأكيد', style: TextStyle(color: cs.primary)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
     setState(() => _isSaving = true);
     try {
       final repo = ref.read(settingsRepositoryProvider);

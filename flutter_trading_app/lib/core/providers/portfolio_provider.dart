@@ -386,13 +386,7 @@ Future<bool> toggleTradingWithBiometric({
       .read(accountTradingProvider.notifier)
       .setEnabled(enabled);
 
-  ref.invalidate(portfolioProvider);
-  ref.invalidate(statsProvider);
-  ref.invalidate(activePositionsProvider);
-  ref.invalidate(recentTradesProvider);
-  ref.invalidate(tradesListProvider);
-  ref.invalidate(dailyStatusProvider);
-  ref.invalidate(systemStatusProvider);
+  refreshTradingData(ref);
 
   showMessage(
     success
