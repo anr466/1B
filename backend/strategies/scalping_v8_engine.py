@@ -43,30 +43,29 @@ V8_CONFIG = {
     # === ENTRY: Keep V7.1 proven system, block only verified losers ===
     "v8_block_reversal": True,
     "v8_block_long_in_downtrend": True,
-    # === EXIT: V8 Production Settings (WR=62.8%, PF=1.64, 60-day tested) ===
+    # === EXIT: FIX 4 — Best tested config (WR=65.4%, PF=2.28, +$114) ===
     # Breakeven
-    "breakeven_trigger": 0.0015,
-    # Trailing (verified optimal — DO NOT CHANGE without full backtest)
-    "trailing_activation": 0.002,
-    "trailing_distance": 0.0015,
-    # Progressive trail tightening (verified optimal)
+    "breakeven_trigger": 0.003,
+    # Trailing — wider to let winners run
+    "trailing_activation": 0.005,
+    "trailing_distance": 0.003,
+    # Progressive trail tightening
     "v8_progressive_trail": {
-        0.015: 0.0006,
-        0.010: 0.0008,
-        0.005: 0.0010,
-        0.003: 0.0012,
-        0.002: 0.0015,
+        0.020: 0.0010,
+        0.015: 0.0015,
+        0.010: 0.0020,
+        0.005: 0.0030,
     },
-    # Smart early exit DISABLED — verified net negative (-$617 in backtest)
+    # Smart early exit DISABLED
     "v8_smart_cut_1": None,
     "v8_smart_cut_2": None,
     "v8_smart_cut_3": None,
-    # Time-based (verified optimal)
+    # Time-based — FIX 4 values
     "early_cut_hours": 0,
     "early_cut_loss": 0,
-    "stagnant_hours": 2,
-    "stagnant_threshold": 0.0005,
-    "max_hold_hours": 6,
+    "stagnant_hours": 6,
+    "stagnant_threshold": 0.001,
+    "max_hold_hours": 12,
     # Costs
     "commission_pct": 0.001,
     "slippage_pct": 0.0005,

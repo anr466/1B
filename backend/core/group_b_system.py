@@ -115,6 +115,7 @@ except ImportError as e:
 from backend.core.position_manager import PositionManagerMixin
 from backend.core.scanner_mixin import ScannerMixin
 from backend.core.risk_manager_mixin import RiskManagerMixin
+from backend.core.unified_trading_engine import UnifiedTradingEngine
 from backend.utils.smart_coin_selector import SmartCoinSelector
 
 logger = get_logger(__name__)
@@ -262,6 +263,10 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             binance_client = self.binance_manager.client
         self.coin_selector = SmartCoinSelector(binance_client)
         self.logger.info(f"🪙 Smart Coin Selector initialized")
+
+        # ===== Unified Trading Engine (Regime-Aware, Spot+Margin) =====
+        self.unified_engine = UnifiedTradingEngine(self.user_id, self.is_demo_trading)
+        self.logger.info("🔗 Unified Trading Engine initialized")
 
         # ===== الاستراتيجية النشطة (عبر واجهة BaseStrategy الموحدة) =====
         # القانون: النظام لا يعرف أي استراتيجية يشغّل — يستخدم الواجهة فقط
