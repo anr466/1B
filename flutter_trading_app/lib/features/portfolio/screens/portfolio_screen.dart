@@ -157,7 +157,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'إجمالي الربح الحالي',
+                                            'إجمالي الربح/الخسارة',
                                             style: TypographyTokens.caption(
                                               cs.onSurface.withValues(
                                                 alpha: 0.4,

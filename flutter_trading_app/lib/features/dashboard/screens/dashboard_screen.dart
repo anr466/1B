@@ -254,7 +254,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     children: [
                       Expanded(
                         child: _BalanceSummaryMetric(
-                          label: 'إجمالي الربح الحالي',
+                          label: 'إجمالي الربح/الخسارة',
                           amount: p.totalPnl,
                           percentage: p.totalPnlPct,
                         ),

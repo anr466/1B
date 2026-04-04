@@ -109,7 +109,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                                         Expanded(
                                           child: _metric(
                                             cs,
-                                            'إجمالي الربح الحالي',
+                                            'إجمالي الربح/الخسارة',
                                             pnl: s.totalPnl,
                                           ),
                                         ),
@@ -342,10 +342,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final ordered = closed.reversed.toList();
         double cumulative = 0;
         final spots = <FlSpot>[];
+        final dollarValues = <double>[];
         for (var i = 0; i < ordered.length; i++) {
           final tradePnl = ordered[i].pnl ?? 0;
           if (tradePnl.isNaN || tradePnl.isInfinite) continue;
           cumulative += tradePnl;
+          dollarValues.add(cumulative);
           final cumulativePct = referenceBalance > 0
               ? (cumulative / referenceBalance) * 100
               : 0.0;
@@ -496,20 +498,42 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                           leftTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
-                              reservedSize: 36,
+                              reservedSize: 48,
                               interval: horizontalInterval,
-                              getTitlesWidget: (value, meta) => Padding(
-                                padding: const EdgeInsetsDirectional.only(
-                                  end: 6,
-                                ),
-                                child: Text(
-                                  '${value.toStringAsFixed(0)}%',
-                                  style: TypographyTokens.caption(
-                                    cs.onSurface.withValues(alpha: 0.45),
+                              getTitlesWidget: (value, meta) {
+                                final idx = value.round();
+                                final dollarVal =
+                                    (idx >= 0 && idx < dollarValues.length)
+                                    ? dollarValues[idx]
+                                    : null;
+                                return Padding(
+                                  padding: const EdgeInsetsDirectional.only(
+                                    end: 6,
                                   ),
-                                  textAlign: TextAlign.start,
-                                ),
-                              ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${value.toStringAsFixed(0)}%',
+                                        style: TypographyTokens.caption(
+                                          cs.onSurface.withValues(alpha: 0.45),
+                                        ),
+                                        textAlign: TextAlign.start,
+                                      ),
+                                      if (dollarVal != null)
+                                        Text(
+                                          '\$${dollarVal.toStringAsFixed(1)}',
+                                          style: TypographyTokens.caption(
+                                            cs.onSurface.withValues(alpha: 0.3),
+                                          ),
+                                          textAlign: TextAlign.start,
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -524,16 +548,22 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                             ),
                             fitInsideHorizontally: true,
                             fitInsideVertically: true,
-                            getTooltipItems: (touchedSpots) =>
-                                touchedSpots.map((spot) {
-                                  final pct = spot.y;
-                                  return LineTooltipItem(
-                                    '${pct.toStringAsFixed(2)}%',
-                                    TypographyTokens.caption(
-                                      cs.onSurface,
-                                    ).copyWith(fontWeight: FontWeight.w700),
-                                  );
-                                }).toList(),
+                            getTooltipItems: (touchedSpots) => touchedSpots.map((
+                              spot,
+                            ) {
+                              final pct = spot.y;
+                              final idx = spot.x.round();
+                              final dollarVal =
+                                  (idx >= 0 && idx < dollarValues.length)
+                                  ? dollarValues[idx]
+                                  : 0.0;
+                              return LineTooltipItem(
+                                '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%\n\$${dollarVal.toStringAsFixed(2)}',
+                                TypographyTokens.caption(
+                                  cs.onSurface,
+                                ).copyWith(fontWeight: FontWeight.w700),
+                              );
+                            }).toList(),
                           ),
                           getTouchedSpotIndicator: (barData, spotIndexes) {
                             return spotIndexes.map((_) {
