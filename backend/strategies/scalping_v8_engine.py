@@ -43,29 +43,30 @@ V8_CONFIG = {
     # === ENTRY: Keep V7.1 proven system, block only verified losers ===
     "v8_block_reversal": True,
     "v8_block_long_in_downtrend": True,
-    # === EXIT: Optimized (WR=40.8%, tested 30-day backtest) ===
+    # === EXIT: V8 Production Settings (WR=62.8%, PF=1.64, 60-day tested) ===
     # Breakeven
-    "breakeven_trigger": 0.003,  # BE at +0.3% (was 0.15% — too aggressive)
-    # Trailing — optimized for WR (was 0.2%/0.15% — too tight)
-    "trailing_activation": 0.005,  # Activate trail at +0.5% (was 0.2%)
-    "trailing_distance": 0.003,  # 0.3% base distance (was 0.15%)
-    # Progressive trail tightening — wider for better WR
+    "breakeven_trigger": 0.0015,
+    # Trailing (verified optimal — DO NOT CHANGE without full backtest)
+    "trailing_activation": 0.002,
+    "trailing_distance": 0.0015,
+    # Progressive trail tightening (verified optimal)
     "v8_progressive_trail": {
-        0.020: 0.0010,  # At +2.0% profit → 0.10% trail
-        0.015: 0.0015,  # At +1.5% profit → 0.15% trail
-        0.010: 0.0020,  # At +1.0% profit → 0.20% trail
-        0.005: 0.0030,  # At +0.5% profit → 0.30% trail
+        0.015: 0.0006,
+        0.010: 0.0008,
+        0.005: 0.0010,
+        0.003: 0.0012,
+        0.002: 0.0015,
     },
-    # Smart early exit DISABLED - loses money in backtest
+    # Smart early exit DISABLED — verified net negative (-$617 in backtest)
     "v8_smart_cut_1": None,
     "v8_smart_cut_2": None,
     "v8_smart_cut_3": None,
-    # Time-based
+    # Time-based (verified optimal)
     "early_cut_hours": 0,
     "early_cut_loss": 0,
-    "stagnant_hours": 4,  # Was 2 — too fast, cut winners prematurely
-    "stagnant_threshold": 0.001,  # Was 0.0005 — too sensitive
-    "max_hold_hours": 12,  # Was 6 — too short, didn't let winners run
+    "stagnant_hours": 2,
+    "stagnant_threshold": 0.0005,
+    "max_hold_hours": 6,
     # Costs
     "commission_pct": 0.001,
     "slippage_pct": 0.0005,
