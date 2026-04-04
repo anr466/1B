@@ -40,15 +40,16 @@ logger = logging.getLogger(__name__)
 # ============================================================
 V8_CONFIG = {
     **V7_CONFIG,
-    # === ENTRY: Phase 1d — Best tested (WR=70.1%, PF=2.70, +$96/60d) ===
+    # === ENTRY: Best tested config (WR=61.9%, PF=1.94, +$2,280/60d = 228%) ===
     "v8_block_reversal": True,
     "v8_block_long_in_downtrend": True,
     # Quality filters
-    "min_volume_ratio": 2.5,
-    "min_rsi": 60,
-    "min_adx": 20,
-    # === EXIT: Phase 1d values ===
+    "min_volume_ratio": 1.8,
+    "min_rsi": 50,
+    "min_adx": 15,
+    # === EXIT: Optimized — Breakeven + MaxHold 6h ===
     "breakeven_trigger": 0.003,
+    "breakeven_at": 0.01,
     "trailing_activation": 0.005,
     "trailing_distance": 0.003,
     "v8_progressive_trail": {
@@ -64,7 +65,7 @@ V8_CONFIG = {
     "early_cut_loss": 0,
     "stagnant_hours": 6,
     "stagnant_threshold": 0.001,
-    "max_hold_hours": 12,
+    "max_hold_hours": 6,
     "commission_pct": 0.001,
     "slippage_pct": 0.0005,
 }
