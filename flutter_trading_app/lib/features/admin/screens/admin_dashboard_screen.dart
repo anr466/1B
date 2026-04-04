@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
@@ -219,7 +220,9 @@ class AdminDashboardScreen extends ConsumerWidget {
             label: 'إجمالي الربح',
             value: '\$${totalProfit.toStringAsFixed(2)}',
             icon: BrandIcons.wallet,
-            valueColor: totalProfit >= 0 ? cs.primary : cs.error,
+            valueColor: totalProfit >= 0
+                ? SemanticColors.of(context).positive
+                : cs.error,
           ),
         ),
       ],

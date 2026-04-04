@@ -102,6 +102,7 @@ except ImportError as e:
 from backend.core.position_manager import PositionManagerMixin
 from backend.core.scanner_mixin import ScannerMixin
 from backend.core.risk_manager_mixin import RiskManagerMixin
+from backend.utils.smart_coin_selector import SmartCoinSelector
 
 logger = get_logger(__name__)
 
@@ -203,6 +204,12 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.is_demo_trading = self._determine_trading_mode()
         self.user_portfolio = self._load_user_portfolio()
         self.can_trade = self.user_settings.get("trading_enabled", False)
+
+        # ===== Smart Coin Selector =====
+        binance_client = None
+        if self.binance_manager and hasattr(self.binance_manager, "client"):
+            binance_client = self.binance_manager.client
+        self.coin_selector = SmartCoinSelector(binance_client)
 
         # ===== المكونات النشطة فقط =====
         self.data_provider = DataProvider()
@@ -453,14 +460,6 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             return False
 
     def _get_trading_symbols(self) -> List[str]:
-        """
-        الحصول على قائمة العملات للتداول من قاعدة البيانات
-
-        🎯 PRODUCTION VALIDATION MODE:
-        - production_validation_mode=True: يستخدم BACKTEST_SYMBOLS (14 رمز من الاختبار الخلفي)
-        - backtest_mode=True: يستخدم BACKTEST_SYMBOLS مع تخطي كل البوابات
-        - الوضع العادي: يستخدم successful_coins أو DEFAULT_SYMBOLS_POOL
-        """  # 🎯 PRODUCTION VALIDATION MODE: استخدام الرموز الـ 14 من الاختبار الخلفي
         validation_mode = (
             _os.environ.get("TRADING_PRODUCTION_VALIDATION", "true").lower() == "true"
         )
@@ -474,30 +473,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             )
             return BACKTEST_SYMBOLS.copy()
 
-        try:
-            rows = self._load_successful_coin_rows()
-            if not rows:
-                self.logger.warning(
-                    "⚠️ لا توجد عملات في DB - استخدام القائمة الافتراضية"
-                )
-                return DEFAULT_SYMBOLS_POOL.copy()
-
-            ranked_rows = self._rank_successful_coin_rows(rows)
-            if not ranked_rows:
-                self.logger.warning(
-                    "⚠️ تعذر بناء ranked candidates - استخدام القائمة الافتراضية"
-                )
-                return DEFAULT_SYMBOLS_POOL.copy()
-
-            symbols = self._refine_trading_symbol_candidates(ranked_rows)
-            self.logger.info(
-                f"✅ تم اختيار {len(symbols)} عملة للتداول من successful_coins "
-                f"(candidates={len(ranked_rows)})"
-            )
-            return symbols
-        except Exception as e:
-            self.logger.error(f"❌ خطأ في تحميل العملات: {e}")
-            return DEFAULT_SYMBOLS_POOL.copy()
+        max_coins = self.config.get("max_symbols_per_scan", 20)
+        timeframe = self.config.get("execution_timeframe", "1h")
+        return self.coin_selector.get_coins_to_scan(
+            max_coins=max_coins, timeframe=timeframe
+        )
 
     def _load_successful_coin_rows(self) -> List[tuple]:
         with self.db.get_connection() as conn:

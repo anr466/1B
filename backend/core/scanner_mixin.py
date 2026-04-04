@@ -238,6 +238,10 @@ class ScannerMixin:
 
             for symbol in symbols_to_scan:
                 try:
+                    # Record this scan for candle-aware tracking
+                    if hasattr(self, "coin_selector"):
+                        self.coin_selector.record_scan(symbol)
+
                     # فحص القائمة السوداء
                     if self.dynamic_blacklist.is_blacklisted(symbol):
                         continue
