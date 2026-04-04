@@ -38,19 +38,51 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   bool _isSwitchingMode = false;
 
   Future<void> _changeTradingMode(String mode) async {
-    final auth = ref.read(authProvider);
-    if (auth.user == null || !auth.isAdmin) return;
+    final cs = Theme.of(context).colorScheme;
+    final isDemo = mode == 'demo';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: cs.surfaceContainerHighest,
+          title: Text(
+            isDemo ? 'التبديل للتجريبي' : 'التبديل للحقيقي',
+            style: TypographyTokens.h3(cs.onSurface),
+          ),
+          content: Text(
+            isDemo
+                ? 'سيتم عرض بيانات المحفظة التجريبية. هل تريد المتابعة؟'
+                : 'سيتم عرض بيانات المحفظة الحقيقية. تأكد من وجود مفاتيح Binance. هل تريد المتابعة؟',
+            style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('تبديل', style: TextStyle(color: cs.primary)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
 
     setState(() => _isSwitchingMode = true);
     try {
       final repo = ref.read(settingsRepositoryProvider);
+      final auth = ref.read(authProvider);
+      if (auth.user == null) return;
+
       final result = await repo.updateTradingMode(auth.user!.id, mode);
       if (!mounted) return;
-
       if (result['success'] == true) {
         ref.read(adminPortfolioModeProvider.notifier).state = mode;
-        // Note: settingsDataProvider auto-invalidates when adminPortfolioModeProvider changes
-        // Only invalidate data that depends on the mode (portfolio, stats, positions)
         ref.invalidate(portfolioProvider);
         ref.invalidate(statsProvider);
         ref.invalidate(activePositionsProvider);
@@ -80,6 +112,45 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   }
 
   Future<void> _onTradingToggle(bool v) async {
+    final cs = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: cs.surfaceContainerHighest,
+          title: Text(
+            v ? 'تفعيل التداول' : 'إيقاف التداول',
+            style: TypographyTokens.h3(cs.onSurface),
+          ),
+          content: Text(
+            v
+                ? 'سيبدأ النظام بفتح صفقات جديدة تلقائياً. هل تريد المتابعة؟'
+                : 'لن يفتح النظام صفقات جديدة. الصفقات المفتوحة ستُدار حتى الإغلاق. هل تريد المتابعة؟',
+            style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                v ? 'تفعيل' : 'إيقاف',
+                style: TextStyle(
+                  color: v ? cs.primary : cs.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
     await toggleTradingWithBiometric(
       ref: ref,
       enabled: v,

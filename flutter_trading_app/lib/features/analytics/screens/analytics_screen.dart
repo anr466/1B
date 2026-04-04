@@ -183,13 +183,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                               ),
                               const SizedBox(width: SpacingTokens.sm),
                               Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'معامل الربح',
-                                  value: s.profitFactor.toStringAsFixed(2),
-                                  footer: _progressBar(
-                                    cs,
-                                    (s.profitFactor / 3).clamp(0, 1),
-                                    cs.primary,
+                                child: Tooltip(
+                                  message:
+                                      'إجمالي الأرباح ÷ إجمالي الخسائر. '
+                                      'قيمة > 1 تعني أن الأرباح أكبر من الخسائر. '
+                                      'قيمة مثالية: 1.5+',
+                                  child: FinancialMetricTile(
+                                    label: 'معامل الربح',
+                                    value: s.profitFactor.toStringAsFixed(2),
+                                    footer: _progressBar(
+                                      cs,
+                                      (s.profitFactor / 3).clamp(0, 1),
+                                      cs.primary,
+                                    ),
                                   ),
                                 ),
                               ),
