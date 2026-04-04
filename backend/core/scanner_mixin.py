@@ -263,6 +263,38 @@ class ScannerMixin:
                     signal = self.strategy.detect_entry(df, {"trend": trend})
                     if not signal:
                         self.logger.info(f"   ⏭️ [{symbol}] trend={trend} → no signal")
+                        continue
+
+                    # ===== Quality Filters from V8_CONFIG =====
+                    min_vol = self.strategy.get_config().get("min_volume_ratio", 0)
+                    min_rsi_val = self.strategy.get_config().get("min_rsi", 0)
+                    min_adx_val = self.strategy.get_config().get("min_adx", 0)
+
+                    if min_vol > 1.0:
+                        vol_ma = df["volume"].rolling(20).mean().iloc[-1]
+                        if vol_ma > 0:
+                            vol_ratio = df["volume"].iloc[-1] / vol_ma
+                            if vol_ratio < min_vol:
+                                self.logger.info(
+                                    f"   📊 [{symbol}] Volume filter: {vol_ratio:.1f}x < {min_vol}x → skip"
+                                )
+                                continue
+
+                    if min_rsi_val > 0:
+                        rsi_val = df["rsi"].iloc[-1] if "rsi" in df.columns else 50
+                        if rsi_val < min_rsi_val:
+                            self.logger.info(
+                                f"   📊 [{symbol}] RSI filter: {rsi_val:.0f} < {min_rsi_val} → skip"
+                            )
+                            continue
+
+                    if min_adx_val > 0:
+                        adx_val = df["adx"].iloc[-1] if "adx" in df.columns else 25
+                        if adx_val < min_adx_val:
+                            self.logger.info(
+                                f"   📊 [{symbol}] ADX filter: {adx_val:.0f} < {min_adx_val} → skip"
+                            )
+                            continue
 
                     # ===== Smart Money Enhancement =====
                     # تحسين الإشارة بتحليل Smart Money إذا كان متاحاً
