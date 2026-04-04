@@ -316,7 +316,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             "max_positions": strategy_cfg.get("max_positions", 5),
             # 🎯 PRODUCTION VALIDATION MODE: محاذاة نتائج الاختبار الخلفي
             "production_validation_mode": _os.environ.get(
-                "TRADING_PRODUCTION_VALIDATION", "true"
+                "TRADING_PRODUCTION_VALIDATION", "false"
             ).lower()
             == "true",
             "backtest_mode": _os.environ.get("TRADING_BACKTEST_MODE", "false").lower()
@@ -474,8 +474,8 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             )
             return BACKTEST_SYMBOLS.copy()
 
-        max_coins = self.config.get("max_symbols_per_scan", 20)
-        timeframe = self.config.get("execution_timeframe", "1h")
+        max_coins = getattr(self, "config", {}).get("max_symbols_per_scan", 20)
+        timeframe = getattr(self, "config", {}).get("execution_timeframe", "1h")
         return self.coin_selector.get_coins_to_scan(
             max_coins=max_coins, timeframe=timeframe
         )
