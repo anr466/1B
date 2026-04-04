@@ -135,7 +135,8 @@ class ScalpingV8Strategy(BaseStrategy):
             "breakeven_trigger": self._config["breakeven_trigger"],
             "max_positions": self._config["max_positions"],
             "max_hold_hours": self._config["max_hold_hours"],
-            "stagnant_hours": self._config.get("stagnant_hours", 2),
+            "stagnant_hours": self._config.get("stagnant_hours", 6),
+            "breakeven_at": self._config.get("breakeven_at", 0.01),
         }
 
     def get_market_trend(self, df: pd.DataFrame) -> str:
