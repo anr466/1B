@@ -310,18 +310,19 @@ class LiquidityCognitiveFilter:
                 "reasons": reasons,
             }
 
-            # شروط الخروج المبكر (محافظة مع أولوية للسرعة عند السوء الواضح)
+            # شروط الخروج المبكر — محسّنة لمنع الإغلاق السريع جداً
             trigger = False
             exit_reason = "LIQ_EARLY_EXIT"
 
-            # 1) خسارة حالية أو حول التعادل + سيولة/سياق ضعيف
-            if pnl_frac <= 0 and liquidity_score < 55.0:
+            # 1) خسارة كبيرة (> 1%) + سيولة ضعيفة جداً
+            # (كان: pnl_frac <= 0 + liquidity < 55 — كان يقتل الصفقات فوراً)
+            if pnl_frac <= -0.01 and liquidity_score < 35.0:
                 trigger = True
                 exit_reason = "LIQ_EARLY_EXIT_NEGATIVE_OR_FLAT"
 
-            # 2) ربح صغير (< 0.5%) لكن سيولة سيئة جداً → لا نستغل الحركة حتى
-            # تتحول لفخ
-            elif 0 < pnl_frac < 0.005 and liquidity_score < 45.0:
+            # 2) ربح صغير (< 0.3%) لكن سيولة سيئة جداً
+            # (كان: pnl_frac < 0.005 + liquidity < 45 — كان يخرج مبكراً جداً)
+            elif 0 < pnl_frac < 0.003 and liquidity_score < 25.0:
                 trigger = True
                 exit_reason = "LIQ_EARLY_EXIT_SMALL_PROFIT_WEAK_CONTEXT"
 
