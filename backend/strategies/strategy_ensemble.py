@@ -153,8 +153,13 @@ class StrategyEnsemble(BaseStrategy):
         return result
 
     def get_config(self) -> Dict:
-        # استخدام إعدادات V8 كأساس
         for s in self._strategies:
             if "v8" in s.name.lower():
                 return s.get_config()
         return {"timeframe": "1h", "sl_pct": 0.008, "max_positions": 5}
+
+    def check_exit(self, df, position: Dict) -> Dict:
+        for s in self._strategies:
+            if "v8" in s.name.lower() and hasattr(s, "check_exit"):
+                return s.check_exit(df, position)
+        return {"should_exit": False, "reason": "HOLD"}
