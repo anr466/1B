@@ -205,12 +205,6 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.user_portfolio = self._load_user_portfolio()
         self.can_trade = self.user_settings.get("trading_enabled", False)
 
-        # ===== Smart Coin Selector =====
-        binance_client = None
-        if self.binance_manager and hasattr(self.binance_manager, "client"):
-            binance_client = self.binance_manager.client
-        self.coin_selector = SmartCoinSelector(binance_client)
-
         # ===== المكونات النشطة فقط =====
         self.data_provider = DataProvider()
         self.dynamic_blacklist = get_dynamic_blacklist(self.db)
@@ -248,6 +242,13 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 self.logger.info("📈 Adaptive Optimizer connected")
             except Exception as e:
                 self.logger.warning(f"⚠️ Adaptive Optimizer init failed: {e}")
+
+        # ===== Smart Coin Selector =====
+        binance_client = None
+        if self.binance_manager and hasattr(self.binance_manager, "client"):
+            binance_client = self.binance_manager.client
+        self.coin_selector = SmartCoinSelector(binance_client)
+        self.logger.info(f"🪙 Smart Coin Selector initialized")
 
         # ===== الاستراتيجية النشطة (عبر واجهة BaseStrategy الموحدة) =====
         # القانون: النظام لا يعرف أي استراتيجية يشغّل — يستخدم الواجهة فقط
