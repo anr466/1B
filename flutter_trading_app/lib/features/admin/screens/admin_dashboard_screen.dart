@@ -10,6 +10,7 @@ import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
@@ -63,8 +64,13 @@ class AdminDashboardScreen extends ConsumerWidget {
                     children: [
                       // ─── System Status ─────────────────────
                       statusAsync.when(
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, __) => const SizedBox.shrink(),
+                        loading: () =>
+                            const LoadingShimmer(itemCount: 1, itemHeight: 80),
+                        error: (e, _) => _buildErrorCard(
+                          cs,
+                          'خطأ في تحميل حالة النظام',
+                          () => ref.invalidate(tradingCycleLiveProvider),
+                        ),
                         data: (s) => _buildStatusCard(context, cs, s),
                       ),
                       const SizedBox(height: SpacingTokens.lg),
@@ -73,8 +79,13 @@ class AdminDashboardScreen extends ConsumerWidget {
                       const AppSectionLabel(text: 'إحصائيات سريعة'),
                       const SizedBox(height: SpacingTokens.sm),
                       statsAsync.when(
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, __) => const SizedBox.shrink(),
+                        loading: () =>
+                            const LoadingShimmer(itemCount: 3, itemHeight: 100),
+                        error: (e, _) => _buildErrorCard(
+                          cs,
+                          'خطأ في تحميل الإحصائيات',
+                          () => ref.invalidate(statsProvider),
+                        ),
                         data: (stats) => _buildStatsGrid(context, cs, stats),
                       ),
                       const SizedBox(height: SpacingTokens.lg),
@@ -271,6 +282,26 @@ class AdminDashboardScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildErrorCard(ColorScheme cs, String message, VoidCallback onRetry) {
+    return AppCard(
+      backgroundColor: cs.error.withValues(alpha: 0.08),
+      padding: const EdgeInsets.all(SpacingTokens.md),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: cs.error, size: 24),
+          const SizedBox(width: SpacingTokens.md),
+          Expanded(
+            child: Text(message, style: TypographyTokens.bodySmall(cs.error)),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: Text('إعادة', style: TextStyle(color: cs.error)),
+          ),
+        ],
       ),
     );
   }
