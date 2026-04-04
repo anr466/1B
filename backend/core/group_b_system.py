@@ -284,18 +284,18 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 self.logger.warning(f"⚠️ Scalping V7 Strategy init failed: {e}")
 
         # ===== Strategy Ensemble — LONG فقط (Spot) =====
+        # ملاحظة: الاستراتيجيات الأخرى (momentum, trend, rsi, volume)
+        # مصممة للاختبار الخلفي (batch) وليس التداول المباشر.
+        # V8 هو الاستراتيجية الوحيدة التي تعمل في الوقت الحقيقي.
+        # عند توفر استراتيجيات تدعم detect_entry سنضيفها هنا.
         if ENSEMBLE_AVAILABLE and self.strategy:
             try:
                 support_strategies = [
-                    self.strategy,  # V8 as base
-                    MomentumBreakoutStrategy(),
-                    TrendFollowingStrategy(),
-                    RSIDivergenceStrategy(),
-                    VolumePriceTrendStrategy(),
+                    self.strategy,  # V8 as base — الاستراتيجية الوحيدة الحية
                 ]
                 self.strategy = StrategyEnsemble(support_strategies)
                 self.logger.info(
-                    f"🎯 Strategy Ensemble: 5 strategies (LONG only — Spot trading)"
+                    f"🎯 Strategy Ensemble: 1 live strategy (V8 — LONG only, Spot)"
                 )
             except Exception as e:
                 self.logger.warning(f"⚠️ Strategy Ensemble init failed: {e}")
