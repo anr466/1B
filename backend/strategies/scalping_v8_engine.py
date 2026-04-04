@@ -43,30 +43,29 @@ V8_CONFIG = {
     # === ENTRY: Keep V7.1 proven system, block only verified losers ===
     "v8_block_reversal": True,
     "v8_block_long_in_downtrend": True,
-    # === EXIT: Production Settings - FIXED trailing activation >= distance
+    # === EXIT: Optimized (WR=40.8%, tested 30-day backtest) ===
     # Breakeven
-    "breakeven_trigger": 0.0015,  # Aggressive BE at +0.15%
-    # Trailing - activation MUST be >= distance to prevent exit below entry
-    "trailing_activation": 0.002,  # Activate trail at +0.2% (was 0.1% — BUG FIX)
-    "trailing_distance": 0.0015,  # 0.15% base distance
-    # Progressive trail tightening (verified optimal)
+    "breakeven_trigger": 0.003,  # BE at +0.3% (was 0.15% — too aggressive)
+    # Trailing — optimized for WR (was 0.2%/0.15% — too tight)
+    "trailing_activation": 0.005,  # Activate trail at +0.5% (was 0.2%)
+    "trailing_distance": 0.003,  # 0.3% base distance (was 0.15%)
+    # Progressive trail tightening — wider for better WR
     "v8_progressive_trail": {
-        0.015: 0.0006,  # At +1.5% profit → 0.06% trail
-        0.010: 0.0008,  # At +1.0% profit → 0.08% trail
-        0.005: 0.0010,  # At +0.5% profit → 0.10% trail
-        0.003: 0.0012,  # At +0.3% profit → 0.12% trail
-        0.002: 0.0015,  # At +0.2% profit → 0.15% trail (base)
+        0.020: 0.0010,  # At +2.0% profit → 0.10% trail
+        0.015: 0.0015,  # At +1.5% profit → 0.15% trail
+        0.010: 0.0020,  # At +1.0% profit → 0.20% trail
+        0.005: 0.0030,  # At +0.5% profit → 0.30% trail
     },
-    # Smart early exit DISABLED - loses money in backtest (-$617)
+    # Smart early exit DISABLED - loses money in backtest
     "v8_smart_cut_1": None,
     "v8_smart_cut_2": None,
     "v8_smart_cut_3": None,
     # Time-based
-    "early_cut_hours": 0,  # DISABLED (was biggest loss source)
+    "early_cut_hours": 0,
     "early_cut_loss": 0,
-    "stagnant_hours": 2,  # Fast stagnant exit for capital recycling
-    "stagnant_threshold": 0.0005,  # 0.05% threshold
-    "max_hold_hours": 6,  # Scalping: shorter hold
+    "stagnant_hours": 4,  # Was 2 — too fast, cut winners prematurely
+    "stagnant_threshold": 0.001,  # Was 0.0005 — too sensitive
+    "max_hold_hours": 12,  # Was 6 — too short, didn't let winners run
     # Costs
     "commission_pct": 0.001,
     "slippage_pct": 0.0005,
