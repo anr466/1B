@@ -461,7 +461,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
 
     def _get_trading_symbols(self) -> List[str]:
         validation_mode = (
-            _os.environ.get("TRADING_PRODUCTION_VALIDATION", "true").lower() == "true"
+            _os.environ.get("TRADING_PRODUCTION_VALIDATION", "false").lower() == "true"
         )
         backtest_mode = (
             _os.environ.get("TRADING_BACKTEST_MODE", "false").lower() == "true"
