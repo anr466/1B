@@ -40,33 +40,31 @@ logger = logging.getLogger(__name__)
 # ============================================================
 V8_CONFIG = {
     **V7_CONFIG,
-    # === ENTRY: Keep V7.1 proven system, block only verified losers ===
+    # === ENTRY: Phase 1d — Best tested (WR=70.1%, PF=2.70, +$96/60d) ===
     "v8_block_reversal": True,
     "v8_block_long_in_downtrend": True,
-    # === EXIT: FIX 4 — Best tested config (WR=65.4%, PF=2.28, +$114) ===
-    # Breakeven
+    # Quality filters
+    "min_volume_ratio": 2.5,
+    "min_rsi": 60,
+    "min_adx": 20,
+    # === EXIT: Phase 1d values ===
     "breakeven_trigger": 0.003,
-    # Trailing — wider to let winners run
     "trailing_activation": 0.005,
     "trailing_distance": 0.003,
-    # Progressive trail tightening
     "v8_progressive_trail": {
         0.020: 0.0010,
         0.015: 0.0015,
         0.010: 0.0020,
         0.005: 0.0030,
     },
-    # Smart early exit DISABLED
     "v8_smart_cut_1": None,
     "v8_smart_cut_2": None,
     "v8_smart_cut_3": None,
-    # Time-based — FIX 4 values
     "early_cut_hours": 0,
     "early_cut_loss": 0,
     "stagnant_hours": 6,
     "stagnant_threshold": 0.001,
     "max_hold_hours": 12,
-    # Costs
     "commission_pct": 0.001,
     "slippage_pct": 0.0005,
 }
