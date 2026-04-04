@@ -85,6 +85,19 @@ except ImportError as e:
     SCALPING_V7_AVAILABLE = False
     logging.getLogger(__name__).warning(f"⚠️ Scalping V7 Strategy not available: {e}")
 
+# ===== استراتيجيات الدعم (LONG فقط — Spot) =====
+try:
+    from backend.strategies.momentum_breakout import MomentumBreakoutStrategy
+    from backend.strategies.trend_following import TrendFollowingStrategy
+    from backend.strategies.rsi_divergence import RSIDivergenceStrategy
+    from backend.strategies.volume_price_trend import VolumePriceTrendStrategy
+    from backend.strategies.strategy_ensemble import StrategyEnsemble
+
+    ENSEMBLE_AVAILABLE = True
+except ImportError as e:
+    ENSEMBLE_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"⚠️ Strategy Ensemble not available: {e}")
+
 # ===== النظام المعرفي (احتياطي) =====
 try:
     from backend.cognitive.cognitive_orchestrator import (
@@ -269,6 +282,23 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 self.logger.info(f"🚀 Strategy loaded: ScalpingV7 (FALLBACK)")
             except Exception as e:
                 self.logger.warning(f"⚠️ Scalping V7 Strategy init failed: {e}")
+
+        # ===== Strategy Ensemble — LONG فقط (Spot) =====
+        if ENSEMBLE_AVAILABLE and self.strategy:
+            try:
+                support_strategies = [
+                    self.strategy,  # V8 as base
+                    MomentumBreakoutStrategy(),
+                    TrendFollowingStrategy(),
+                    RSIDivergenceStrategy(),
+                    VolumePriceTrendStrategy(),
+                ]
+                self.strategy = StrategyEnsemble(support_strategies)
+                self.logger.info(
+                    f"🎯 Strategy Ensemble: 5 strategies (LONG only — Spot trading)"
+                )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Strategy Ensemble init failed: {e}")
 
         # ===== النظام المعرفي (احتياطي فقط — إذا لم تتوفر استراتيجية) =====
         self.cognitive_orchestrator = None
