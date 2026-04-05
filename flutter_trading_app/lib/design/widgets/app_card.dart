@@ -46,7 +46,9 @@ class AppCard extends StatelessWidget {
       _ => isDark ? 0.08 : 0.12,
     };
     final bgColor = switch (level) {
-      0 => backgroundColor ?? (isDark ? cs.surfaceContainerLow : cs.surface),
+      0 =>
+        backgroundColor ??
+            (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh),
       2 =>
         backgroundColor ??
             (isDark ? cs.surfaceContainerHighest : cs.surfaceContainerHighest),

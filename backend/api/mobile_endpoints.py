@@ -601,7 +601,7 @@ def get_user_stats(user_id):
                 SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END) as total_profit,
                 MAX(CASE WHEN is_active = FALSE THEN profit_loss ELSE NULL END) as best_trade,
                 MIN(CASE WHEN is_active = FALSE THEN profit_loss ELSE NULL END) as worst_trade,
-                MIN(COALESCE(entry_date, CAST(created_at AS TEXT))) as first_trade_date,
+                MIN(COALESCE(entry_date, created_at)) as first_trade_date,
                 COALESCE(SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN profit_loss ELSE 0 END), 0) as gross_profit,
                 COALESCE(ABS(SUM(CASE WHEN is_active = FALSE AND profit_loss < 0 THEN profit_loss ELSE 0 END)), 0) as gross_loss
             FROM active_positions

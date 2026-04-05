@@ -829,7 +829,7 @@ class DbPortfolioMixin:
                         COALESCE(SUM(CASE WHEN is_active = FALSE THEN profit_loss ELSE 0 END), 0) as realized_pnl,
                         SUM(CASE WHEN is_active = FALSE THEN 1 ELSE 0 END) as closed_trades,
                         SUM(CASE WHEN is_active = FALSE AND profit_loss > 0 THEN 1 ELSE 0 END) as winning_trades,
-                        MIN(COALESCE(entry_date, CAST(created_at AS TEXT))) as first_trade_date
+                        MIN(COALESCE(entry_date, created_at)) as first_trade_date
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s
                 """,
@@ -1009,7 +1009,7 @@ class DbPortfolioMixin:
 
                 first_trade_result = conn.execute(
                     """
-                    SELECT MIN(COALESCE(entry_date, CAST(created_at AS TEXT))) as first_trade_date
+                    SELECT MIN(COALESCE(entry_date, created_at)) as first_trade_date
                     FROM active_positions
                     WHERE user_id = %s AND is_demo = %s
                 """,

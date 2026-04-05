@@ -101,9 +101,9 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                               top: 8,
                               child: IgnorePointer(
                                 child: Opacity(
-                                  opacity: 0.11,
+                                  opacity: 0.08,
                                   child: BrandLogo.mono(
-                                    size: 88,
+                                    size: 140,
                                     monoColor: cs.onSurface,
                                   ),
                                 ),
