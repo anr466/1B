@@ -44,7 +44,39 @@
       "@python-best-practices",
       "@fastapi-patterns",
       "@async-python",
-      "@database-patterns"
+      "@database-patterns",
+      "@trading-strategy-engine",
+      "@backtest-framework",
+      "@risk-management",
+      "@market-analysis",
+      "@flutter-trading-ui",
+      "@master-patterns"
+    ],
+    "auto_load_rules": [
+      {
+        "trigger": "strategy OR strategy design OR trading strategy OR entry exit",
+        "skill": "trading-strategy-engine"
+      },
+      {
+        "trigger": "backtest OR back test OR historical test OR walk forward",
+        "skill": "backtest-framework"
+      },
+      {
+        "trigger": "risk management OR position size OR stop loss OR drawdown OR kelly",
+        "skill": "risk-management"
+      },
+      {
+        "trigger": "market analysis OR regime detection OR technical indicator OR RSI OR MACD OR ADX",
+        "skill": "market-analysis"
+      },
+      {
+        "trigger": ".dart OR flutter OR widget OR UI OR layout OR theme OR design",
+        "skill": "flutter-trading-ui"
+      },
+      {
+        "trigger": "architecture OR pattern OR bootstrap OR session OR state management",
+        "skill": "master-patterns"
+      }
     ]
   },
   "context": {
@@ -82,6 +114,13 @@
         "command": "npx",
         "args": ["-y", "@playwright/mcp"],
         "env": {}
+      },
+      {
+        "name": "dart-mcp-server",
+        "type": "local",
+        "command": ["dart", "mcp-server"],
+        "enabled": true,
+        "environment": {}
       }
     ]
   },
@@ -91,7 +130,8 @@
       "Read CLAUDE.md before any implementation",
       "Minimum 3 issues per code review",
       "All tests must pass before commit",
-      "No mock data in production code"
+      "No mock data in production code",
+      "When working on any Flutter or Dart file (.dart), automatically load the ui-ux-pro-max skill and connect to dart-mcp-server before proceeding"
     ],
     "workflows": [
       "ANALYZE → PLAN → EXECUTE → TEST → COMMIT",

@@ -74,12 +74,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         children: [
                           // ─── Performance Summary ──────────
                           AppCard(
-                            level: 2,
-                            borderRadius: SpacingTokens.radiusXxl,
-                            gradientColors: [
-                              cs.primary.withValues(alpha: 0.10),
-                              cs.surface,
-                            ],
+                            level: 0,
                             padding: const EdgeInsets.all(SpacingTokens.lg),
                             child: Stack(
                               children: [
@@ -88,9 +83,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                                   top: 8,
                                   child: IgnorePointer(
                                     child: Opacity(
-                                      opacity: 0.11,
+                                      opacity: 0.08,
                                       child: BrandLogo.mono(
-                                        size: 88,
+                                        size: 140,
                                         monoColor: cs.onSurface,
                                       ),
                                     ),
