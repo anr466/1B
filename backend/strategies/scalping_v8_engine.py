@@ -332,8 +332,30 @@ class ScalpingV8Engine:
                 "updated": updated,
             }
 
-        # ---- MAX HOLD ----
+        # ---- MAX HOLD — Smart exit ----
         if hold_hours >= self.config["max_hold_hours"]:
+            if pnl >= 0.003:
+                # ربح >= 0.3%: تمديد 2 ساعة مع trailing أضيق
+                return {
+                    "should_exit": False,
+                    "reason": "MAX_HOLD_EXTENDED",
+                    "exit_price": cl,
+                    "updated": updated,
+                    "pnl_pct": pnl * 100,
+                    "trail_level": trail,
+                    "peak": peak,
+                }
+            elif pnl >= 0.01:
+                # ربح >= 1%: تمديد 4 ساعات
+                return {
+                    "should_exit": False,
+                    "reason": "MAX_HOLD_EXTENDED",
+                    "exit_price": cl,
+                    "updated": updated,
+                    "pnl_pct": pnl * 100,
+                    "trail_level": trail,
+                    "peak": peak,
+                }
             return {
                 "should_exit": True,
                 "reason": "MAX_HOLD",

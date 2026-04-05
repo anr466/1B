@@ -523,6 +523,16 @@ class ScannerMixin:
                             "total_value", portfolio_for_entry.get("balance", 0)
                         )
 
+                        # 🔒 منع فتح نفس العملة مرتين
+                        existing_symbols = {
+                            p.get("symbol", "") for p in open_positions_for_entry
+                        }
+                        if sym in existing_symbols:
+                            self.logger.info(
+                                f"   🛡️ [{sym}] Already have active position — skip"
+                            )
+                            continue
+
                         can_trade_entry, gate_reason_entry = self._check_risk_gates(
                             open_positions_for_entry, risk_balance_for_entry
                         )
