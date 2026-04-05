@@ -116,10 +116,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           decoration: BoxDecoration(
             color: cs.primary.withValues(alpha: 0.15),
             shape: BoxShape.circle,
-            border: Border.all(
-              color: cs.primary.withValues(alpha: 0.25),
-              width: 1,
-            ),
           ),
           child: Center(
             child: Text(
@@ -309,10 +305,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         decoration: BoxDecoration(
           color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
           borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-          border: Border.all(
-            color: cs.outline.withValues(alpha: isDark ? 0.18 : 0.12),
-            width: 1,
-          ),
         ),
         child: Row(
           children: [
@@ -469,10 +461,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ? cs.surfaceContainerHigh
                     : cs.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-                border: Border.all(
-                  color: cs.outline.withValues(alpha: isDark ? 0.18 : 0.12),
-                  width: 1,
-                ),
               ),
               child: Row(
                 children: [
