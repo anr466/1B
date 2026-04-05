@@ -797,7 +797,10 @@ class _HybridTradeTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final semantic = SemanticColors.of(context);
     final isOpen = trade.isOpen;
-    final statusColor = isOpen ? semantic.info : semantic.positive;
+    final isProfit = (trade.pnl ?? 0) >= 0;
+    final accentColor = isOpen
+        ? semantic.info
+        : (isProfit ? semantic.positive : semantic.negative);
 
     return Material(
       color: Colors.transparent,
@@ -808,26 +811,22 @@ class _HybridTradeTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(
               vertical: SpacingTokens.sm,
-              horizontal: SpacingTokens.sm,
+              horizontal: SpacingTokens.md,
             ),
             decoration: BoxDecoration(
               color: cs.surfaceContainerLow,
               borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-              border: Border.all(
-                color: cs.outline.withValues(alpha: 0.10),
-                width: 1,
-              ),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 4,
+                  width: 3,
                   decoration: BoxDecoration(
-                    color: statusColor,
+                    color: accentColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(width: SpacingTokens.sm),
+                const SizedBox(width: SpacingTokens.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -842,21 +841,25 @@ class _HybridTradeTile extends StatelessWidget {
                               ).copyWith(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          StatusBadge(
-                            text: isOpen ? 'مفتوحة' : 'مغلقة',
-                            type: isOpen ? BadgeType.info : BadgeType.success,
-                            showDot: false,
+                          Text(
+                            isOpen ? 'مفتوحة' : 'مغلقة',
+                            style: TypographyTokens.caption(
+                              isOpen
+                                  ? semantic.info
+                                  : cs.onSurface.withValues(alpha: 0.4),
+                            ).copyWith(fontWeight: FontWeight.w500),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Row(
                         children: [
                           Expanded(
                             child: Text(
                               isOpen
-                                  ? 'دخل: ${trade.entryPrice.toStringAsFixed(4)}'
-                                  : 'خرج: ${trade.exitPrice?.toStringAsFixed(4) ?? "-"}',
+                                  ? trade.entryPrice.toStringAsFixed(2)
+                                  : (trade.exitPrice?.toStringAsFixed(2) ??
+                                        "-"),
                               style: TypographyTokens.caption(
                                 cs.onSurface.withValues(alpha: 0.45),
                               ),
@@ -866,7 +869,7 @@ class _HybridTradeTile extends StatelessWidget {
                             Text(
                               trade.strategy!,
                               style: TypographyTokens.caption(
-                                cs.onSurface.withValues(alpha: 0.35),
+                                cs.onSurface.withValues(alpha: 0.3),
                               ),
                             ),
                         ],
@@ -876,16 +879,16 @@ class _HybridTradeTile extends StatelessWidget {
                         Text(
                           _formatExitReason(trade.exitReason!),
                           style: TypographyTokens.caption(
-                            cs.onSurface.withValues(alpha: 0.35),
+                            cs.onSurface.withValues(alpha: 0.3),
                           ),
                         ),
                       ],
                     ],
                   ),
                 ),
-                const SizedBox(width: SpacingTokens.sm),
+                const SizedBox(width: SpacingTokens.md),
                 SizedBox(
-                  width: 85,
+                  width: 80,
                   child: isOpen
                       ? _OpenTradeLiveIndicator(trade: trade)
                       : trade.pnl != null

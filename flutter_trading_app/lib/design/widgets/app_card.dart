@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 
-/// App Card — بطاقة موحدة بزوايا دائرية وحدود خفيفة
-/// تصميم صافي — لا يعتمد على أي منطق أعمال
+/// App Card — Minimalist Borderless Design
+///
+/// تصميم صافي بدون حدود — يعتمد على المسافات والتايبوغرافي
 ///
 /// [level] controls visual depth:
-///   0 = flat    — minimal border, no shadow, subtle bg
-///   1 = default — standard card (default)
-///   2 = raised  — stronger border + shadow, more prominent
+///   0 = borderless — no border, no shadow, subtle bg (default)
+///   1 = subtle     — very subtle border, minimal shadow
+///   2 = raised     — standard card with border + shadow
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -29,7 +30,7 @@ class AppCard extends StatelessWidget {
     this.backgroundColor,
     this.borderColor,
     this.borderRadius,
-    this.level = 1,
+    this.level = 0,
   });
 
   @override
@@ -39,16 +40,13 @@ class AppCard extends StatelessWidget {
     final isDark = cs.brightness == Brightness.dark;
     final radius = borderRadius ?? SpacingTokens.radiusXl;
 
-    // Level-driven visual tokens
     final borderAlpha = switch (level) {
-      0 => isDark ? 0.08 : 0.12,
-      2 => isDark ? 0.45 : 0.25,
-      _ => isDark ? 0.22 : 0.18,
+      0 => 0.0,
+      2 => isDark ? 0.22 : 0.18,
+      _ => isDark ? 0.08 : 0.12,
     };
     final bgColor = switch (level) {
-      0 =>
-        backgroundColor ??
-            (isDark ? cs.surfaceContainerLow : cs.surface),
+      0 => backgroundColor ?? (isDark ? cs.surfaceContainerLow : cs.surface),
       2 =>
         backgroundColor ??
             (isDark ? cs.surfaceContainerHighest : cs.surfaceContainerHighest),
@@ -67,12 +65,6 @@ class AppCard extends StatelessWidget {
                   spreadRadius: -4,
                   offset: const Offset(0, 12),
                 ),
-                BoxShadow(
-                  color: cs.primary.withValues(alpha: 0.08),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                  offset: const Offset(0, 0),
-                ),
               ]
             : <BoxShadow>[
                 BoxShadow(
@@ -82,22 +74,7 @@ class AppCard extends StatelessWidget {
                   offset: const Offset(0, 8),
                 ),
               ],
-      _ =>
-        isDark
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+      _ => <BoxShadow>[],
     };
 
     Widget content = Container(
@@ -113,10 +90,12 @@ class AppCard extends StatelessWidget {
               )
             : null,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: borderColor ?? cs.outline.withValues(alpha: borderAlpha),
-          width: level == 2 ? 1.2 : 1,
-        ),
+        border: borderAlpha > 0
+            ? Border.all(
+                color: borderColor ?? cs.outline.withValues(alpha: borderAlpha),
+                width: level == 2 ? 1.2 : 0.5,
+              )
+            : null,
         boxShadow: shadows,
       ),
       child: child,
