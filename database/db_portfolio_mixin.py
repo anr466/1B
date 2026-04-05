@@ -139,6 +139,10 @@ class DbPortfolioMixin:
         )
         self._sync_demo_account_to_portfolio_on_conn(conn, user_id)
 
+    def _sync_demo_account_to_portfolio_on_conn(self, conn, user_id: int):
+        """Sync demo account settings to portfolio (no-op — portfolio is the source of truth)."""
+        pass
+
     def _reset_demo_account_on_conn(
         self, conn, user_id: int, initial_balance: Optional[float] = None
     ) -> float:
