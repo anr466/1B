@@ -103,9 +103,7 @@ def register_admin_users_routes(bp, shared):
                     total_trades = row_dict["total_trades"] or 0
                     winning_trades = row_dict["winning_trades"] or 0
                     win_rate = (
-                        (winning_trades / total_trades * 100)
-                        if total_trades > 0
-                        else 0
+                        (winning_trades / total_trades * 100) if total_trades > 0 else 0
                     )
                     effective_is_demo = bool(row_dict["effective_is_demo"])
                     # Regular users are always in real mode regardless of DB
@@ -128,18 +126,14 @@ def register_admin_users_routes(bp, shared):
                             "totalTrades": total_trades,
                             "winningTrades": winning_trades,
                             "winRate": round(win_rate, 1),
-                            "tradingEnabled": bool(
-                                row_dict["trading_enabled"]
-                            ),
+                            "tradingEnabled": bool(row_dict["trading_enabled"]),
                             "tradingMode": trading_mode,
                         }
                     )
 
                 total_users = len(users)
                 active_users = len([u for u in users if u["isActive"]])
-                admin_users = len(
-                    [u for u in users if u["userType"] == "admin"]
-                )
+                admin_users = len([u for u in users if u["userType"] == "admin"])
 
                 stats = {
                     "totalUsers": total_users,
@@ -181,9 +175,7 @@ def register_admin_users_routes(bp, shared):
                 row = cursor.fetchone()
                 if not row:
                     return (
-                        jsonify(
-                            {"success": False, "error": "المستخدم غير موجود"}
-                        ),
+                        jsonify({"success": False, "error": "المستخدم غير موجود"}),
                         404,
                     )
 
@@ -249,9 +241,7 @@ def register_admin_users_routes(bp, shared):
             for field in required_fields:
                 if not data.get(field):
                     return (
-                        jsonify(
-                            {"success": False, "error": f"الحقل {field} مطلوب"}
-                        ),
+                        jsonify({"success": False, "error": f"الحقل {field} مطلوب"}),
                         400,
                     )
 
@@ -260,9 +250,7 @@ def register_admin_users_routes(bp, shared):
                 data["user_type"] = "regular"
             if data["user_type"] not in ["admin", "regular"]:
                 return (
-                    jsonify(
-                        {"success": False, "error": "نوع المستخدم غير صحيح"}
-                    ),
+                    jsonify({"success": False, "error": "نوع المستخدم غير صحيح"}),
                     400,
                 )
 
@@ -318,7 +306,8 @@ def register_admin_users_routes(bp, shared):
                             {
                                 "success": False,
                                 "error": "يوجد مستخدم بنفس اسم المستخدم أو البريد الإلكتروني أو رقم الهاتف",
-                            }),
+                            }
+                        ),
                         409,
                     )
 
@@ -432,7 +421,7 @@ def register_admin_users_routes(bp, shared):
             logger.error(f"خطأ في إنشاء المستخدم: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
 
-    @bp.route("/users/<int:user_id>/update", methods=["PUT"])
+    @bp.route("/users/<int:user_id>/update", methods=["PUT", "POST"])
     @require_admin
     def update_user(user_id):
         """تحديث بيانات المستخدم"""
@@ -457,14 +446,10 @@ def register_admin_users_routes(bp, shared):
 
             db = db_manager
             with db.get_write_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT id FROM users WHERE id = %s", (user_id,)
-                )
+                cursor = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,))
                 if not cursor.fetchone():
                     return (
-                        jsonify(
-                            {"success": False, "error": "المستخدم غير موجود"}
-                        ),
+                        jsonify({"success": False, "error": "المستخدم غير موجود"}),
                         404,
                     )
 
@@ -491,9 +476,7 @@ def register_admin_users_routes(bp, shared):
                     else ""
                 )
                 candidate_email = (
-                    _normalize_email(data.get("email"))
-                    if "email" in data
-                    else ""
+                    _normalize_email(data.get("email")) if "email" in data else ""
                 )
                 candidate_phone = _normalize_phone(
                     data.get("phone_number", data.get("phone", ""))
@@ -551,7 +534,8 @@ def register_admin_users_routes(bp, shared):
                                 {
                                     "success": False,
                                     "error": "يوجد مستخدم آخر بنفس اسم المستخدم أو البريد الإلكتروني أو رقم الهاتف",
-                                }),
+                                }
+                            ),
                             409,
                         )
 
@@ -578,15 +562,12 @@ def register_admin_users_routes(bp, shared):
 
                 if not update_fields:
                     return (
-                        jsonify(
-                            {"success": False, "error": "لا توجد حقول للتحديث"}
-                        ),
+                        jsonify({"success": False, "error": "لا توجد حقول للتحديث"}),
                         400,
                     )
 
                 update_values.append(user_id)
-                query = f"UPDATE users SET {
-                    ', '.join(update_fields)} WHERE id = %s"
+                query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s"
 
                 conn.execute(query, update_values)
 
@@ -595,9 +576,7 @@ def register_admin_users_routes(bp, shared):
                         action="update_user", user_id=user_id, details=data
                     )
 
-                return jsonify(
-                    {"success": True, "message": "تم تحديث المستخدم بنجاح"}
-                )
+                return jsonify({"success": True, "message": "تم تحديث المستخدم بنجاح"})
 
         except Exception as e:
             logger.error(f"خطأ في تحديث المستخدم: {e}")
@@ -614,9 +593,7 @@ def register_admin_users_routes(bp, shared):
                 enabled = data.get("trading_enabled")
             if enabled is None:
                 return (
-                    jsonify(
-                        {"success": False, "error": "tradingEnabled مطلوب"}
-                    ),
+                    jsonify({"success": False, "error": "tradingEnabled مطلوب"}),
                     400,
                 )
 
@@ -681,9 +658,7 @@ def register_admin_users_routes(bp, shared):
                 {
                     "success": True,
                     "tradingEnabled": enabled,
-                    "message": (
-                        "تم تفعيل التداول" if enabled else "تم تعطيل التداول"
-                    ),
+                    "message": ("تم تفعيل التداول" if enabled else "تم تعطيل التداول"),
                 }
             )
 
@@ -710,9 +685,7 @@ def register_admin_users_routes(bp, shared):
                         details={"action": "deactivated"},
                     )
 
-                return jsonify(
-                    {"success": True, "message": "تم تعطيل المستخدم بنجاح"}
-                )
+                return jsonify({"success": True, "message": "تم تعطيل المستخدم بنجاح"})
 
         except Exception as e:
             logger.error(f"خطأ في حذف المستخدم: {e}")
