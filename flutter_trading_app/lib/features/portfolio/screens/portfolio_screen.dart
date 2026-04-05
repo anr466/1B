@@ -92,12 +92,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                         onRetry: () => ref.invalidate(portfolioProvider),
                       ),
                       data: (p) => AppCard(
-                        level: 2,
-                        borderRadius: SpacingTokens.radiusXxl,
-                        gradientColors: [
-                          cs.primary.withValues(alpha: 0.10),
-                          cs.surface,
-                        ],
+                        level: 0,
                         padding: const EdgeInsets.all(SpacingTokens.lg),
                         child: Stack(
                           children: [
@@ -334,13 +329,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     }
 
     return AppCard(
-      gradientColors: [
-        Color.alphaBlend(
-          cs.primary.withValues(alpha: 0.1),
-          cs.surfaceContainerHigh,
-        ),
-        cs.surfaceContainer,
-      ],
+      level: 0,
       padding: const EdgeInsets.all(SpacingTokens.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

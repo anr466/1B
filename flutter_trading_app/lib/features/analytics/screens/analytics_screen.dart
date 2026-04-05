@@ -445,9 +445,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: cs.outline.withValues(alpha: 0.16),
-                    ),
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
