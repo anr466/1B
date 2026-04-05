@@ -447,11 +447,11 @@ class DbTradingMixin:
                     where_clauses.append("is_active = FALSE")
 
                 if date_from:
-                    where_clauses.append("COALESCE(entry_date, created_at::text) >= %s")
+                    where_clauses.append("COALESCE(entry_date, created_at) >= %s")
                     params.append(date_from)
 
                 if date_to:
-                    where_clauses.append("COALESCE(entry_date, created_at::text) <= %s")
+                    where_clauses.append("COALESCE(entry_date, created_at) <= %s")
                     params.append(date_to)
 
                 where_sql = " AND ".join(where_clauses)
@@ -466,7 +466,7 @@ class DbTradingMixin:
                         profit_loss,
                         profit_pct AS profit_loss_percentage,
                         CASE WHEN is_active = TRUE THEN 'open' ELSE 'closed' END AS status,
-                        COALESCE(entry_date, created_at::text) AS entry_time,
+                        COALESCE(entry_date, created_at) AS entry_time,
                         closed_at AS exit_time,
                         CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                         stop_loss, take_profit, timeframe,
@@ -474,7 +474,7 @@ class DbTradingMixin:
                         created_at, updated_at
                     FROM active_positions
                     WHERE {where_sql}
-                    ORDER BY COALESCE(entry_date, created_at::text) DESC
+                    ORDER BY COALESCE(entry_date, created_at) DESC
                     LIMIT %s OFFSET %s
                 """
                 params.extend([limit, offset])
