@@ -311,9 +311,14 @@ class DynamicCoinSelector:
         return [
             {
                 "symbol": s,
+                "base": s.replace("USDT", ""),
+                "price": 0,
                 "volume_usd": 10_000_000,
+                "price_change_24h": 5.0,
                 "volatility_24h": 5.0,
                 "is_meme": s.replace("USDT", "") in MEME_COINS,
+                "high_price_24h": 0,
+                "low_price_24h": 0,
             }
             for s in symbols
         ]
