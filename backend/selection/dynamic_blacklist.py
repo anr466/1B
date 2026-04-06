@@ -144,9 +144,7 @@ class DynamicBlacklist:
 
         if blacklisted_at:
             duration = datetime.now() - blacklisted_at
-            max_duration = timedelta(
-                hours=self.config["blacklist_duration_hours"]
-            )
+            max_duration = timedelta(hours=self.config["blacklist_duration_hours"])
 
             if duration > max_duration:
                 self._remove_from_blacklist(symbol, "انتهت مدة الحظر")
@@ -224,13 +222,12 @@ class DynamicBlacklist:
         }
 
     def load_from_database(self):
-        """تحميل الأداء من قاعدة البيانات"""
+        """تحميل الأداء من قاعدة البيانات — بدون إضافة للقائمة السوداء عند البدء"""
         if not self.db:
             self.logger.warning("لا يوجد اتصال بقاعدة البيانات")
             return
 
         try:
-            # ✅ FIX: جلب الصفقات بترتيب ASC لحساب consecutive_losses بشكل صحيح
             with self.db.get_connection() as conn:
                 trades = conn.execute("""
                     SELECT symbol, profit_loss, closed_at
@@ -250,23 +247,20 @@ class DynamicBlacklist:
                     perf["total_pnl"] += pnl
                     if is_win:
                         perf["wins"] += 1
-                        # ✅ FIX: تتبع consecutive_losses (يُصفّر عند الفوز)
                         perf["consecutive_losses"] = 0
                     else:
                         perf["losses"] += 1
-                        # ✅ FIX: زيادة عداد الخسائر المتتالية
                         perf["consecutive_losses"] += 1
 
-                # فحص القائمة السوداء
-                for symbol in self.performance:
-                    self._check_blacklist_status(symbol)
-
-                self.logger.info(f"📊 تم تحميل {
-                    len(trades)} صفقة من قاعدة البيانات")
-                self.logger.info(f"🚫 القائمة السوداء: {self.blacklist}")
+                self.logger.info(
+                    "تم تحميل {} صفقة من قاعدة البيانات".format(len(trades))
+                )
+                self.logger.info(
+                    "القائمة السوداء: {} (فارغة عند البدء)".format(self.blacklist)
+                )
 
         except Exception as e:
-            self.logger.error(f"خطأ في تحميل البيانات: {e}")
+            self.logger.error("خطأ في تحميل البيانات: {}".format(e))
 
 
 # Singleton instance
