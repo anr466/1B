@@ -112,7 +112,7 @@ class DynamicCoinSelector:
             return self._default_coins()
 
         try:
-            tickers = self.client.get_ticker_24hr()
+            tickers = self.client.get_24hr_ticker()
             coins = []
 
             for ticker in tickers:
