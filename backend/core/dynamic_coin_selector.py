@@ -102,6 +102,10 @@ class DynamicCoinSelector:
         self.client = binance_client
         self._cache = {}
         self._cache_time = 0
+        self._last_scan = {}
+
+    def record_scan(self, symbol):
+        self._last_scan[symbol] = datetime.utcnow()
 
     def get_all_tradeable_coins(self) -> List[Dict[str, Any]]:
         """
