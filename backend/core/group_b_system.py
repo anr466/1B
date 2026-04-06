@@ -39,6 +39,10 @@ from backend.utils.trading_notification_service import (
 from backend.analysis.liquidity_cognitive_filter import (
     LiquidityCognitiveFilter,
 )
+from backend.core.unified_trading_engine import UnifiedTradingEngine
+from backend.core.dynamic_coin_selector import DynamicCoinSelector
+from backend.core.dual_mode_router import DualModeRouter
+from backend.core.demo_training_engine import DemoTrainingEngine
 
 # ===== مدير Binance للتداول الحقيقي =====
 try:
