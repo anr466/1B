@@ -115,7 +115,8 @@ except ImportError as e:
 from backend.core.position_manager import PositionManagerMixin
 from backend.core.scanner_mixin import ScannerMixin
 from backend.core.risk_manager_mixin import RiskManagerMixin
-from backend.core.unified_trading_engine import UnifiedTradingEngine
+from backend.core.dynamic_coin_selector import DynamicCoinSelector
+from backend.core.dual_mode_router import DualModeRouter
 from backend.utils.smart_coin_selector import SmartCoinSelector
 
 logger = get_logger(__name__)
@@ -236,6 +237,17 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 self.data_provider, mode=mode
             )
             self.logger.info(f"💧 LiquidityCognitiveFilter initialized (mode={mode})")
+
+        # ===== Dynamic Coin Selector + Dual-Mode Router =====
+        binance_client = None
+        if self.binance_manager and hasattr(self.binance_manager, "client"):
+            binance_client = self.binance_manager.client
+        self.coin_selector = DynamicCoinSelector(binance_client)
+        self.dual_mode_router = DualModeRouter(
+            spot_enabled=True,
+            margin_enabled=self.user_settings.get("margin_enabled", False),
+        )
+        self.logger.info("🪙 DynamicCoinSelector + DualModeRouter initialized")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize LiquidityCognitiveFilter: {e}")
 
@@ -510,11 +522,25 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             )
             return BACKTEST_SYMBOLS.copy()
 
-        max_coins = getattr(self, "config", {}).get("max_symbols_per_scan", 20)
-        timeframe = getattr(self, "config", {}).get("execution_timeframe", "1h")
-        return self.coin_selector.get_coins_to_scan(
-            max_coins=max_coins, timeframe=timeframe
+        regime = "NEUTRAL"
+        if hasattr(self, "last_regime"):
+            regime = self.last_regime
+
+        max_coins = getattr(self, "config", {}).get("max_symbols_per_scan", 30)
+        symbols = self.coin_selector.select_coins(
+            regime=regime,
+            max_coins=max_coins,
+            include_memes=True,
+            min_volatility=2.0,
         )
+
+        if not symbols:
+            symbols = BACKTEST_SYMBOLS.copy()
+
+        self.logger.info(
+            f"🪙 Dynamic symbols: {len(symbols)} coins (regime={regime})"
+        )
+        return symbols
 
     def _load_successful_coin_rows(self) -> List[tuple]:
         with self.db.get_connection() as conn:
