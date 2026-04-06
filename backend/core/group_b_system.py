@@ -273,13 +273,6 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             except Exception as e:
                 self.logger.warning(f"⚠️ Adaptive Optimizer init failed: {e}")
 
-        # ===== Smart Coin Selector =====
-        binance_client = None
-        if self.binance_manager and hasattr(self.binance_manager, "client"):
-            binance_client = self.binance_manager.client
-        self.coin_selector = SmartCoinSelector(binance_client)
-        self.logger.info(f"🪙 Smart Coin Selector initialized")
-
         # ===== Unified Trading Engine (Regime-Aware, Spot+Margin) =====
         self.unified_engine = UnifiedTradingEngine(self.user_id, self.is_demo_trading)
         self.logger.info("🔗 Unified Trading Engine initialized")
