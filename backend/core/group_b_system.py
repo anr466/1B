@@ -237,6 +237,8 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 self.data_provider, mode=mode
             )
             self.logger.info(f"💧 LiquidityCognitiveFilter initialized (mode={mode})")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize LiquidityCognitiveFilter: {e}")
 
         # ===== Dynamic Coin Selector + Dual-Mode Router =====
         binance_client = None
@@ -248,8 +250,6 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             margin_enabled=self.user_settings.get("margin_enabled", False),
         )
         self.logger.info("🪙 DynamicCoinSelector + DualModeRouter initialized")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to initialize LiquidityCognitiveFilter: {e}")
 
         # ===== مدير Binance للتداول الحقيقي =====
         self.binance_manager = None
@@ -537,9 +537,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         if not symbols:
             symbols = BACKTEST_SYMBOLS.copy()
 
-        self.logger.info(
-            f"🪙 Dynamic symbols: {len(symbols)} coins (regime={regime})"
-        )
+        self.logger.info(f"🪙 Dynamic symbols: {len(symbols)} coins (regime={regime})")
         return symbols
 
     def _load_successful_coin_rows(self) -> List[tuple]:
