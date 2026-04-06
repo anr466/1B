@@ -240,6 +240,15 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize LiquidityCognitiveFilter: {e}")
 
+        # ===== مدير Binance للتداول الحقيقي =====
+        self.binance_manager = None
+        if BINANCE_MANAGER_AVAILABLE and not self.is_demo_trading:
+            try:
+                self.binance_manager = BinanceManager()
+                self.logger.info("💱 BinanceManager connected (Real Trading Ready)")
+            except Exception as e:
+                self.logger.warning(f"⚠️ BinanceManager init failed: {e}")
+
         # ===== Dynamic Coin Selector + Dual-Mode Router =====
         binance_client = None
         if self.binance_manager and hasattr(self.binance_manager, "client"):
@@ -250,15 +259,6 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             margin_enabled=self.user_settings.get("margin_enabled", False),
         )
         self.logger.info("🪙 DynamicCoinSelector + DualModeRouter initialized")
-
-        # ===== مدير Binance للتداول الحقيقي =====
-        self.binance_manager = None
-        if BINANCE_MANAGER_AVAILABLE and not self.is_demo_trading:
-            try:
-                self.binance_manager = BinanceManager()
-                self.logger.info("💱 BinanceManager connected (Real Trading Ready)")
-            except Exception as e:
-                self.logger.warning(f"⚠️ BinanceManager init failed: {e}")
 
         # ===== التعلم التكيّفي =====
         self.optimizer = None
