@@ -144,14 +144,15 @@ class ScalpingV8Engine:
     # ============================================================
     # ENTRY DETECTION (V7.1 + strategy filter)
     # ============================================================
-    def detect_entry(
-        self, df: pd.DataFrame, trend: str, idx: int = -1
-    ) -> Optional[Dict]:
-        """
-        Entry detection using V7.1 proven system + V8 strategy filter.
-        Only blocks verified losing strategies.
-        """
-        signal = self._v7.detect_entry(df, trend, idx)
+    def detect_entry(self, df: pd.DataFrame, context, idx: int = -1) -> Optional[Dict]:
+        """Entry detection using V7.1 proven system + V8 strategy filter."""
+        # Handle both dict context and string trend (backward compatibility)
+        if isinstance(context, dict):
+            trend = context.get("trend", "NEUTRAL")
+        else:
+            trend = str(context) if context else "NEUTRAL"
+
+        signal = self._v7.detect_entry(df, context, idx)
 
         if signal is None:
             return None

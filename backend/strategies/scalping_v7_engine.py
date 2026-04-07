@@ -337,25 +337,13 @@ class ScalpingV7Engine:
     # ============================================================
     # ENTRY DETECTION
     # ============================================================
-    def detect_entry(
-        self, df: pd.DataFrame, trend: str, idx: int = -1
-    ) -> Optional[Dict]:
-        """
-        Detect entry signal — V7.1 cognitive + V7 fallback.
+    def detect_entry(self, df: pd.DataFrame, context, idx: int = -1) -> Optional[Dict]:
+        """Detect entry signal — V7.1 cognitive + V7 fallback."""
+        if isinstance(context, dict):
+            trend = context.get("trend", "NEUTRAL")
+        else:
+            trend = str(context) if context else "NEUTRAL"
 
-        V7.1 flow:
-        1. Try cognitive strategies first (if enabled)
-        2. Fall back to V7 signal detection
-        3. Apply ATR-based adaptive SL (if enabled)
-
-        Args:
-            df: DataFrame with indicators (from prepare_data)
-            trend: 4H trend direction (UP/DOWN/NEUTRAL)
-            idx: Bar index to check (default: last completed bar = -2 for live)
-
-        Returns:
-            Entry signal dict or None
-        """
         if idx == -1:
             idx = len(df) - 2
 
