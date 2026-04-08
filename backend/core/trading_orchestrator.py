@@ -23,12 +23,18 @@ class TradingOrchestrator:
         position_manager=None,
         is_demo_trading: bool = True,
         user_id: int = None,
+        trading_brain=None,
+        adaptive_optimizer=None,
+        ml_training_manager=None,
     ):
         self.data_provider = data_provider
         self.db = db
         self.position_manager = position_manager
         self.is_demo_trading = is_demo_trading
         self.user_id = user_id
+        self.trading_brain = trading_brain
+        self.adaptive_optimizer = adaptive_optimizer
+        self.ml_training_manager = ml_training_manager
 
         self.state_analyzer = CoinStateAnalyzer()
         self.strategy_router = StrategyRouter()
@@ -129,6 +135,34 @@ class TradingOrchestrator:
                 signal = self.entry_executor.confirm_entry(symbol, df, state, route)
                 if not signal:
                     continue
+
+                # ML Brain filtering
+                if self.trading_brain:
+                    market_data = {
+                        "rsi": signal.get("rsi", 50),
+                        "adx": signal.get("adx", 20),
+                        "volatility": state.atr_pct,
+                        "trend": state.trend,
+                        "volume_ratio": signal.get("vol_ratio", 1.0),
+                        "bb_position": 0.5,
+                    }
+                    brain_decision = self.trading_brain.think(signal, market_data)
+                    if brain_decision.get("action") == "REJECT":
+                        logger.debug(
+                            f"   🧠 [{symbol}] Brain rejected: {brain_decision.get('reason', 'unknown')}"
+                        )
+                        continue
+                    signal["brain_confidence"] = brain_decision.get("confidence", 0)
+
+                # Adaptive SL from optimizer
+                if self.adaptive_optimizer:
+                    opt_sl = self.adaptive_optimizer.get_optimal_sl(
+                        self.user_id, self.is_demo_trading, symbol
+                    )
+                    if opt_sl and opt_sl > 0:
+                        signal["stop_loss"] = opt_sl
+                        risk = (signal["entry_price"] - opt_sl) / signal["entry_price"]
+                        signal["risk_pct"] = round(risk * 100, 2)
 
                 size_result = self.risk_manager.get_position_size(
                     balance, state.coin_type, signal["confidence"], 0.05
@@ -331,6 +365,45 @@ class TradingOrchestrator:
                     self.db.update_user_balance_on_conn(
                         conn, self.user_id, new_balance, self.is_demo_trading
                     )
+
+            # Record trade for ML learning
+            if self.ml_training_manager:
+                try:
+                    self.ml_training_manager.add_real_trade(
+                        symbol=position.get("symbol", ""),
+                        strategy=position.get("strategy", "unknown"),
+                        timeframe="1h",
+                        entry_price=position.get("entry_price", 0),
+                        exit_price=result["exit_price"],
+                        profit_loss=result["pnl"],
+                        profit_pct=result["pnl_pct"],
+                        indicators={
+                            "rsi": position.get("rsi", 50),
+                            "adx": position.get("adx", 20),
+                            "atr_pct": position.get("atr_pct", 0),
+                        },
+                        source="demo_trading"
+                        if self.is_demo_trading
+                        else "real_trading",
+                    )
+                except Exception as ml_err:
+                    logger.debug(f"   ⚠️ ML recording failed: {ml_err}")
+
+            # Learn from result via TradingBrain
+            if self.trading_brain and result.get("reason"):
+                try:
+                    self.trading_brain.learn_from_result(
+                        position.get("symbol", ""),
+                        {
+                            "profit_loss": result["pnl"],
+                            "pnl_pct": result["pnl_pct"],
+                            "exit_reason": result["reason"],
+                            "is_win": result.get("is_win", False),
+                        },
+                    )
+                except Exception as learn_err:
+                    logger.debug(f"   ⚠️ Brain learning failed: {learn_err}")
+
         except Exception as e:
             logger.error(f"   ❌ DB close error: {e}")
 

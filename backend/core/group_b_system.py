@@ -333,15 +333,20 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         self.unified_engine = UnifiedTradingEngine(self.user_id, self.is_demo_trading)
         self.logger.info("🔗 Unified Trading Engine initialized")
 
-        # ===== Trading Orchestrator (5-system architecture) =====
+        # ===== Trading Orchestrator (5-system + ML architecture) =====
         self.orchestrator = TradingOrchestrator(
             data_provider=self.data_provider,
             db=self.db,
             position_manager=self,
             is_demo_trading=self.is_demo_trading,
             user_id=self.user_id,
+            trading_brain=getattr(self, "trading_brain", None),
+            adaptive_optimizer=getattr(self, "optimizer", None),
+            ml_training_manager=self.ml_training_manager,
         )
-        self.logger.info("🎯 Trading Orchestrator initialized (5-system architecture)")
+        self.logger.info(
+            "🎯 Trading Orchestrator initialized (5-system + ML architecture)"
+        )
 
         # ===== الاستراتيجية النشطة (عبر واجهة BaseStrategy الموحدة) =====
         # القانون: النظام لا يعرف أي استراتيجية يشغّل — يستخدم الواجهة فقط
