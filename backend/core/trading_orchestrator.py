@@ -11,6 +11,7 @@ from backend.core.entry_executor import EntryExecutor
 from backend.core.monitoring_engine import MonitoringEngine
 from backend.core.exit_engine import ExitEngine
 from backend.core.portfolio_risk_manager import PortfolioRiskManager
+from backend.core.mtf_confirmation import MTFConfirmationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class TradingOrchestrator:
         self.monitoring_engine = MonitoringEngine()
         self.exit_engine = ExitEngine()
         self.risk_manager = PortfolioRiskManager()
+        self.mtf = MTFConfirmationEngine(data_provider=data_provider)
 
     def run_cycle(self, symbols: List[str]) -> Dict:
         result = {
@@ -154,6 +156,15 @@ class TradingOrchestrator:
                         continue
                     signal["brain_confidence"] = brain_decision.get("confidence", 0)
 
+                # MTF Entry Confirmation — wait for reversal on lower timeframes
+                mtf_result = self.mtf.confirm_entry(symbol, signal, df)
+                if not mtf_result["confirmed"]:
+                    logger.debug(
+                        f"   ⏳ [{symbol}] MTF entry not confirmed: {mtf_result['reason']} (score={mtf_result['score']})"
+                    )
+                    continue
+                signal["mtf_score"] = mtf_result["score"]
+
                 # Adaptive SL from optimizer
                 if self.adaptive_optimizer:
                     opt_sl = self.adaptive_optimizer.get_optimal_sl(
@@ -213,6 +224,19 @@ class TradingOrchestrator:
                 exit_price = action.get("price") or current_prices.get(symbol)
                 if not exit_price:
                     continue
+
+                # MTF Exit Confirmation for discretionary exits (not SL)
+                reason = action.get("reason", "")
+                if reason not in ("STOP_LOSS",):
+                    mtf_exit = self.mtf.confirm_exit(symbol, pos)
+                    if mtf_exit["confirmed"]:
+                        logger.info(
+                            f"   📉 [{symbol}] MTF exit confirmed: {mtf_exit['reason']} (score={mtf_exit['score']})"
+                        )
+                    else:
+                        logger.debug(
+                            f"   ⏳ [{symbol}] MTF exit not confirmed: {mtf_exit['reason']}, proceeding anyway"
+                        )
 
                 result = self.exit_engine.execute_exit(
                     pos, exit_price, action["reason"], close_pct=1.0

@@ -895,19 +895,69 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             elif self.daily_state.get("peak_balance", 0) == 0:
                 self.daily_state["peak_balance"] = current_balance
 
-            # 2. إدارة الصفقات المفتوحة
+            # 2. إدارة الصفقات المفتوحة — استخدام نظام المراقبة الجديد
             open_positions = self._get_open_positions()
             result["positions_checked"] = len(open_positions)
 
-            for position in open_positions:
-                try:
-                    action = self._manage_position(position)
-                    if action:
-                        result["actions"].append(action)
-                        if action.get("type") == "CLOSE":
-                            result["positions_closed"] += 1
-                except Exception as e:
-                    result["errors"].append(f"Position {position.get('id')}: {e}")
+            # Get current prices for monitoring
+            current_prices = {}
+            for pos in open_positions:
+                price = self.data_provider.get_current_price(pos["symbol"])
+                if price:
+                    current_prices[pos["symbol"]] = price
+
+            self.logger.info(
+                f"   📡 Current prices: {len(current_prices)}/{len(open_positions)} fetched"
+            )
+
+            # Use new MonitoringEngine for all positions
+            if current_prices:
+                actions = self.orchestrator.monitoring_engine.monitor_positions(
+                    open_positions, current_prices
+                )
+                self.logger.info(
+                    f"   🔍 Monitoring: {len(actions)} actions from {len(current_prices)} positions"
+                )
+                for action in actions:
+                    result["actions"].append(action)
+                    if action["type"] == "CLOSE":
+                        exit_price = action.get("price") or current_prices.get(
+                            action["symbol"]
+                        )
+                        if exit_price:
+                            pos = next(
+                                (
+                                    p
+                                    for p in open_positions
+                                    if p["symbol"] == action["symbol"]
+                                ),
+                                None,
+                            )
+                            if pos:
+                                from backend.core.exit_engine import ExitEngine
+
+                                exit_engine = ExitEngine()
+                                exit_result = exit_engine.execute_exit(
+                                    pos, exit_price, action["reason"], close_pct=1.0
+                                )
+                                if exit_result["success"]:
+                                    self.orchestrator._close_position_in_db(
+                                        pos, exit_result
+                                    )
+                                    result["positions_closed"] += 1
+                    elif action["type"] == "UPDATE":
+                        pos = next(
+                            (
+                                p
+                                for p in open_positions
+                                if p["symbol"] == action["symbol"]
+                            ),
+                            None,
+                        )
+                        if pos:
+                            self.orchestrator._update_position_in_db(
+                                pos, action["updates"]
+                            )
 
             # 3. البحث عن فرص جديدة (إذا مسموح والرصيد يكفي والإعدادات مكتملة)
             available_balance = self.user_portfolio.get("balance", 0)
