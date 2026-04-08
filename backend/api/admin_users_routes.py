@@ -344,7 +344,20 @@ def register_admin_users_routes(bp, shared):
                     ),
                 )
 
-                user_id = cursor.lastrowid
+                # PostgreSQL: RETURNING id requires fetchone(), not lastrowid
+                row = cursor.fetchone()
+                user_id = row[0] if row else None
+                if user_id is None:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "فشل إنشاء المستخدم",
+                                "error_code": "USER_CREATION_FAILED",
+                            }
+                        ),
+                        500,
+                    )
 
                 is_admin_user = data["user_type"] == "admin"
 

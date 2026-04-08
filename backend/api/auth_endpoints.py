@@ -230,7 +230,7 @@ def save_password_reset_request(user_id: int, otp_code: str):
 
 def verify_password_reset_otp(user_id: int, otp_code: str) -> bool:
     try:
-        with db_manager.get_read_connection() as conn:
+        with db_manager.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """

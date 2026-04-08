@@ -38,9 +38,7 @@ class MistakeMemory:
         # أنماط الأخطاء المكتشفة
         self.discovered_patterns = []
 
-    def record_mistake(
-        self, trade_data: Dict, market_conditions: Dict, reason: str
-    ):
+    def record_mistake(self, trade_data: Dict, market_conditions: Dict, reason: str):
         """تسجيل خطأ جديد"""
         mistake = {
             "timestamp": datetime.now().isoformat(),
@@ -67,14 +65,12 @@ class MistakeMemory:
 
         # الحفاظ على الحد الأقصى
         if len(self.mistakes) > self.max_mistakes:
-            self.mistakes = self.mistakes[-self.max_mistakes:]
+            self.mistakes = self.mistakes[-self.max_mistakes :]
 
-        logger.warning(f"🧠 تم تسجيل خطأ: {reason} | {
-            trade_data.get('symbol')} | خسارة: ${
-            abs(
-                trade_data.get(
-                    'profit_loss',
-                    0)):.2f}")
+        logger.warning(
+            f"🧠 تم تسجيل خطأ: {reason} | {trade_data.get('symbol')} | خسارة: ${
+                abs(trade_data.get('profit_loss', 0)):.2f}"
+        )
 
     def _update_patterns(self, mistake: Dict):
         """تحديث أنماط الأخطاء"""
@@ -141,9 +137,11 @@ class MistakeMemory:
                 "discovered_at": datetime.now().isoformat(),
             }
             self.discovered_patterns.append(discovered)
-            logger.info(f"🧠 اكتشاف نمط خطأ جديد: {pattern_key} | تكرار: {
-                pattern['count']} | متوسط الخسارة: ${
-                avg_loss:.2f}")
+            logger.info(
+                f"🧠 اكتشاف نمط خطأ جديد: {pattern_key} | تكرار: {
+                    pattern['count']
+                } | متوسط الخسارة: ${avg_loss:.2f}"
+            )
 
     def _generate_rule(self, pattern_key: str) -> str:
         """توليد قاعدة لتجنب الخطأ"""
@@ -216,21 +214,59 @@ class TradingBrain:
 
         # حدود الثقة المتكيفة
         self.confidence_thresholds = {
-            "BTCUSDT": 0.55,  # عملات كبيرة - ثقة أقل مطلوبة
+            "BTCUSDT": 0.55,
             "ETHUSDT": 0.55,
-            "default": 0.60,  # افتراضي
+            "default": 0.60,
         }
 
         # قواعد التعلم
         self.learned_rules: List[Dict] = []
 
+        # ===== Phase-Aware Trading System =====
+        from backend.ml.backtest_importer import (
+            PHASE_BACKTEST,
+            PHASE_PAPER,
+            PHASE_VALIDATION,
+            PHASE_LIVE,
+        )
+
+        self.current_phase = PHASE_BACKTEST
+        self.PHASE_BACKTEST = PHASE_BACKTEST
+        self.PHASE_PAPER = PHASE_PAPER
+        self.PHASE_VALIDATION = PHASE_VALIDATION
+        self.PHASE_LIVE = PHASE_LIVE
+
+        # Paper Trading Engine
+        from backend.ml.paper_trading import get_paper_engine
+
+        self.paper_engine = get_paper_engine(db_manager)
+
+        # Live Validator
+        from backend.ml.live_validator import get_validator
+
+        self.validator = get_validator()
+
         # تحميل ML إذا متوفر
         self._init_ml_systems()
 
-        logger.info("🧠 تم تهيئة Trading Brain")
+        # تحميل المرحلة من قاعدة البيانات
+        self._load_phase_from_db()
+
+        logger.info(f"🧠 Trading Brain initialized | Phase: {self.current_phase}")
+
+    def set_phase(self, phase: str):
+        valid = (
+            self.PHASE_BACKTEST,
+            self.PHASE_PAPER,
+            self.PHASE_VALIDATION,
+            self.PHASE_LIVE,
+        )
+        if phase in valid:
+            self.current_phase = phase
+            self._save_phase_to_db()
+            logger.info(f"🔄 Phase set: {phase}")
 
     def _init_ml_systems(self):
-        """تهيئة أنظمة ML"""
         try:
             from backend.ml.signal_classifier import get_ml_classifier
             from backend.ml.pattern_similarity_matcher import (
@@ -255,25 +291,62 @@ class TradingBrain:
             self.hybrid_system = None
             logger.warning(f"⚠️ ML غير متوفر: {e}")
 
+    def _load_phase_from_db(self):
+        try:
+            if not self.db:
+                return
+            with self.db.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT current_phase FROM trading_phase_state WHERE id = 1"
+                ).fetchone()
+                if row and row[0] in (
+                    self.PHASE_BACKTEST,
+                    self.PHASE_PAPER,
+                    self.PHASE_VALIDATION,
+                    self.PHASE_LIVE,
+                ):
+                    self.current_phase = row[0]
+                    logger.info(f"📥 Phase loaded from DB: {self.current_phase}")
+        except Exception as e:
+            if "trading_phase_state" in str(e):
+                logger.debug("trading_phase_state table not found, using default phase")
+            else:
+                logger.warning(f"⚠️ Failed to load phase from DB: {e}")
+
+    def _save_phase_to_db(self):
+        try:
+            if not self.db:
+                return
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO trading_phase_state (id, current_phase, updated_at)
+                    VALUES (1, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (id) DO UPDATE SET current_phase = %s, updated_at = CURRENT_TIMESTAMP
+                """,
+                    (self.current_phase, self.current_phase),
+                )
+                conn.commit()
+                logger.info(f"💾 Phase saved to DB: {self.current_phase}")
+        except Exception as e:
+            if "trading_phase_state" in str(e):
+                logger.debug("trading_phase_state table not found, skipping save")
+            else:
+                logger.warning(f"⚠️ Failed to save phase to DB: {e}")
+
     def think(self, signal: Dict, market_data: Dict) -> Dict[str, Any]:
         """
-        التفكير قبل اتخاذ قرار التداول
-
-        Args:
-            signal: إشارة التداول من EnhancedEntrySystem
-            market_data: بيانات السوق الحالية
-
-        Returns:
-            Dict مع القرار والأسباب
+        التفكير قبل اتخاذ قرار التداول — Phase-Aware.
         """
         self.stats["total_decisions"] += 1
 
         symbol = signal.get("symbol", market_data.get("symbol", "UNKNOWN"))
-        confidence = signal.get("confidence", 0) / 100  # تحويل لنسبة
+        confidence = signal.get("confidence", 0) / 100
 
         decision = {
             "timestamp": datetime.now().isoformat(),
             "symbol": symbol,
+            "phase": self.current_phase,
             "original_confidence": confidence,
             "checks_passed": [],
             "checks_failed": [],
@@ -282,7 +355,93 @@ class TradingBrain:
             "reasoning": [],
         }
 
-        # ========== 1. فحص ذاكرة الأخطاء ==========
+        # ===== Phase-Specific Logic =====
+        if self.current_phase == self.PHASE_BACKTEST:
+            return self._decide_bootstrap(signal, decision)
+
+        if self.current_phase == self.PHASE_PAPER:
+            return self._decide_paper(signal, market_data, decision)
+
+        if self.current_phase == self.PHASE_VALIDATION:
+            return self._decide_validation(signal, market_data, decision)
+
+        # PHASE_LIVE — full ML filtering
+        return self._decide_live(signal, market_data, decision)
+
+    def _decide_bootstrap(self, signal: Dict, decision: Dict) -> Dict[str, Any]:
+        """Phase 1: Bootstrap — approve all signals for paper trading."""
+        decision["final_decision"] = "APPROVE"
+        decision["execution_mode"] = "PAPER"
+        decision["reasoning"].append("✅ Bootstrap phase — routing to paper trading")
+        self.stats["approved"] += 1
+        return decision
+
+    def _decide_paper(
+        self, signal: Dict, market_data: Dict, decision: Dict
+    ) -> Dict[str, Any]:
+        """Phase 2: Paper Trading — approve signals, track results."""
+        mistake_check = self.mistake_memory.should_avoid(market_data)
+        if mistake_check["avoid"]:
+            decision["checks_failed"].append("mistake_memory")
+            decision["final_decision"] = "REJECT"
+            decision["rejection_reason"] = "repeated_mistake_pattern"
+            self._record_rejection(decision)
+            return decision
+
+        decision["final_decision"] = "APPROVE"
+        decision["execution_mode"] = "PAPER"
+        decision["reasoning"].append(
+            "✅ Paper trading — signal approved for simulation"
+        )
+        self.stats["approved"] += 1
+
+        # Route to paper engine
+        paper_result = self.paper_engine.process_signal(signal)
+        decision["paper_trade"] = paper_result
+
+        return decision
+
+    def _decide_validation(
+        self, signal: Dict, market_data: Dict, decision: Dict
+    ) -> Dict[str, Any]:
+        """Phase 3: Validation — paper trading + periodic validation check."""
+        mistake_check = self.mistake_memory.should_avoid(market_data)
+        if mistake_check["avoid"]:
+            decision["checks_failed"].append("mistake_memory")
+            decision["final_decision"] = "REJECT"
+            decision["rejection_reason"] = "repeated_mistake_pattern"
+            self._record_rejection(decision)
+            return decision
+
+        decision["final_decision"] = "APPROVE"
+        decision["execution_mode"] = "PAPER"
+        decision["reasoning"].append(
+            "✅ Validation phase — paper trading with validation"
+        )
+        self.stats["approved"] += 1
+
+        paper_result = self.paper_engine.process_signal(signal)
+        decision["paper_trade"] = paper_result
+
+        # Run validation check
+        paper_stats = self.paper_engine.get_stats()
+        self.validator.update_paper_results(paper_stats)
+        validation = self.validator.validate()
+        decision["validation"] = validation
+
+        if validation["ready"]:
+            self.current_phase = self.PHASE_LIVE
+            self._save_phase_to_db()
+            decision["phase_transition"] = "PAPER → LIVE"
+            logger.info("🚀 Phase transition: PAPER_TRADING → LIVE_TRADING")
+
+        return decision
+
+    def _decide_live(
+        self, signal: Dict, market_data: Dict, decision: Dict
+    ) -> Dict[str, Any]:
+        """Phase 4: Live Trading — full ML filtering."""
+        # Existing ML filtering logic
         mistake_check = self.mistake_memory.should_avoid(market_data)
         if mistake_check["avoid"]:
             decision["checks_failed"].append("mistake_memory")
@@ -293,7 +452,6 @@ class TradingBrain:
             return decision
         decision["checks_passed"].append("mistake_memory")
 
-        # ========== 2. فحص ML Classifier ==========
         if self.ml_available and self.ml_classifier:
             ml_result = self._check_ml_classifier(signal, market_data)
             if not ml_result["approved"]:
@@ -308,61 +466,48 @@ class TradingBrain:
                 "confidence_multiplier", 1.0
             )
 
-        # ========== 3. فحص تشابه الأنماط ==========
         if self.ml_available and self.similarity_matcher:
             similarity_result = self._check_pattern_similarity(market_data)
             if similarity_result["similarity"] < 0.4:
                 decision["checks_failed"].append("pattern_similarity")
-                decision["reasoning"].append(f"⚠️ تشابه منخفض: {
-                    similarity_result['similarity']:.0%}")
-                # لا نرفض، لكن نقلل الثقة
                 decision["adjusted_confidence"] *= 0.85
             else:
                 decision["checks_passed"].append("pattern_similarity")
-                decision["reasoning"].append(
-                    f"✅ تشابه: {similarity_result['similarity']:.0%}"
-                )
 
-        # ========== 4. فحص القرار المزدوج ==========
         if self.ml_available and self.dual_decision:
             dual_result = self._check_dual_decision(signal, market_data)
             if dual_result["action"] == "skip":
                 decision["checks_failed"].append("dual_decision")
-                decision["reasoning"].append(f"⚠️ القرار المزدوج: تخطي")
                 decision["adjusted_confidence"] *= 0.9
             else:
                 decision["checks_passed"].append("dual_decision")
 
-        # ========== 5. فحص القواعد المتعلمة ==========
         rules_result = self._check_learned_rules(signal, market_data)
         if rules_result["violations"]:
             decision["checks_failed"].extend(["learned_rules"])
-            decision["reasoning"].append(f"⚠️ انتهاك قواعد: {
-                rules_result['violations']}")
             decision["adjusted_confidence"] *= 0.8
         else:
             decision["checks_passed"].append("learned_rules")
 
-        # ========== 6. القرار النهائي ==========
         threshold = self.confidence_thresholds.get(
             symbol, self.confidence_thresholds["default"]
         )
 
         if decision["adjusted_confidence"] >= threshold:
             decision["final_decision"] = "APPROVE"
-            decision["reasoning"].append(f"✅ الثقة النهائية: {
-                decision['adjusted_confidence']:.0%} >= {
-                threshold:.0%}")
+            decision["execution_mode"] = "LIVE"
+            decision["reasoning"].append(
+                f"✅ Live trading approved: {decision['adjusted_confidence']:.0%} >= {threshold:.0%}"
+            )
             self.stats["approved"] += 1
         else:
             decision["final_decision"] = "REJECT"
             decision["rejection_reason"] = "low_confidence"
-            decision["reasoning"].append(f"❌ الثقة منخفضة: {
-                decision['adjusted_confidence']:.0%} < {
-                threshold:.0%}")
+            decision["reasoning"].append(
+                f"❌ Low confidence: {decision['adjusted_confidence']:.0%} < {threshold:.0%}"
+            )
             self._record_rejection(decision)
 
-        # حفظ القرار للتعلم لاحقاً
         decision_id = f"{symbol}_{datetime.now().timestamp()}"
         self.pending_decisions[decision_id] = decision
         decision["decision_id"] = decision_id
@@ -391,10 +536,10 @@ class TradingBrain:
                     "reason": "ML approved",
                 }
             else:
-                return {"approved": False, "reason": f"ML confidence: {
-                        result.get(
-                            'confidence',
-                            0):.0%}"}
+                return {
+                    "approved": False,
+                    "reason": f"ML confidence: {result.get('confidence', 0):.0%}",
+                }
 
         except Exception as e:
             logger.warning(f"خطأ في ML: {e}")
@@ -517,9 +662,7 @@ class TradingBrain:
     def _log_decision(self, decision: Dict):
         """تسجيل القرار"""
         status = (
-            "✅ APPROVE"
-            if decision["final_decision"] == "APPROVE"
-            else "❌ REJECT"
+            "✅ APPROVE" if decision["final_decision"] == "APPROVE" else "❌ REJECT"
         )
         logger.info(
             f"🧠 {decision['symbol']} | {status} | "
@@ -559,9 +702,7 @@ class TradingBrain:
                         "confidence": decision["original_confidence"],
                         "strategy": trade_result.get("strategy"),
                     },
-                    market_conditions=trade_result.get(
-                        "market_conditions", {}
-                    ),
+                    market_conditions=trade_result.get("market_conditions", {}),
                     reason=f"خسارة رغم الموافقة (ثقة: {decision['original_confidence']:.0%})",
                 )
 
@@ -571,8 +712,10 @@ class TradingBrain:
                     self.confidence_thresholds[symbol] = min(
                         0.75, self.confidence_thresholds[symbol] + 0.02
                     )
-                    logger.info(f"🧠 رفع عتبة الثقة لـ {symbol}: {
-                        self.confidence_thresholds[symbol]:.0%}")
+                    logger.info(
+                        f"🧠 رفع عتبة الثقة لـ {symbol}: {
+                            self.confidence_thresholds[symbol]:.0%}"
+                    )
 
         # تحديث الدقة
         self._update_accuracy()
@@ -594,9 +737,7 @@ class TradingBrain:
             "rejection_reasons": dict(self.stats["rejection_reasons"]),
             "ml_available": self.ml_available,
             "mistakes_recorded": len(self.mistake_memory.mistakes),
-            "discovered_patterns": len(
-                self.mistake_memory.discovered_patterns
-            ),
+            "discovered_patterns": len(self.mistake_memory.discovered_patterns),
             "learned_rules": len(self.learned_rules),
             "confidence_thresholds": self.confidence_thresholds,
         }

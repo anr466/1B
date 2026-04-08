@@ -124,19 +124,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     final authState = ref.read(authProvider);
     if (authState.isAuthenticated) {
-      // Check if biometric is enabled and requires verification
       final storage = ref.read(storageServiceProvider);
       final isBiometricEnabled = storage.biometricEnabled;
-      final trustNotifier = ref.read(biometricTrustProvider.notifier);
-      final isTrusted = trustNotifier.isTrusted;
 
-      // If biometric is enabled, ALWAYS require biometric verification first
-      // This ensures user sees biometric prompt even if credentials aren't saved
-      if (isBiometricEnabled && !isTrusted) {
-        // Go to login screen - it will prompt for biometric automatically
+      // If biometric is enabled, ALWAYS show login screen first
+      // The login screen will auto-trigger biometric prompt
+      // Trust is only used within same session (e.g. navigating back from settings)
+      if (isBiometricEnabled) {
         _navigateToLogin();
       } else {
-        // Valid session found without biometric requirement - go directly to dashboard
+        // No biometric requirement - go directly to dashboard
         _navigateToDashboard();
       }
     } else {

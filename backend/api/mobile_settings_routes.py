@@ -349,18 +349,7 @@ def register_mobile_settings_routes(bp, shared):
             data = request.get_json(silent=True) or {}
             requested_mode = request.args.get("mode")
 
-            # ═══════════════════════════════════════════════════════════════
-            # ✅ Exclusive Mode Logic: Disable other mode when enabling one
-            # ═══════════════════════════════════════════════════════════════
             trading_enabled = data.get("tradingEnabled", False)
-            if trading_enabled and requested_mode in {"demo", "real"}:
-                other_mode = "real" if requested_mode == "demo" else "demo"
-                other_is_demo = requested_mode == "demo"
-                with db.get_connection() as conn:
-                    conn.execute(
-                        "UPDATE user_settings SET trading_enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s AND is_demo = %s",
-                        (user_id, not other_is_demo),
-                    )
 
             # ═══════════════════════════════════════════════════════════════
             # ✅ FIX: تطبيع أسماء الحقول — القبول بـ snake_case و camelCase
@@ -780,51 +769,60 @@ def register_mobile_settings_routes(bp, shared):
                     SET {set_clauses}, updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = %s AND is_demo = %s
                 """
-                db.execute_query(
-                    update_query,
-                    (*field_map.values(), user_id, target_is_demo),
-                )
+                with db.get_write_connection() as conn:
+                    if trading_enabled and requested_mode in {"demo", "real"}:
+                        other_is_demo = requested_mode == "demo"
+                        conn.execute(
+                            "UPDATE user_settings SET trading_enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s AND is_demo = %s",
+                            (user_id, not other_is_demo),
+                        )
+                    conn.execute(
+                        update_query, (*field_map.values(), user_id, target_is_demo)
+                    )
             else:
-                # إنشاء إعدادات جديدة للمحفظة المستهدفة
-                insert_query = """
-                    INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount,
-                        position_size_percentage, stop_loss_pct, take_profit_pct, trailing_distance,
-                        max_positions, risk_level, max_daily_loss_pct, trading_mode,
-                        created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """
-                db.execute_query(
-                    insert_query,
-                    (
-                        user_id,
-                        target_is_demo,
-                        bool(data.get("tradingEnabled", False)),
-                        float(data.get("tradeAmount", 100.0)),
-                        float(
-                            data.get("positionSizePercentage", 12.0)
-                        ),  # backend default: 12%
-                        float(
-                            data.get(
-                                "stopLossPercentage",
-                                data.get("stopLossPct", 1.0),
-                            )
-                        ),  # backend default: 1%
-                        float(
-                            data.get(
-                                "takeProfitPercentage",
-                                data.get("takeProfitPct", 2.0),
-                            )
-                        ),  # backend default: 2%
-                        float(
-                            data.get("trailingDistance", 0.4)
-                        ),  # backend default: 0.4%
-                        int(data.get("maxConcurrentTrades", 5)),
-                        str(data.get("riskLevel", "medium")),
-                        # backend enforces 3%
-                        (float(max_daily_loss) if max_daily_loss is not None else 3.0),
-                        effective_mode,
-                    ),
-                )
+                with db.get_write_connection() as conn:
+                    if trading_enabled and requested_mode in {"demo", "real"}:
+                        other_is_demo = requested_mode == "demo"
+                        conn.execute(
+                            "UPDATE user_settings SET trading_enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s AND is_demo = %s",
+                            (user_id, not other_is_demo),
+                        )
+                    conn.execute(
+                        """
+                        INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount,
+                            position_size_percentage, stop_loss_pct, take_profit_pct, trailing_distance,
+                            max_positions, risk_level, max_daily_loss_pct, trading_mode,
+                            created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """,
+                        (
+                            user_id,
+                            target_is_demo,
+                            bool(data.get("tradingEnabled", False)),
+                            float(data.get("tradeAmount", 100.0)),
+                            float(data.get("positionSizePercentage", 12.0)),
+                            float(
+                                data.get(
+                                    "stopLossPercentage", data.get("stopLossPct", 1.0)
+                                )
+                            ),
+                            float(
+                                data.get(
+                                    "takeProfitPercentage",
+                                    data.get("takeProfitPct", 2.0),
+                                )
+                            ),
+                            float(data.get("trailingDistance", 0.4)),
+                            int(data.get("maxConcurrentTrades", 5)),
+                            str(data.get("riskLevel", "medium")),
+                            (
+                                float(max_daily_loss)
+                                if max_daily_loss is not None
+                                else 3.0
+                            ),
+                            effective_mode,
+                        ),
+                    )
                 if not target_is_demo:
                     initial_balance = 0.0
                     db.execute_query(

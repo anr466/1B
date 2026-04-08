@@ -12,6 +12,12 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+PHASE_BACKTEST = "BACKTEST_BOOTSTRAP"
+PHASE_PAPER = "PAPER_TRADING"
+PHASE_VALIDATION = "LIVE_VALIDATION"
+PHASE_LIVE = "LIVE_TRADING"
+PHASES_NO_BLACKLIST = {PHASE_BACKTEST, PHASE_PAPER, PHASE_VALIDATION}
+
 
 class DynamicBlacklist:
     """
@@ -42,10 +48,9 @@ class DynamicBlacklist:
             }
         )
 
-        # القائمة السوداء الديناميكية
         self.blacklist: Set[str] = set()
+        self.current_phase = PHASE_LIVE
 
-        # إعدادات
         self.config = {
             "min_trades_for_decision": 3,  # الحد الأدنى للصفقات قبل الحكم
             "min_win_rate": 0.35,  # أقل من 35% = قائمة سوداء
@@ -130,11 +135,12 @@ class DynamicBlacklist:
 
         self.logger.info(f"✅ {symbol} ← خرجت من القائمة السوداء: {reason}")
 
+    def set_phase(self, phase: str):
+        self.current_phase = phase
+
     def is_blacklisted(self, symbol: str) -> bool:
-        """
-        هل العملة في القائمة السوداء؟
-        مع فحص انتهاء المدة
-        """
+        if self.current_phase in PHASES_NO_BLACKLIST:
+            return False
         if symbol not in self.blacklist:
             return False
 

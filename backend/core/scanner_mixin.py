@@ -197,6 +197,14 @@ class ScannerMixin:
                     "   ⚠️ Market regime unfavorable - skipping new entries"
                 )
                 return entries
+
+            # 🔴 BTC 4H TREND GATE: لا LONG إذا BTC في اتجاه هابط
+            btc_trend_ok = self._check_btc_trend_gate()
+            if not btc_trend_ok:
+                self.logger.info(
+                    "   🚫 BTC 4H trend is DOWN — blocking all LONG entries"
+                )
+                return entries
         elif validation_mode:
             # في validation_mode: نفحص السوق لكن لا نمنع الإشارات
             self._check_market_regime()  # تسجيل الحالة فقط
@@ -253,22 +261,30 @@ class ScannerMixin:
                     if df is None or len(df) < 70:
                         continue
 
+                    # تحديد اتجاه السوق أولاً (قبل أي معالجة مكلفة)
+                    trend = self.strategy.get_market_trend(df)
+
+                    # تخطي فوري إذا الاتجاه هابط (DOWN)
+                    if trend == "DOWN":
+                        self.logger.info(f"   ⏭️ [{symbol}] trend=DOWN → skip")
+                        continue
+
                     # تحضير البيانات (إضافة المؤشرات — عبر الواجهة الموحدة)
                     df = self.strategy.prepare_data(df)
-
-                    # تحديد اتجاه السوق (عبر الواجهة الموحدة)
-                    trend = self.strategy.get_market_trend(df)
 
                     # كشف إشارة الدخول (عبر الواجهة الموحدة)
                     signal = self.strategy.detect_entry(df, {"trend": trend})
                     if not signal:
-                        self.logger.info(f"   ⏭️ [{symbol}] trend={trend} → no signal")
+                        self.logger.info(f"   ⏭️ [{symbol}] {trend} → no entry signal")
                         continue
 
                     # ===== Quality Filters from V8_CONFIG =====
                     min_vol = self.strategy.get_config().get("min_volume_ratio", 0)
                     min_rsi_val = self.strategy.get_config().get("min_rsi", 0)
                     min_adx_val = self.strategy.get_config().get("min_adx", 0)
+
+                    # Range signals don't need ADX (range markets have low ADX by nature)
+                    is_range_signal = signal.get("strategy") == "range_support"
 
                     if min_vol > 1.0:
                         vol_ma = df["volume"].rolling(20).mean().iloc[-1]
@@ -288,7 +304,7 @@ class ScannerMixin:
                             )
                             continue
 
-                    if min_adx_val > 0:
+                    if min_adx_val > 0 and not is_range_signal:
                         adx_val = df["adx"].iloc[-1] if "adx" in df.columns else 25
                         if adx_val < min_adx_val:
                             self.logger.info(
@@ -315,6 +331,41 @@ class ScannerMixin:
                             )
 
                     if signal:
+                        # ===== 4H Trend Gate: LONG يحتاج اتجاه صاعد =====
+                        # ⚠️ DISABLED in demo mode — strategy validates itself
+                        # Range signals are exempt (they work in sideways markets)
+                        is_range = signal.get("strategy") == "range_support"
+                        is_demo = getattr(self, "is_demo_trading", False)
+                        if (
+                            not is_demo  # Only gate real money
+                            and signal.get("side") == "LONG"
+                            and trend != "UP"
+                            and not is_range
+                        ):
+                            self.logger.info(
+                                f"   🚫 [{symbol}] LONG blocked: 4H trend={trend} (require UP) → skip"
+                            )
+                            continue
+
+                        # ===== Signal Quality Gate =====
+                        sig_score_val = signal.get("confidence", signal.get("score", 0))
+                        min_score = self.strategy.get_config().get(
+                            "min_signal_strength", 55
+                        )
+                        if sig_score_val < min_score:
+                            self.logger.info(
+                                f"   🚫 [{symbol}] Signal confidence {sig_score_val:.0f} < {min_score} → skip"
+                            )
+                            continue
+
+                        # ===== Raw Score Gate: reject weak underlying signals =====
+                        raw_score = signal.get("score", 0)
+                        if raw_score < 50:
+                            self.logger.info(
+                                f"   🚫 [{symbol}] Raw strategy score {raw_score:.1f} < 50 → skip"
+                            )
+                            continue
+
                         signals_to_persist.append(
                             {
                                 "symbol": symbol,
@@ -409,7 +460,7 @@ class ScannerMixin:
                                 self.logger.warning(f"⚠️ Signal scoring error: {e}")
 
                         # ✅ إضافة للمرشحين بدلاً من الدخول فوراً
-                        sig_score_val = signal.get("score", 0)
+                        sig_score_val = signal.get("confidence", signal.get("score", 0))
                         # نحتفظ بـ df المعالج لهذا الرمز لاستخدامه في فلتر
                         # السيولة لاحقاً
                         qualified_signals.append(
@@ -541,6 +592,47 @@ class ScannerMixin:
                             self.logger.warning(
                                 f"   🛡️ [{sym}] Pre-entry risk gate BLOCKED: {gate_reason_entry}"
                             )
+                            continue
+
+                    # ===== TradingBrain Think Gate (Phase-Aware Decision) =====
+                    brain_decision = None
+                    if hasattr(self, "trading_brain") and self.trading_brain:
+                        market_data = {
+                            "rsi": entry_indicators.get("rsi", 50),
+                            "macd": entry_indicators.get("macd", 0),
+                            "volatility": entry_indicators.get("volatility", 0.03),
+                            "trend": entry_indicators.get("trend_4h", "NEUTRAL"),
+                            "volume_ratio": entry_indicators.get("volume_ratio", 1.0),
+                            "bb_position": entry_indicators.get("bb_position", 0.5),
+                        }
+                        brain_decision = self.trading_brain.think(
+                            filtered_signal, market_data
+                        )
+
+                        if brain_decision.get("final_decision") == "REJECT":
+                            reason = brain_decision.get("rejection_reason", "unknown")
+                            self.logger.info(
+                                f"   🧠 [{sym}] TradingBrain REJECTED: {reason} | Phase: {brain_decision.get('phase', 'unknown')}"
+                            )
+                            continue
+
+                        execution_mode = brain_decision.get("execution_mode", "LIVE")
+
+                        # PAPER mode: route to PaperTradingEngine instead of real execution
+                        if execution_mode == "PAPER":
+                            paper_result = brain_decision.get("paper_trade")
+                            if paper_result:
+                                entry = {
+                                    "type": "PAPER_OPEN",
+                                    "symbol": sym,
+                                    "signal": filtered_signal,
+                                    "paper_trade": paper_result,
+                                    "phase": brain_decision.get("phase"),
+                                }
+                                entries.append(entry)
+                                self.logger.info(
+                                    f"   📝 [{sym}] PAPER TRADE executed | Phase: {brain_decision.get('phase')}"
+                                )
                             continue
 
                     entry = self._open_position(sym, filtered_signal)
@@ -691,6 +783,47 @@ class ScannerMixin:
             )
             self._market_caution_factor = 0.0
             return False  # قانون: لا تصنيف = لا تداول
+
+    def _check_btc_trend_gate(self) -> bool:
+        """
+        BTC 4H Trend Gate — يمنع LONG إذا BTC في اتجاه هابط.
+        BTC يقود السوق كله — إذا BTC هابط، كل العملات ستتبعه.
+
+        Returns:
+            True = آمن للدخول LONG
+            False = BTC هابط، ممنوع LONG
+        """
+        try:
+            df = self.data_provider.get_historical_data("BTCUSDT", "4h", limit=100)
+            if df is None or len(df) < 55:
+                return True  # لا بيانات، نسمح بالدخول (حذر)
+
+            df = self._add_indicators(df)
+            last = df.iloc[-1]
+
+            e21 = last.get("ema21")
+            e55 = last.get("ema55")
+            close = last["close"]
+
+            if pd.isna(e21) or pd.isna(e55):
+                return True
+
+            # BTC هابط: EMA21 تحت EMA55 والسعر تحت EMA21
+            if e21 < e55 and close < e21:
+                return False
+
+            # BTC محايد: EMA21 و EMA55 متقاربان
+            ema_diff_pct = abs(e21 - e55) / e55
+            if ema_diff_pct < 0.005:
+                self.logger.info(
+                    f"   ⚠️ BTC 4H NEUTRAL (EMA diff={ema_diff_pct * 100:.2f}%) — cautious mode"
+                )
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ BTC trend gate error: {e} — allowing entries")
+            return True
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """إضافة المؤشرات الفنية"""

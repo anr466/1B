@@ -47,7 +47,6 @@ V8_CONFIG = {
     "min_volume_ratio": 1.2,
     "min_rsi": 40,
     "min_adx": 10,
-    "min_signal_strength": 55,
     # === EXIT: Live-optimized (wider stops for memecoin volatility) ===
     "breakeven_trigger": 0.010,
     "breakeven_at": 0.015,
@@ -504,10 +503,6 @@ class ScalpingV8Engine:
             "timeframe": self.config.get("data_timeframe", "1h"),
             "max_positions": self.config.get("max_positions", 5),
             "position_size_pct": self.config.get("position_size_pct", 0.06),
-            "min_signal_strength": self.config.get("min_signal_strength", 55),
-            "min_volume_ratio": self.config.get("min_volume_ratio", 1.2),
-            "min_rsi": self.config.get("min_rsi", 40),
-            "min_adx": self.config.get("min_adx", 10),
         }
 
 

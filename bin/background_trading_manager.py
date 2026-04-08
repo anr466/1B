@@ -601,7 +601,7 @@ class BackgroundTradingManager:
 
                     # ========== منطق التداول ==========
                     if trading_enabled:
-                        group_b.run_trading_cycle()
+                        group_b.run_monitoring_only()
                         logger.debug(
                             f"✅ User {user_id} ({username}) mode={requested_mode}: دورة تداول كاملة"
                         )

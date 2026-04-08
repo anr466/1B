@@ -65,9 +65,7 @@ def register_registration_routes(bp, shared):
                     400,
                 )
 
-            client_ip = request.headers.get(
-                "X-Forwarded-For", request.remote_addr
-            )
+            client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
 
             try:
                 with db_manager.get_connection() as conn:
@@ -84,16 +82,15 @@ def register_registration_routes(bp, shared):
                     request_count = cursor.fetchone()[0]
 
                     if request_count >= 30:
-                        logger.warning(
-                            f"⚠️ Rate limit exceeded for IP: {client_ip}"
-                        )
+                        logger.warning(f"⚠️ Rate limit exceeded for IP: {client_ip}")
                         return (
                             jsonify(
                                 {
                                     "success": False,
                                     "error": "تم تجاوز الحد المسموح. الرجاء الانتظار.",
                                     "code": "RATE_LIMIT",
-                                }),
+                                }
+                            ),
                             429,
                         )
 
@@ -187,9 +184,7 @@ def register_registration_routes(bp, shared):
 
             if not email:
                 return (
-                    jsonify(
-                        {"success": False, "error": "البريد الإلكتروني مطلوب"}
-                    ),
+                    jsonify({"success": False, "error": "البريد الإلكتروني مطلوب"}),
                     400,
                 )
 
@@ -210,9 +205,7 @@ def register_registration_routes(bp, shared):
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT id FROM users WHERE email = %s", (email,)
-                    )
+                    cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
                     if cursor.fetchone():
                         return (
                             jsonify(
@@ -239,7 +232,8 @@ def register_registration_routes(bp, shared):
                     if not can_send:
                         if isinstance(cooldown_msg, (int, float)):
                             cooldown_msg = f"يرجى الانتظار {
-                                int(cooldown_msg)} ثانية قبل إعادة الإرسال"
+                                int(cooldown_msg)
+                            } ثانية قبل إعادة الإرسال"
                         return (
                             jsonify(
                                 {
@@ -270,7 +264,9 @@ def register_registration_routes(bp, shared):
                         sms_sent = False
                         if sms_service:
                             try:
-                                message = f"رمز تفعيل الحساب: {otp_code}\nصالح لمدة 5 دقائق"
+                                message = (
+                                    f"رمز تفعيل الحساب: {otp_code}\nصالح لمدة 5 دقائق"
+                                )
                                 sms_service.send_sms(phone, message)
                                 sms_sent = True
                                 logger.info(
@@ -282,14 +278,10 @@ def register_registration_routes(bp, shared):
                             logger.info(f"📱 [DEV] OTP تسجيل: sent")
 
                         masked_target = (
-                            phone[:4] + "****" + phone[-2:]
-                            if len(phone) > 6
-                            else phone
+                            phone[:4] + "****" + phone[-2:] if len(phone) > 6 else phone
                         )
                     else:
-                        logger.info(
-                            f"📧 تم إرسال OTP تسجيل عبر Email إلى {email}"
-                        )
+                        logger.info(f"📧 تم إرسال OTP تسجيل عبر Email إلى {email}")
                         masked_target = (
                             email[:2] + "***@" + email.split("@")[1]
                             if "@" in email
@@ -300,12 +292,14 @@ def register_registration_routes(bp, shared):
                         jsonify(
                             {
                                 "success": True,
-                                "message": f'تم إرسال رمز التحقق إلى {
-                                    "هاتفك" if method == "sms" else "بريدك الإلكتروني"}',
+                                "message": f"تم إرسال رمز التحقق إلى {
+                                    'هاتفك' if method == 'sms' else 'بريدك الإلكتروني'
+                                }",
                                 "method": method,
                                 "masked_target": masked_target,
                                 "expires_in": 300,
-                            }),
+                            }
+                        ),
                         200,
                     )
                 except Exception as e:
@@ -322,9 +316,7 @@ def register_registration_routes(bp, shared):
             else:
                 logger.error("❌ خدمة OTP غير متاحة")
                 return (
-                    jsonify(
-                        {"success": False, "error": "خدمة التحقق غير متاحة"}
-                    ),
+                    jsonify({"success": False, "error": "خدمة التحقق غير متاحة"}),
                     503,
                 )
         except Exception as e:
@@ -376,7 +368,8 @@ def register_registration_routes(bp, shared):
                         existing = cursor.fetchone()
                         if existing:
                             logger.info(
-                                f"⚠️ المستخدم موجود مسبقاً: {email_check} - توجيه لتسجيل الدخول")
+                                f"⚠️ المستخدم موجود مسبقاً: {email_check} - توجيه لتسجيل الدخول"
+                            )
                             return (
                                 jsonify(
                                     {
@@ -384,7 +377,8 @@ def register_registration_routes(bp, shared):
                                         "error": "البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول.",
                                         "code": "USER_EXISTS",
                                         "action": "login",
-                                    }),
+                                    }
+                                ),
                                 409,
                             )
                 except Exception as check_err:
@@ -393,13 +387,9 @@ def register_registration_routes(bp, shared):
             email = data.get("email", "").strip().lower()
             password = data.get("password", "")
             username = data.get("username", "").strip()
-            full_name = (
-                data.get("fullName") or data.get("full_name", "").strip()
-            )
+            full_name = data.get("fullName") or data.get("full_name", "").strip()
             phone_number = (
-                data.get("phoneNumber")
-                or data.get("phone_number")
-                or data.get("phone")
+                data.get("phoneNumber") or data.get("phone_number") or data.get("phone")
             )
             normalized_phone = "".join(
                 ch for ch in str(phone_number or "").strip() if ch.isdigit()
@@ -408,13 +398,15 @@ def register_registration_routes(bp, shared):
             verification_method = data.get("verificationMethod", "email")
 
             logger.info(
-                f"📧 Email: {email}, Username: {username}, Name: {full_name}, Phone: {phone_number}, Method: {verification_method}")
+                f"📧 Email: {email}, Username: {username}, Name: {full_name}, Phone: {phone_number}, Method: {verification_method}"
+            )
 
             if not email or not password or not username:
-                logger.error(f"❌ بيانات ناقصة - Email: {
-                    '✓' if email else '✗'}, Password: {
-                    '✓' if password else '✗'}, Username: {
-                    '✓' if username else '✗'}")
+                logger.error(
+                    f"❌ بيانات ناقصة - Email: {'✓' if email else '✗'}, Password: {
+                        '✓' if password else '✗'
+                    }, Username: {'✓' if username else '✗'}"
+                )
                 return (
                     jsonify(
                         {
@@ -453,7 +445,8 @@ def register_registration_routes(bp, shared):
                             "success": False,
                             "error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حروف كبيرة وصغيرة وأرقام",
                             "code": "WEAK_PASSWORD",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
@@ -466,30 +459,27 @@ def register_registration_routes(bp, shared):
                         {
                             "success": False,
                             "error": "اسم المستخدم يجب أن يكون بين 3 و 50 حرف (أحرف إنجليزية وأرقام فقط)",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
             is_phone_verified = False
             if id_token and sms_service:
-                success, result = sms_service.verify_phone_token(
-                    id_token, phone_number
-                )
+                success, result = sms_service.verify_phone_token(id_token, phone_number)
                 if success:
                     is_phone_verified = True
                     phone_number = result["phone_number"]
-                    logger.info(
-                        f"✅ تم التحقق من هاتف المستخدم الجديد: {phone_number}"
-                    )
+                    logger.info(f"✅ تم التحقق من هاتف المستخدم الجديد: {phone_number}")
                 else:
-                    logger.warning(f"⚠️ فشل التحقق من هاتف المستخدم الجديد: {
-                        result.get('error')}")
+                    logger.warning(
+                        f"⚠️ فشل التحقق من هاتف المستخدم الجديد: {result.get('error')}"
+                    )
                     return (
                         jsonify(
                             {
                                 "success": False,
-                                "error": f"فشل التحقق من الهاتف: {
-                                    result.get('error')}",
+                                "error": f"فشل التحقق من الهاتف: {result.get('error')}",
                             }
                         ),
                         400,
@@ -515,9 +505,7 @@ def register_registration_routes(bp, shared):
                         duplicate_params = [email, username]
 
                         if normalized_phone:
-                            if getattr(
-                                db_manager, "is_postgres", lambda: False
-                            )():
+                            if getattr(db_manager, "is_postgres", lambda: False)():
                                 duplicate_query += """
                                    OR REGEXP_REPLACE(COALESCE(phone_number, ''), '[^0-9]', '', 'g') = %s
                                 """
@@ -528,9 +516,7 @@ def register_registration_routes(bp, shared):
                             duplicate_params.append(normalized_phone)
 
                         duplicate_query += " LIMIT 1"
-                        cursor.execute(
-                            duplicate_query, tuple(duplicate_params)
-                        )
+                        cursor.execute(duplicate_query, tuple(duplicate_params))
                         if cursor.fetchone():
                             conn.rollback()
                             return (
@@ -538,7 +524,8 @@ def register_registration_routes(bp, shared):
                                     {
                                         "success": False,
                                         "error": "المستخدم موجود مسبقاً بنفس البريد أو اسم المستخدم أو رقم الهاتف",
-                                    }),
+                                    }
+                                ),
                                 409,
                             )
 
@@ -561,7 +548,7 @@ def register_registration_routes(bp, shared):
                             ),
                         )
 
-                        user_id = user_insert_cursor.lastrowid
+                        user_id = user_insert_cursor.fetchone()[0]
                         logger.info(f"🔹 User ID created: {user_id}")
 
                         cursor.execute(
@@ -590,20 +577,20 @@ def register_registration_routes(bp, shared):
                             ) VALUES (%s, %s)
                             ON CONFLICT DO NOTHING
                         """,
-                            (user_id,
-                             '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}',
-                             ),
+                            (
+                                user_id,
+                                '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}',
+                            ),
                         )
 
                         conn.commit()
-                        logger.info(
-                            f"✅ Database commit successful for user {user_id}"
-                        )
+                        logger.info(f"✅ Database commit successful for user {user_id}")
 
                     except Exception as transaction_error:
                         conn.rollback()
                         logger.error(
-                            f"❌ Transaction error, rollback executed: {transaction_error}")
+                            f"❌ Transaction error, rollback executed: {transaction_error}"
+                        )
                         return (
                             jsonify(
                                 {
@@ -625,7 +612,8 @@ def register_registration_routes(bp, shared):
                         )
                 except Exception as onboarding_error:
                     logger.warning(
-                        f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}")
+                        f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}"
+                    )
 
                 otp_sent = False
                 if not is_phone_verified and otp_service:
@@ -638,7 +626,8 @@ def register_registration_routes(bp, shared):
                             logger.info(f"✅ تم إرسال OTP إلى {email}")
                     except Exception as otp_error:
                         logger.warning(
-                            f"⚠️ فشل إرسال OTP (المستخدم موجود في DB): {otp_error}")
+                            f"⚠️ فشل إرسال OTP (المستخدم موجود في DB): {otp_error}"
+                        )
 
                 if security_audit and user_id:
                     try:
@@ -657,7 +646,8 @@ def register_registration_routes(bp, shared):
                         )
                     except Exception as audit_error:
                         logger.warning(
-                            f"⚠️ فشل تسجيل العملية الأمنية (المستخدم موجود في DB): {audit_error}")
+                            f"⚠️ فشل تسجيل العملية الأمنية (المستخدم موجود في DB): {audit_error}"
+                        )
 
                 if (
                     TOKEN_SYSTEM_AVAILABLE
@@ -692,7 +682,8 @@ def register_registration_routes(bp, shared):
                             "user_id": user_id,
                             "email": email,
                             "message": "تم إنشاء الحساب. يرجى التحقق من البريد الإلكتروني لإكمال التفعيل",
-                        })
+                        }
+                    )
                 else:
                     return jsonify(
                         {
@@ -705,9 +696,7 @@ def register_registration_routes(bp, shared):
             except Exception as db_error:
                 logger.error(f"❌ خطأ قاعدة البيانات: {db_error}")
                 return (
-                    jsonify(
-                        {"success": False, "error": "خطأ في قاعدة البيانات"}
-                    ),
+                    jsonify({"success": False, "error": "خطأ في قاعدة البيانات"}),
                     500,
                 )
 
@@ -725,14 +714,10 @@ def register_registration_routes(bp, shared):
             username = normalize_username(data.get("username", ""))
             password = data.get("password", "")
             phone_number = (
-                data.get("phone")
-                or data.get("phoneNumber")
-                or data.get("phone_number")
+                data.get("phone") or data.get("phoneNumber") or data.get("phone_number")
             )
             full_name = sanitize_input(
-                data.get("fullName")
-                or data.get("full_name")
-                or data.get("name", "")
+                data.get("fullName") or data.get("full_name") or data.get("name", "")
             )
 
             if not email or not otp_code or not username or not password:
@@ -758,7 +743,8 @@ def register_registration_routes(bp, shared):
                         {
                             "success": False,
                             "error": "اسم المستخدم يجب أن يكون 3-50 حرف (أحرف إنجليزية وأرقام فقط)",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
@@ -768,15 +754,14 @@ def register_registration_routes(bp, shared):
                         {
                             "success": False,
                             "error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حروف كبيرة وصغيرة وأرقام",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
             if phone_number and not validate_phone(phone_number):
                 return (
-                    jsonify(
-                        {"success": False, "error": "رقم الهاتف غير صحيح"}
-                    ),
+                    jsonify({"success": False, "error": "رقم الهاتف غير صحيح"}),
                     400,
                 )
 
@@ -797,17 +782,13 @@ def register_registration_routes(bp, shared):
                 except Exception as e:
                     logger.error(f"❌ خطأ في التحقق من OTP: {e}")
                     return (
-                        jsonify(
-                            {"success": False, "error": "رمز التحقق غير صحيح"}
-                        ),
+                        jsonify({"success": False, "error": "رمز التحقق غير صحيح"}),
                         400,
                     )
             else:
                 logger.error("❌ خدمة OTP غير متاحة")
                 return (
-                    jsonify(
-                        {"success": False, "error": "خدمة التحقق غير متاحة"}
-                    ),
+                    jsonify({"success": False, "error": "خدمة التحقق غير متاحة"}),
                     503,
                 )
 
@@ -868,7 +849,8 @@ def register_registration_routes(bp, shared):
                                 ),
                             )
                             logger.info(
-                                f"🔹 Existing pending user activated via OTP: {user_id}")
+                                f"🔹 Existing pending user activated via OTP: {user_id}"
+                            )
                         else:
                             user_insert_cursor = conn.execute(
                                 """
@@ -886,10 +868,8 @@ def register_registration_routes(bp, shared):
                                 ),
                             )
 
-                            user_id = user_insert_cursor.lastrowid
-                            logger.info(
-                                f"🔹 User ID created via OTP: {user_id}"
-                            )
+                            user_id = user_insert_cursor.fetchone()[0]
+                            logger.info(f"🔹 User ID created via OTP: {user_id}")
 
                             cursor.execute(
                                 """
@@ -917,9 +897,10 @@ def register_registration_routes(bp, shared):
                             ) VALUES (%s, %s)
                             ON CONFLICT DO NOTHING
                         """,
-                            (user_id,
-                             '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}',
-                             ),
+                            (
+                                user_id,
+                                '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}',
+                            ),
                         )
 
                         cursor.execute(
@@ -932,13 +913,12 @@ def register_registration_routes(bp, shared):
 
                         conn.commit()
                         logger.info(
-                            f"✅ Database commit successful for user {user_id} via OTP")
+                            f"✅ Database commit successful for user {user_id} via OTP"
+                        )
 
                     except Exception as e:
                         conn.rollback()
-                        logger.error(
-                            f"❌ Transaction error in OTP registration: {e}"
-                        )
+                        logger.error(f"❌ Transaction error in OTP registration: {e}")
                         return (
                             jsonify(
                                 {
@@ -960,7 +940,8 @@ def register_registration_routes(bp, shared):
                         )
                 except Exception as onboarding_error:
                     logger.warning(
-                        f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}")
+                        f"⚠️ Skipping user_onboarding for user {user_id}: {onboarding_error}"
+                    )
 
                 logger.info(f"✅ تم إنشاء مستخدم جديد: {email}")
                 user_payload = {
@@ -1010,9 +991,7 @@ def register_registration_routes(bp, shared):
             except Exception as e:
                 logger.error(f"❌ خطأ داخلي في OTP registration: {e}")
                 return (
-                    jsonify(
-                        {"success": False, "error": "خطأ داخلي في الخادم"}
-                    ),
+                    jsonify({"success": False, "error": "خطأ داخلي في الخادم"}),
                     500,
                 )
         except Exception as e:
@@ -1031,14 +1010,8 @@ def register_registration_routes(bp, shared):
             username = data.get("username", "").strip()
             password = data.get("password", "")
             full_name = data.get("fullName") or data.get("full_name", "")
-            email = (
-                data.get("email", "").strip().lower()
-                if data.get("email")
-                else None
-            )
-            firebase_token = data.get("firebaseToken") or data.get(
-                "firebase_token"
-            )
+            email = data.get("email", "").strip().lower() if data.get("email") else None
+            firebase_token = data.get("firebaseToken") or data.get("firebase_token")
 
             if not phone or not username or not password:
                 return (
@@ -1090,7 +1063,7 @@ def register_registration_routes(bp, shared):
                             ),
                         )
 
-                        user_id = user_insert_cursor.lastrowid
+                        user_id = user_insert_cursor.fetchone()[0]
 
                         cursor.execute(
                             """
@@ -1115,9 +1088,7 @@ def register_registration_routes(bp, shared):
                         )
 
                         conn.commit()
-                        logger.info(
-                            f"✅ تم إنشاء مستخدم جديد عبر الهاتف: {phone}"
-                        )
+                        logger.info(f"✅ تم إنشاء مستخدم جديد عبر الهاتف: {phone}")
 
                         if generate_tokens:
                             tokens = generate_tokens(user_id, username, "user")
@@ -1132,9 +1103,7 @@ def register_registration_routes(bp, shared):
                                         "message": "تم إنشاء حسابك بنجاح",
                                         "user_id": user_id,
                                         "access_token": tokens["access_token"],
-                                        "refresh_token": tokens[
-                                            "refresh_token"
-                                        ],
+                                        "refresh_token": tokens["refresh_token"],
                                     }
                                 ),
                                 201,
@@ -1153,9 +1122,7 @@ def register_registration_routes(bp, shared):
 
                     except Exception as e:
                         conn.rollback()
-                        logger.error(
-                            f"❌ خطأ في إنشاء المستخدم عبر الهاتف: {e}"
-                        )
+                        logger.error(f"❌ خطأ في إنشاء المستخدم عبر الهاتف: {e}")
                         return (
                             jsonify(
                                 {
@@ -1168,9 +1135,7 @@ def register_registration_routes(bp, shared):
             except Exception as e:
                 logger.error(f"❌ خطأ داخلي: {e}")
                 return (
-                    jsonify(
-                        {"success": False, "error": "خطأ داخلي في الخادم"}
-                    ),
+                    jsonify({"success": False, "error": "خطأ داخلي في الخادم"}),
                     500,
                 )
         except Exception as e:

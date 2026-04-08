@@ -314,7 +314,7 @@ class ScalpingV7Engine:
         Determine 4H trend direction from 1H data.
         Uses EMA21 vs EMA55 relationship + price position.
 
-        Returns: 'UP', 'DOWN', or 'NEUTRAL' (sideways/range-bound)
+        Returns: 'UP', 'DOWN', or 'NEUTRAL'
         """
         if idx == -1:
             idx = len(df) - 2
@@ -335,36 +335,6 @@ class ScalpingV7Engine:
         elif e21 < e55 and close < e21:
             return "DOWN"
         return "NEUTRAL"
-
-    def is_ranging(self, df: pd.DataFrame, idx: int = -1) -> bool:
-        """
-        كشف السوق العرضي (Range-Bound) — السعر يتحرك بين دعم ومقاومة.
-
-        الشروط:
-        1. EMA21 و EMA55 متقاربان (الفرق < 0.5%)
-        2. Bollinger Bands ضيقة (squeeze)
-        3. ADX < 25 (لا اتجاه قوي)
-        """
-        if idx == -1:
-            idx = len(df) - 2
-        if idx < 30:
-            return False
-
-        row = df.iloc[idx]
-        e21 = row.get("ema21", 0)
-        e55 = row.get("ema55", 0)
-        adx = row.get("adx", 50)
-        bbu = row.get("bbu", 0)
-        bbl = row.get("bbl", 0)
-        close = row["close"]
-
-        if pd.isna(e21) or pd.isna(e55) or pd.isna(bbu) or pd.isna(bbl):
-            return False
-
-        ema_diff_pct = abs(e21 - e55) / e55
-        bb_width = (bbu - bbl) / close if close > 0 else 0
-
-        return ema_diff_pct < 0.005 and adx < 25 and bb_width < 0.03
 
     # ============================================================
     # ENTRY DETECTION
@@ -480,13 +450,12 @@ class ScalpingV7Engine:
                 sl = min(e55.iloc[-1] * 0.995, cur * 0.97)
                 return self._cog_signal("LONG", cur, sl, "pullback", 7, 65)
 
-        # Strategy 3: Breakout LONG — اختراق حقيقي مع حجم قوي
+        # Strategy 3: Breakout LONG — اختراق مع حجم مقبول
         if len(ds) >= 20:
-            resistance = ds["high"].tail(20).quantile(0.95)
-            bull_candle = cl.iloc[-1] > ds["open"].iloc[-1]
-            if cur > resistance and vr > 2.0 and bull_candle:
+            resistance = ds["high"].tail(20).quantile(0.85)
+            if cur > resistance and vr > 1.2:
                 sl = resistance * 0.965
-                return self._cog_signal("LONG", cur, sl, "breakout", 8, 75)
+                return self._cog_signal("LONG", cur, sl, "breakout", 8, 70)
 
         # Strategy 4: EMA Bounce — ارتداد من EMA8 أو EMA21
         if trend == "UP" and len(cl) >= 20:
@@ -509,24 +478,6 @@ class ScalpingV7Engine:
             if bull and vr > 0.8:
                 sl = ds["low"].tail(10).min() * 0.995
                 return self._cog_signal("LONG", cur, sl, "rsi_reversal", 6, 55)
-
-        # Strategy 6: Range Trading — شراء عند الدعم في سوق عرضي
-        if len(ds) >= 30:
-            support = ds["low"].tail(30).quantile(0.15)
-            resistance = ds["high"].tail(30).quantile(0.85)
-            dist_to_support = (cur - support) / support if support > 0 else 999
-            range_width = (resistance - support) / support if support > 0 else 0
-
-            if range_width > 0.005 and range_width < 0.25:
-                if dist_to_support < 0.03 and vr > 0.6:
-                    bull = cl.iloc[-1] > ds["open"].iloc[-1]
-                    if bull or rsi_val < 55:
-                        sl = support * 0.975
-                        return self._cog_signal("LONG", cur, sl, "range_support", 7, 60)
-                elif dist_to_support < 0.03:
-                    pass  # Volume too low
-            elif range_width <= 0.005:
-                pass  # Range too narrow
 
         # Strategy 6: Trend Continuation SHORT
         if (

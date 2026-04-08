@@ -44,9 +44,7 @@ class MLSignalClassifier:
 
     # معايير الجاهزية - محسّنة للبيانات الحقيقية فقط
     MIN_SAMPLES_FOR_TRAINING = 50  # الحد الأدنى للتدريب (بيانات حقيقية)
-    MIN_SAMPLES_FOR_READINESS = (
-        100  # ✅ تم التخفيض من 200 إلى 100 للبداية السريعة
-    )
+    MIN_SAMPLES_FOR_READINESS = 100  # ✅ تم التخفيض من 200 إلى 100 للبداية السريعة
     # الحد الأدنى للدقة (65% - أفضل من العشوائية بـ 15%)
     MIN_ACCURACY_FOR_READINESS = 0.65
     MIN_STABLE_CYCLES = 2  # عدد الدورات المستقرة المطلوبة
@@ -54,9 +52,16 @@ class MLSignalClassifier:
     USE_DYNAMIC_THRESHOLD = True  # استخدام العتبة الديناميكية
 
     # معايير جودة البيانات
-    MIN_WIN_RATE_FOR_TRAINING = 0.35  # حد أدنى لنسبة الفوز (35%)
-    MAX_LOSS_RATIO = 0.40  # حد أقصى لنسبة الخسائر (40%)
-    MIN_TRADES_PER_STRATEGY = 10  # حد أدنى من الصفقات لكل استراتيجية
+    MIN_WIN_RATE_FOR_TRAINING = (
+        0.30  # تم التخفيض من 0.35 إلى 0.30 للسماح بالـ bootstrap
+    )
+    MAX_LOSS_RATIO = 0.45  # تم الرفع من 0.40 إلى 0.45
+    MIN_TRADES_PER_STRATEGY = 5  # تم التخفيض من 10 إلى 5
+
+    # Bootstrap settings
+    BOOTSTRAP_MIN_SAMPLES = 20  # حد أدنى أقل للـ bootstrap
+    BOOTSTRAP_WIN_RATE_MIN = 0.30  # Win Rate أدنى للـ bootstrap
+    is_bootstrap_mode = False  # هل نحن في مرحلة bootstrap؟
 
     def __init__(self, model_dir: str = None):
         """
@@ -91,9 +96,7 @@ class MLSignalClassifier:
         # مسارات الملفات
         self.model_path = os.path.join(self.model_dir, "signal_model.json")
         self.scaler_path = os.path.join(self.model_dir, "scaler.pkl")
-        self.history_path = os.path.join(
-            self.model_dir, "training_history.json"
-        )
+        self.history_path = os.path.join(self.model_dir, "training_history.json")
         self.data_path = os.path.join(self.model_dir, "training_data.pkl")
 
         # النموذج والمعالج
@@ -182,8 +185,9 @@ class MLSignalClassifier:
 
         logger.info(f"✅ تم تهيئة ML Signal Classifier")
         logger.info(f"   📊 بيانات متراكمة: {len(self.accumulated_data)} صفقة")
-        logger.info(f"   🎯 الجاهزية: {
-            '✅ جاهز' if self.is_ready() else '❌ غير جاهز'}")
+        logger.info(
+            f"   🎯 الجاهزية: {'✅ جاهز' if self.is_ready() else '❌ غير جاهز'}"
+        )
 
     def _load_history(self) -> Dict:
         """تحميل سجل التدريب"""
@@ -218,9 +222,7 @@ class MLSignalClassifier:
         """حفظ سجل التدريب"""
         try:
             with open(self.history_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    self.training_history, f, indent=2, ensure_ascii=False
-                )
+                json.dump(self.training_history, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"خطأ في حفظ سجل التدريب: {e}")
 
@@ -256,7 +258,8 @@ class MLSignalClassifier:
                 logger.info("✅ تم تحميل النموذج المحفوظ")
             except InconsistentVersionWarning as e:
                 logger.warning(
-                    f"⚠️ نموذج ML محفوظ بإصدار مختلف: {e}. سيتم إعادة تهيئة ملفات النموذج.")
+                    f"⚠️ نموذج ML محفوظ بإصدار مختلف: {e}. سيتم إعادة تهيئة ملفات النموذج."
+                )
                 self._archive_incompatible_artifacts()
                 self.model = None
                 self.scaler = StandardScaler()
@@ -275,7 +278,8 @@ class MLSignalClassifier:
                     logger.info(f"🗄️ تم أرشفة ملف غير متوافق: {archived}")
             except Exception as archive_error:
                 logger.warning(
-                    f"⚠️ تعذر أرشفة ملف ML غير متوافق ({path}): {archive_error}")
+                    f"⚠️ تعذر أرشفة ملف ML غير متوافق ({path}): {archive_error}"
+                )
 
     def _save_model(self):
         """حفظ النموذج"""
@@ -287,9 +291,7 @@ class MLSignalClassifier:
             except Exception as e:
                 logger.error(f"خطأ في حفظ النموذج: {e}")
 
-    def extract_features_from_backtest(
-        self, backtest_result: Dict
-    ) -> Optional[Dict]:
+    def extract_features_from_backtest(self, backtest_result: Dict) -> Optional[Dict]:
         """
         استخراج الميزات من نتيجة Backtesting واحدة
 
@@ -322,11 +324,7 @@ class MLSignalClassifier:
                 "ema_trend": (
                     1
                     if indicators.get("ema_trend", "neutral") == "up"
-                    else (
-                        -1
-                        if indicators.get("ema_trend", "neutral") == "down"
-                        else 0
-                    )
+                    else (-1 if indicators.get("ema_trend", "neutral") == "down" else 0)
                 ),
                 "ema_distance": indicators.get("ema_distance", 0),
                 # ATR & Volatility
@@ -362,14 +360,10 @@ class MLSignalClassifier:
                 1 if "meanreversion" in strategy_lower else 0
             )
             features["strategy_scalping"] = (
-                1
-                if "scalping" in strategy_lower or "ema" in strategy_lower
-                else 0
+                1 if "scalping" in strategy_lower or "ema" in strategy_lower else 0
             )
             features["strategy_rsi_divergence"] = (
-                1
-                if "rsi" in strategy_lower or "divergence" in strategy_lower
-                else 0
+                1 if "rsi" in strategy_lower or "divergence" in strategy_lower else 0
             )
             features["strategy_other"] = (
                 1
@@ -444,9 +438,7 @@ class MLSignalClassifier:
             self._save_accumulated_data()
 
             logger.info(f"✅ تم إضافة {added_count} صفقة للتدريب")
-            logger.info(
-                f"   📊 إجمالي البيانات: {len(self.accumulated_data)} صفقة"
-            )
+            logger.info(f"   📊 إجمالي البيانات: {len(self.accumulated_data)} صفقة")
 
         return added_count
 
@@ -494,7 +486,7 @@ class MLSignalClassifier:
                 if not force:
                     return {
                         "success": False,
-                        "error": f'فشل فحص الجودة: {quality_check["reason"]}',
+                        "error": f"فشل فحص الجودة: {quality_check['reason']}",
                         "data_quality": quality_check,
                     }
 
@@ -512,11 +504,11 @@ class MLSignalClassifier:
                 X_train = X_sorted[:train_size]
                 y_train = y_sorted[:train_size]
 
-                X_val = X_sorted[train_size: train_size + val_size]
-                y_val = y_sorted[train_size: train_size + val_size]
+                X_val = X_sorted[train_size : train_size + val_size]
+                y_val = y_sorted[train_size : train_size + val_size]
 
-                X_test = X_sorted[train_size + val_size:]
-                y_test = y_sorted[train_size + val_size:]
+                X_test = X_sorted[train_size + val_size :]
+                y_test = y_sorted[train_size + val_size :]
 
                 logger.info(
                     f"✅ Time-based split: Train={len(X_train)}, "
@@ -534,9 +526,7 @@ class MLSignalClassifier:
                     random_state=42,
                     stratify=y_temp,
                 )
-                logger.warning(
-                    "⚠️ لم يتم توفير timestamps - استخدام random split"
-                )
+                logger.warning("⚠️ لم يتم توفير timestamps - استخدام random split")
 
             # التحقق من وجود بيانات كافية
             if len(X_test) < 5 or len(X_val) < 5:
@@ -581,9 +571,7 @@ class MLSignalClassifier:
             f1 = f1_score(y_test, y_pred, zero_division=0)
 
             # فحص Overfitting
-            train_accuracy = accuracy_score(
-                y_train, self.model.predict(X_train_scaled)
-            )
+            train_accuracy = accuracy_score(y_train, self.model.predict(X_train_scaled))
             overfitting_gap = train_accuracy - test_accuracy
 
             # Cross-validation للتحقق من الاستقرار (بدون early stopping)
@@ -596,9 +584,7 @@ class MLSignalClassifier:
                     random_state=42,
                     eval_metric="logloss",
                 )
-                cv_scores = cross_val_score(
-                    cv_model, X_train_scaled, y_train, cv=5
-                )
+                cv_scores = cross_val_score(cv_model, X_train_scaled, y_train, cv=5)
                 cv_mean = cv_scores.mean()
                 cv_std = cv_scores.std()
             except Exception as e:
@@ -617,9 +603,7 @@ class MLSignalClassifier:
                 "recall": recall,
                 "f1_score": f1,
                 "overfitting_gap": overfitting_gap,
-                "split_method": (
-                    "time_based" if timestamps is not None else "random"
-                ),
+                "split_method": ("time_based" if timestamps is not None else "random"),
                 "is_ready": False,  # تحديث حالة الجاهزية لاحقاً
             }
 
@@ -642,8 +626,7 @@ class MLSignalClassifier:
             logger.info(f"   📊 الدقة: {test_accuracy:.2%}")
             logger.info(f"   🎯 F1 Score: {f1:.2%}")
             logger.info(f"   📈 CV Mean: {cv_mean:.2%} (±{cv_std:.2%})")
-            logger.info(f"   ✅ الجاهزية: {
-                'جاهز' if self.is_ready() else 'غير جاهز'}")
+            logger.info(f"   ✅ الجاهزية: {'جاهز' if self.is_ready() else 'غير جاهز'}")
 
             return {
                 "success": True,
@@ -656,9 +639,7 @@ class MLSignalClassifier:
                 "f1_score": f1,
                 "overfitting_gap": overfitting_gap,
                 "total_samples": total_samples,
-                "split_method": (
-                    "time_based" if timestamps is not None else "random"
-                ),
+                "split_method": ("time_based" if timestamps is not None else "random"),
                 "is_ready": self.is_ready(),
                 "data_quality": quality_check,
             }
@@ -667,9 +648,7 @@ class MLSignalClassifier:
             logger.error(f"❌ خطأ في التدريب: {e}")
             return {"success": False, "error": str(e)}
 
-    def _check_data_quality(
-        self, X: pd.DataFrame, y: pd.Series
-    ) -> Dict[str, Any]:
+    def _check_data_quality(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
         """
         فحص جودة البيانات قبل التدريب
         """
@@ -691,8 +670,7 @@ class MLSignalClassifier:
             else:
                 imbalance_ratio = max(counts) / min(counts)
                 if imbalance_ratio > 10:
-                    issues.append(f"Class imbalance شديد: {
-                        imbalance_ratio:.1f}:1")
+                    issues.append(f"Class imbalance شديد: {imbalance_ratio:.1f}:1")
 
             # 3. فحص تنوع الميزات
             feature_std = np.std(X_arr, axis=0)
@@ -704,9 +682,7 @@ class MLSignalClassifier:
             positive_samples = np.sum(y_arr == 1)
             negative_samples = np.sum(y_arr == 0)
             if positive_samples < 5 or negative_samples < 5:
-                issues.append(
-                    f"عينات قليلة: +{positive_samples}, -{negative_samples}"
-                )
+                issues.append(f"عينات قليلة: +{positive_samples}, -{negative_samples}")
 
             passed = len(issues) == 0
 
@@ -717,9 +693,7 @@ class MLSignalClassifier:
                 "positive_samples": int(positive_samples),
                 "negative_samples": int(negative_samples),
                 "imbalance_ratio": (
-                    float(max(counts) / min(counts))
-                    if len(unique) >= 2
-                    else None
+                    float(max(counts) / min(counts)) if len(unique) >= 2 else None
                 ),
             }
 
@@ -734,7 +708,7 @@ class MLSignalClassifier:
         if len(cycles) >= self.MIN_STABLE_CYCLES:
             # فحص آخر 3 دورات
             recent_accuracies = [
-                c["accuracy"] for c in cycles[-self.MIN_STABLE_CYCLES:]
+                c["accuracy"] for c in cycles[-self.MIN_STABLE_CYCLES :]
             ]
 
             # مستقر إذا: جميع الدقات > الحد الأدنى والتذبذب < 10%
@@ -747,9 +721,7 @@ class MLSignalClassifier:
 
             # عدد الدورات المستقرة
             stable_count = sum(
-                1
-                for a in recent_accuracies
-                if a >= self.MIN_ACCURACY_FOR_READINESS
+                1 for a in recent_accuracies if a >= self.MIN_ACCURACY_FOR_READINESS
             )
             self.training_history["stable_cycles"] = stable_count
 
@@ -768,22 +740,77 @@ class MLSignalClassifier:
             self.training_history["stable_cycles"] = len(cycles)
             self.training_history["is_ready"] = False
 
+    def bootstrap(self, backtest_trades: List[Dict]) -> Dict[str, Any]:
+        """استيراد نتائج backtest كـ baseline."""
+        if not self.enabled:
+            return {"success": False, "error": "ML غير متوفر"}
+
+        if not backtest_trades:
+            return {"success": False, "error": "لا توجد بيانات"}
+
+        self.is_bootstrap_mode = True
+        original_min = self.MIN_SAMPLES_FOR_TRAINING
+        self.MIN_SAMPLES_FOR_TRAINING = self.BOOTSTRAP_MIN_SAMPLES
+
+        try:
+            df = pd.DataFrame(backtest_trades)
+            for col in self.feature_columns:
+                if col not in df.columns:
+                    df[col] = 0
+
+            win_rate = df["target"].mean() if "target" in df.columns else 0
+
+            if self.accumulated_data.empty:
+                self.accumulated_data = df
+            else:
+                self.accumulated_data = pd.concat(
+                    [self.accumulated_data, df], ignore_index=True
+                )
+            self._save_accumulated_data()
+
+            train_result = self.train(force=True)
+
+            if train_result["success"]:
+                self.is_bootstrap_mode = False
+                self.MIN_SAMPLES_FOR_TRAINING = original_min
+                logger.info(
+                    f"✅ Bootstrap complete: {len(backtest_trades)} trades, WR={win_rate:.1%}"
+                )
+
+            return {
+                "success": train_result["success"],
+                "trades_imported": len(backtest_trades),
+                "backtest_win_rate": round(win_rate, 3),
+                "ml_ready": self.is_ready(),
+                "training": train_result,
+            }
+
+        except Exception as e:
+            self.MIN_SAMPLES_FOR_TRAINING = original_min
+            return {"success": False, "error": str(e)}
+
     def is_ready(self) -> bool:
         """
-        فحص جاهزية النموذج للعمل
+        فحص جاهزية النموذج للعمل.
 
-        Returns:
-            True إذا كان جاهزاً
+        في وضع bootstrap: متطلبات أخف (20 عينة بدلاً من 100).
         """
         if not self.enabled or self.model is None:
             return False
 
+        total = self.training_history.get("total_samples", 0)
+        accuracy = self.training_history.get("best_accuracy", 0)
+
+        if self.is_bootstrap_mode:
+            return (
+                total >= self.BOOTSTRAP_MIN_SAMPLES
+                and accuracy >= self.MIN_ACCURACY_FOR_READINESS * 0.85
+            )
+
         return (
             self.training_history.get("is_ready", False)
-            and self.training_history.get("total_samples", 0)
-            >= self.MIN_SAMPLES_FOR_READINESS
-            and self.training_history.get("best_accuracy", 0)
-            >= self.MIN_ACCURACY_FOR_READINESS
+            and total >= self.MIN_SAMPLES_FOR_READINESS
+            and accuracy >= self.MIN_ACCURACY_FOR_READINESS
         )
 
     def _calculate_dynamic_threshold(self) -> float:
@@ -855,13 +882,9 @@ class MLSignalClassifier:
 
         try:
             # تحويل الاستراتيجية والإطار الزمني إذا كانت موجودة كنص
-            if "strategy" in features and isinstance(
-                features["strategy"], str
-            ):
+            if "strategy" in features and isinstance(features["strategy"], str):
                 strategy = features["strategy"]
-                strategy_lower = (
-                    strategy.lower().replace("_", "").replace(" ", "")
-                )
+                strategy_lower = strategy.lower().replace("_", "").replace(" ", "")
                 features["strategy_trend_following"] = (
                     1 if "trendfollowing" in strategy_lower else 0
                 )
@@ -872,14 +895,11 @@ class MLSignalClassifier:
                     1 if "meanreversion" in strategy_lower else 0
                 )
                 features["strategy_scalping"] = (
-                    1
-                    if "scalping" in strategy_lower or "ema" in strategy_lower
-                    else 0
+                    1 if "scalping" in strategy_lower or "ema" in strategy_lower else 0
                 )
                 features["strategy_rsi_divergence"] = (
                     1
-                    if "rsi" in strategy_lower
-                    or "divergence" in strategy_lower
+                    if "rsi" in strategy_lower or "divergence" in strategy_lower
                     else 0
                 )
                 features["strategy_other"] = (
@@ -897,9 +917,7 @@ class MLSignalClassifier:
                     else 0
                 )
 
-            if "timeframe" in features and isinstance(
-                features["timeframe"], str
-            ):
+            if "timeframe" in features and isinstance(features["timeframe"], str):
                 timeframe = features["timeframe"]
                 features["timeframe_15m"] = 1 if timeframe == "15m" else 0
                 features["timeframe_1h"] = 1 if timeframe == "1h" else 0
@@ -932,9 +950,9 @@ class MLSignalClassifier:
                 "threshold_type": (
                     "dynamic" if self.USE_DYNAMIC_THRESHOLD else "static"
                 ),
-                "reason": "موافق" if should_trade else f"ثقة منخفضة ({
-                    proba:.1%} < {
-                    threshold:.1%})",
+                "reason": "موافق"
+                if should_trade
+                else f"ثقة منخفضة ({proba:.1%} < {threshold:.1%})",
             }
 
         except Exception as e:
@@ -978,9 +996,7 @@ class MLSignalClassifier:
                 if self.USE_DYNAMIC_THRESHOLD
                 else self.BASE_CONFIDENCE_THRESHOLD
             ),
-            "threshold_type": (
-                "dynamic" if self.USE_DYNAMIC_THRESHOLD else "static"
-            ),
+            "threshold_type": ("dynamic" if self.USE_DYNAMIC_THRESHOLD else "static"),
         }
 
     def get_feature_importance(self) -> Optional[Dict[str, float]]:

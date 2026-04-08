@@ -742,6 +742,24 @@ class PositionManagerMixin:
             exit_commission = float(demo_close_fill.get("commission", 0))
             exit_order_id = str(demo_close_fill.get("order_id", ""))
 
+            # Prevent demo slippage from worsening exit below trigger level
+            trail = position.get("trail", 0)
+            sl = position.get("stop_loss", 0)
+            if position_type == "LONG":
+                floor = max(trail, sl) if trail > 0 else sl
+                if floor > 0 and exit_price < floor:
+                    exit_price = floor
+                    self.logger.info(
+                        f"   🛡️ Demo exit floored at ${floor:.6f} (trail/SL protection)"
+                    )
+            else:
+                ceiling = min(trail, sl) if trail > 0 else sl
+                if ceiling > 0 and exit_price > ceiling:
+                    exit_price = ceiling
+                    self.logger.info(
+                        f"   🛡️ Demo exit ceiled at ${ceiling:.6f} (trail/SL protection)"
+                    )
+
             # ✅ إعادة حساب PnL مع السعر الفعلي (مع الانزلاق) والكيمة الفعلية
             if position_type == "SHORT":
                 pnl_raw = (entry_price - exit_price) * closing_quantity

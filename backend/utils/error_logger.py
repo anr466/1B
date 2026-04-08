@@ -75,14 +75,10 @@ class ErrorLogger:
                     )
 
                 if "details" not in columns:
-                    conn.execute(
-                        "ALTER TABLE system_errors ADD COLUMN details TEXT"
-                    )
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN details TEXT")
 
                 if "traceback" not in columns:
-                    conn.execute(
-                        "ALTER TABLE system_errors ADD COLUMN traceback TEXT"
-                    )
+                    conn.execute("ALTER TABLE system_errors ADD COLUMN traceback TEXT")
 
                 if "resolved_by" not in columns:
                     conn.execute(
@@ -316,7 +312,8 @@ class ErrorLogger:
                     ),
                 )
 
-                error_id = cursor.lastrowid
+                row = cursor.fetchone()
+                error_id = row[0] if row else None
 
             # تسجيل في Logs
             log_message = f"[{source.value.upper()}] {message}"
@@ -367,8 +364,8 @@ class ErrorLogger:
                     message = row["error_message"] or ""
                     details = row["details"] or ""
 
-                    action, max_attempts, can_auto_heal = (
-                        self._classify_auto_action(message, details)
+                    action, max_attempts, can_auto_heal = self._classify_auto_action(
+                        message, details
                     )
                     next_attempt = attempts + 1
 
@@ -430,18 +427,14 @@ class ErrorLogger:
     ):
         """تسجيل خطأ Group B"""
         level = ErrorLevel.CRITICAL if critical else ErrorLevel.ERROR
-        return self.log_error(
-            level, ErrorSource.GROUP_B, message, details, True
-        )
+        return self.log_error(level, ErrorSource.GROUP_B, message, details, True)
 
     def log_system_error(
         self, message: str, details: str = None, critical: bool = False
     ):
         """تسجيل خطأ النظام"""
         level = ErrorLevel.CRITICAL if critical else ErrorLevel.ERROR
-        return self.log_error(
-            level, ErrorSource.SYSTEM, message, details, True
-        )
+        return self.log_error(level, ErrorSource.SYSTEM, message, details, True)
 
     def log_binance_error(self, message: str, details: str = None):
         """تسجيل خطأ Binance API"""
@@ -449,13 +442,9 @@ class ErrorLogger:
             ErrorLevel.ERROR, ErrorSource.BINANCE, message, details, False
         )
 
-    def log_warning(
-        self, source: ErrorSource, message: str, details: str = None
-    ):
+    def log_warning(self, source: ErrorSource, message: str, details: str = None):
         """تسجيل تحذير"""
-        return self.log_error(
-            ErrorLevel.WARNING, source, message, details, False
-        )
+        return self.log_error(ErrorLevel.WARNING, source, message, details, False)
 
     def get_errors(
         self,
@@ -624,12 +613,8 @@ class ErrorLogger:
                     "total": total,
                     "unresolved": unresolved,
                     "critical": critical,
-                    "by_source": {
-                        row["source"]: row["count"] for row in by_source
-                    },
-                    "by_level": {
-                        row["level"]: row["count"] for row in by_level
-                    },
+                    "by_source": {row["source"]: row["count"] for row in by_source},
+                    "by_level": {row["level"]: row["count"] for row in by_level},
                 }
 
         except Exception as e:

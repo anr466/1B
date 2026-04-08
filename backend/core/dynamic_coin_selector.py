@@ -71,11 +71,9 @@ MEME_COINS = {
     "WIF",
     "MEME",
     "POPCAT",
-    "BRETT",
     "MOG",
     "TURBO",
     "MYRO",
-    "GIGACHAD",
     "NEIRO",
     "GOAT",
     "PNUT",
@@ -85,8 +83,6 @@ MEME_COINS = {
     "SLERF",
     "BOME",
     "WEN",
-    "BOOK",
-    "GME",
 }
 
 # Minimum 24h volume in USDT
@@ -310,8 +306,6 @@ class DynamicCoinSelector:
             "SHIBUSDT",
             "MEMEUSDT",
             "TURBOUSDT",
-            "BRETTUSDT",
-            "POPCATUSDT",
         ]
         return [
             {

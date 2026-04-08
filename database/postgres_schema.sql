@@ -407,7 +407,61 @@ CREATE TABLE IF NOT EXISTS portfolio_growth_history (
     UNIQUE(user_id, date, is_demo)
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+-- ===== 4-Phase Trading System Tables =====
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+    id BIGSERIAL PRIMARY KEY,
+    symbol VARCHAR(50) NOT NULL,
+    strategy VARCHAR(100) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    entry_price DOUBLE PRECISION NOT NULL,
+    exit_price DOUBLE PRECISION NOT NULL,
+    profit_pct DOUBLE PRECISION DEFAULT 0,
+    is_win BOOLEAN DEFAULT FALSE,
+    indicators JSONB DEFAULT '{}',
+    timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    imported_to_ml BOOLEAN DEFAULT FALSE,
+    source VARCHAR(50) DEFAULT 'backtest',
+    weight DOUBLE PRECISION DEFAULT 1.0,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS paper_trading_log (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol VARCHAR(50) NOT NULL,
+    strategy VARCHAR(100) NOT NULL,
+    side VARCHAR(10) NOT NULL DEFAULT 'LONG',
+    entry_price DOUBLE PRECISION NOT NULL,
+    exit_price DOUBLE PRECISION,
+    pnl_pct DOUBLE PRECISION DEFAULT 0,
+    is_win BOOLEAN,
+    exit_reason VARCHAR(50),
+    entry_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    exit_time TIMESTAMPTZ,
+    session_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS trading_phase_state (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    current_phase VARCHAR(50) NOT NULL DEFAULT 'BACKTEST_BOOTSTRAP',
+    backtest_win_rate DOUBLE PRECISION DEFAULT 0,
+    backtest_total_trades INTEGER DEFAULT 0,
+    paper_win_rate DOUBLE PRECISION DEFAULT 0,
+    paper_total_trades INTEGER DEFAULT 0,
+    validation_passed BOOLEAN DEFAULT FALSE,
+    validation_wr_gap DOUBLE PRECISION DEFAULT 0,
+    phase_history JSONB DEFAULT '[]',
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_results_symbol ON backtest_results(symbol);
+CREATE INDEX IF NOT EXISTS idx_backtest_results_strategy ON backtest_results(strategy);
+CREATE INDEX IF NOT EXISTS idx_backtest_results_imported ON backtest_results(imported_to_ml);
+CREATE INDEX IF NOT EXISTS idx_paper_trading_user ON paper_trading_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_trading_symbol ON paper_trading_log(symbol);
+CREATE INDEX IF NOT EXISTS idx_portfolio_growth_user_date ON portfolio_growth_history(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_number_unique
 ON users(phone_number)

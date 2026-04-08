@@ -48,38 +48,21 @@ class MLTrainingManager:
         source: str = "real_trading",
     ) -> bool:
         """
-        إضافة صفقة حقيقية للتدريب (من التداول الفعلي فقط)
+        إضافة صفقة حقيقية أو تجريبية للتدريب.
 
-        Args:
-            symbol: رمز العملة
-            strategy: اسم الاستراتيجية
-            timeframe: الإطار الزمني
-            entry_price: سعر الدخول
-            exit_price: سعر الخروج
-            profit_loss: الربح/الخسارة
-            profit_pct: نسبة الربح/الخسارة
-            indicators: المؤشرات الفنية
-            source: مصدر البيانات (demo_trading أو real_trading)
-
-        Returns:
-            True إذا تمت الإضافة بنجاح
+        المصادر المقبولة: real_trading, demo_trading, adjusted_backtest
+        المصادر المرفوضة: backtesting (raw, unadjusted)
         """
         try:
-            # استيراد النظام الهجين
             from backend.ml.hybrid_learning_system import (
                 get_hybrid_system,
                 get_confidence_system,
             )
 
-            # ✅ التحقق من مصدر البيانات - رفض Backtesting
-            if source == "backtesting" or "backtest" in str(source).lower():
-                logger.warning(f"❌ رفض صفقة من Backtesting: {symbol}")
+            if str(source).lower() == "backtesting":
+                logger.warning(f"❌ رفض صفقة raw backtesting: {symbol}")
                 return False
 
-            # ✅ قبول الصفقات التجريبية والتعليمية أيضاً
-            # (صفقات demo_trading و real_trading كلاهما يستخدم بيانات سوق حقيقية)
-
-            # ✅ التحقق من جودة البيانات
             if not all([symbol, strategy, timeframe]):
                 logger.warning("❌ بيانات ناقصة في الصفقة")
                 return False
@@ -87,6 +70,12 @@ class MLTrainingManager:
             if entry_price <= 0 or exit_price <= 0:
                 logger.warning("❌ أسعار غير صحيحة")
                 return False
+
+            is_backtest_bootstrap = source in (
+                "adjusted_backtest",
+                "backtest_bootstrap",
+            )
+            weight = 0.6 if is_backtest_bootstrap else 1.0
 
             result = {
                 "symbol": symbol,
@@ -99,25 +88,26 @@ class MLTrainingManager:
                 "is_winning": profit_loss > 0,
                 "indicators": indicators or {},
                 "source": source,
+                "weight": weight,
                 "timestamp": datetime.now().isoformat(),
             }
 
             self.current_cycle_data.append(result)
 
-            # تحديث النظام الهجين
             hybrid_system = get_hybrid_system()
-            hybrid_system.real_trades_count += 1
+            if not is_backtest_bootstrap:
+                hybrid_system.real_trades_count += 1
 
-            # تحديث نظام الثقة للنمط
             pattern_id = f"{symbol}_{strategy}_{timeframe}"
             confidence_system = get_confidence_system(pattern_id)
             confidence_system.update_after_trade(profit_loss, profit_pct)
 
-            logger.debug(f"✅ تمت إضافة صفقة حقيقية: {symbol} ({source})")
+            source_label = "bootstrap" if is_backtest_bootstrap else source
+            logger.debug(f"✅ تمت إضافة صفقة ({source_label}): {symbol}")
             return True
 
         except Exception as e:
-            logger.warning(f"❌ خطأ في إضافة صفقة حقيقية: {e}")
+            logger.warning(f"❌ خطأ في إضافة صفقة: {e}")
             return False
 
     def add_backtest_result(
@@ -285,6 +275,29 @@ class MLTrainingManager:
             "current_cycle_data": len(self.current_cycle_data),
             "classifier": classifier_status,
         }
+
+    def bootstrap_from_backtest(self, ml_data: List[Dict]) -> Dict[str, Any]:
+        """استيراد نتائج backtest كبيانات baseline للمرحلة الأولى."""
+        if not ml_data:
+            return {"success": False, "error": "No data to bootstrap"}
+
+        added = 0
+        for trade in ml_data:
+            if self.add_real_trade(
+                symbol=trade.get("symbol", ""),
+                strategy=trade.get("strategy", ""),
+                timeframe=trade.get("timeframe", "1h"),
+                entry_price=trade.get("entry_price", 0),
+                exit_price=trade.get("exit_price", 0),
+                profit_loss=trade.get("profit_pct", 0),
+                profit_pct=trade.get("profit_pct", 0),
+                indicators=trade.get("indicators", {}),
+                source="adjusted_backtest",
+            ):
+                added += 1
+
+        logger.info(f"✅ Bootstrap: {added}/{len(ml_data)} backtest trades imported")
+        return {"success": True, "imported": added, "total": len(ml_data)}
 
     def is_ml_ready(self) -> bool:
         """فحص جاهزية ML"""

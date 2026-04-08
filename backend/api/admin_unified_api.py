@@ -191,11 +191,6 @@ def get_admin_dashboard():
         )
         total_trades = cursor.fetchone()[0]
 
-        cursor.execute(
-            "SELECT COUNT(*) FROM active_positions WHERE is_active = TRUE AND is_demo = FALSE"
-        )
-        cursor.fetchone()[0]
-
         cursor.execute("SELECT COUNT(*) FROM active_positions WHERE is_demo = FALSE")
         active_positions = cursor.fetchone()[0]
 

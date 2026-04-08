@@ -55,7 +55,7 @@ class DualModeEngine:
 
     def _load_user_settings(self) -> Dict:
         try:
-            with self.db.get_read_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -352,7 +352,7 @@ class DualModeEngine:
 
     def _get_spot_balance(self) -> float:
         try:
-            with self.db.get_read_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -368,7 +368,7 @@ class DualModeEngine:
 
     def _get_margin_balance(self) -> float:
         try:
-            with self.db.get_read_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """

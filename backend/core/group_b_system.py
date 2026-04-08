@@ -123,6 +123,24 @@ from backend.core.dynamic_coin_selector import DynamicCoinSelector
 from backend.core.dual_mode_router import DualModeRouter
 from backend.utils.smart_coin_selector import SmartCoinSelector
 
+# ===== Trading Brain (Phase-Aware Decision Layer) =====
+try:
+    from backend.ml.trading_brain import get_trading_brain
+
+    TRADING_BRAIN_AVAILABLE = True
+except ImportError as e:
+    TRADING_BRAIN_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"⚠️ TradingBrain not available: {e}")
+
+# ===== Backtest Importer (Bootstrap ML from backtest results) =====
+try:
+    from backend.ml.backtest_importer import get_backtest_importer, PHASE_BACKTEST
+
+    BACKTEST_IMPORTER_AVAILABLE = True
+except ImportError as e:
+    BACKTEST_IMPORTER_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"⚠️ BacktestImporter not available: {e}")
+
 logger = get_logger(__name__)
 
 # ✅ FIX: جعل قائمة الرموز قابلة للتكوين
@@ -273,6 +291,43 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             except Exception as e:
                 self.logger.warning(f"⚠️ Adaptive Optimizer init failed: {e}")
 
+        # ===== Trading Brain (Phase-Aware Decision Layer) =====
+        self.trading_brain = None
+        if TRADING_BRAIN_AVAILABLE:
+            try:
+                self.trading_brain = get_trading_brain(self.db)
+                self.logger.info(
+                    f"🧠 Trading Brain initialized | Phase: {self.trading_brain.current_phase}"
+                )
+            except Exception as e:
+                self.logger.warning(f"⚠️ TradingBrain init failed: {e}")
+
+        # ===== Backtest Importer (Bootstrap on first run) =====
+        if BACKTEST_IMPORTER_AVAILABLE and self.trading_brain:
+            try:
+                importer = get_backtest_importer(self.db)
+                result = importer.import_from_db()
+                if result.get("imported", 0) > 0:
+                    self.logger.info(
+                        f"📥 Backtest bootstrap: {result['imported']} trades imported | WR={result.get('stats', {}).get('win_rate', 0):.0%}"
+                    )
+                    from backend.ml.backtest_importer import PHASE_BACKTEST, PHASE_PAPER
+
+                    if self.trading_brain.current_phase == PHASE_BACKTEST:
+                        self.trading_brain.set_phase(PHASE_PAPER)
+                        self.logger.info(
+                            "🔄 Phase transition: BACKTEST_BOOTSTRAP → PAPER_TRADING"
+                        )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Backtest bootstrap failed: {e}")
+
+        # ===== Sync phase to DynamicBlacklist =====
+        if self.trading_brain and hasattr(self, "dynamic_blacklist"):
+            try:
+                self.dynamic_blacklist.set_phase(self.trading_brain.current_phase)
+            except Exception:
+                pass
+
         # ===== Unified Trading Engine (Regime-Aware, Spot+Margin) =====
         self.unified_engine = UnifiedTradingEngine(self.user_id, self.is_demo_trading)
         self.logger.info("🔗 Unified Trading Engine initialized")
@@ -378,11 +433,13 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             "daily_pnl": 0.0,
             "last_reset": datetime.now().date(),
             "cooldown_until": None,  # system-wide cooldown
-            "max_daily_trades": 10,  # حد يومي للصفقات
+            "max_daily_trades": 5,  # حد يومي للصفقات (مخفض لمنع الإفراط)
             "max_daily_loss_pct": self._resolve_max_daily_loss_pct(),
             "max_consecutive_losses": 3,  # cooldown بعد 3 خسائر متتالية
             "cooldown_hours": 2,  # مدة cooldown بالساعات
             "max_same_direction": 3,  # أقصى 3 صفقات بنفس الاتجاه
+            "max_drawdown_pct": 0.05,  # حد أقصى للسحب 5%
+            "peak_balance": 0.0,  # سيتم تحديثه عند أول دورة
         }
         # ✅ استعادة الحالة اليومية من DB (تنجو من إعادة التشغيل)
         self._restore_daily_state_from_db()
@@ -765,6 +822,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             "mode": "monitoring_only",
             "positions_checked": 0,
             "positions_closed": 0,
+            "new_positions": 0,
             "actions": [],
             "errors": [],
         }
@@ -778,69 +836,12 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             # 1. تحديث المحفظة
             self.user_portfolio = self._load_user_portfolio()
 
-            # 2. إدارة الصفقات المفتوحة فقط (بدون فتح جديدة)
-            open_positions = self._get_open_positions()
-            result["positions_checked"] = len(open_positions)
-
-            if not open_positions:
-                self.logger.debug(
-                    f"👁️ User {self.user_id}: لا توجد صفقات مفتوحة للمراقبة"
-                )
-                return result
-
-            self.logger.debug(
-                f"👁️ User {self.user_id}: مراقبة {len(open_positions)} صفقة مفتوحة"
-            )
-
-            for position in open_positions:
-                try:
-                    action = self._manage_position(position)
-                    if action:
-                        result["actions"].append(action)
-                        if action.get("type") == "CLOSE":
-                            result["positions_closed"] += 1
-                except Exception as e:
-                    result["errors"].append(f"Position {position.get('id')}: {e}")
-
-            # ملاحظة: لا نفتح صفقات جديدة في وضع المراقبة
-
-        except Exception as e:
-            result["errors"].append(f"Monitoring error: {e}")
-            self.logger.error(f"Monitoring error: {e}")
-
-        return result
-
-    def run_trading_cycle(self) -> Dict:
-        """
-        تشغيل دورة تداول واحدة
-
-        Returns:
-            نتائج الدورة
-        """
-        result = {
-            "timestamp": datetime.now().isoformat(),
-            "user_id": self.user_id,
-            "positions_checked": 0,
-            "positions_closed": 0,
-            "new_positions": 0,
-            "actions": [],
-            "errors": [],
-        }
-
-        try:
-            # 0. إعادة تحميل إعدادات المستخدم وحالة التداول من DB في كل دورة
-            self.user_settings = self._load_user_settings()
-            # Explicit boolean conversion
-            self.can_trade = bool(self.user_settings.get("trading_enabled", False))
-            self.logger.warning(
-                f"🔍 READ SETTINGS: user_settings.trading_enabled={
-                    self.user_settings.get('trading_enabled')
-                }, can_trade={self.can_trade}"
-            )
-            self.is_demo_trading = self._determine_trading_mode()
-
-            # 1. تحديث المحفظة
-            self.user_portfolio = self._load_user_portfolio()
+            # تتبع أعلى رصيد لحساب الـ drawdown
+            current_balance = self.user_portfolio.get("balance", 0)
+            if current_balance > self.daily_state.get("peak_balance", 0):
+                self.daily_state["peak_balance"] = current_balance
+            elif self.daily_state.get("peak_balance", 0) == 0:
+                self.daily_state["peak_balance"] = current_balance
 
             # 2. إدارة الصفقات المفتوحة
             open_positions = self._get_open_positions()

@@ -35,7 +35,7 @@ class NotificationService:
         if not self.db:
             return False
         try:
-            with self.db.get_read_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """

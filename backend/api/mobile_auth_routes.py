@@ -46,7 +46,8 @@ def register_mobile_auth_routes(bp, shared):
                         "step1": "POST /api/auth/send-change-password-otp",
                         "step2": "POST /api/auth/verify-change-password-otp",
                     },
-                }),
+                }
+            ),
             410,
         )  # 410 Gone
 
@@ -93,9 +94,7 @@ def register_mobile_auth_routes(bp, shared):
                 return jsonify(response_data), status_code
 
             # تخزين بصمة مُشفرة (Hash only) وعدم حفظ البيانات الخام
-            biometric_hash = hashlib.sha256(
-                biometric_data.encode("utf-8")
-            ).hexdigest()
+            biometric_hash = hashlib.sha256(biometric_data.encode("utf-8")).hexdigest()
             try:
                 with db_manager.get_write_connection() as conn:
                     conn.execute(
@@ -120,7 +119,8 @@ def register_mobile_auth_routes(bp, shared):
                 return jsonify(response_data), status_code
 
             logger.info(
-                f"✅ تم التحقق من المصادقة البيومترية ({biometric_type}) للمستخدم {user_id}")
+                f"✅ تم التحقق من المصادقة البيومترية ({biometric_type}) للمستخدم {user_id}"
+            )
             response_data, status_code = success_response(
                 {"verified": True, "type": biometric_type},
                 "تم التحقق من البيانات البيومترية بنجاح",
@@ -175,9 +175,7 @@ def register_mobile_auth_routes(bp, shared):
             device_name = data.get("device_name", "Unknown Device").strip()
             device_type = data.get("device_type", "unknown").strip()
             fcm_token = (
-                data.get("fcm_token", "").strip()
-                if data.get("fcm_token")
-                else None
+                data.get("fcm_token", "").strip() if data.get("fcm_token") else None
             )
 
             # التحقق من صحة معرف الجهاز
@@ -219,9 +217,7 @@ def register_mobile_auth_routes(bp, shared):
                 )
                 return jsonify(response_data), status_code
 
-            logger.info(
-                f"✅ تم تسجيل جهاز جديد ({device_type}) للمستخدم {user_id}"
-            )
+            logger.info(f"✅ تم تسجيل جهاز جديد ({device_type}) للمستخدم {user_id}")
             response_data, status_code = success_response(
                 {"registered": True, "device_id": device_id},
                 "تم تسجيل الجهاز بنجاح",
@@ -253,9 +249,7 @@ def register_mobile_auth_routes(bp, shared):
             data = request.get_json()
 
             # قبول token أو fcm_token
-            fcm_token = (
-                data.get("fcm_token") or data.get("token") if data else None
-            )
+            fcm_token = data.get("fcm_token") or data.get("token") if data else None
 
             if not fcm_token:
                 response_data, status_code = error_response(
@@ -387,9 +381,7 @@ def register_mobile_auth_routes(bp, shared):
 
                 if success:
                     logger.info(f"✅ OTP sent for registration: {email}")
-                    return jsonify(
-                        {"success": True, "message": "تم إرسال رمز التحقق"}
-                    )
+                    return jsonify({"success": True, "message": "تم إرسال رمز التحقق"})
                 else:
                     return (
                         jsonify({"success": False, "error": "فشل إرسال OTP"}),
@@ -407,10 +399,11 @@ def register_mobile_auth_routes(bp, shared):
 
     @bp.route("/auth/verify-registration-otp", methods=["POST"])
     def mobile_verify_registration_otp():
-        """التحقق من OTP وإنشاء الحساب - نسخة mobile"""
+        """التحقق من OTP وإنشاء الحساب - نسخة mobile (كاملة مع محفظة وإعدادات)"""
         try:
             from backend.api.auth_endpoints import otp_service
             from backend.services.auth_service import AuthService
+                    from backend.api.token_refresh_endpoint import generate_tokens
 
             data = request.get_json(silent=True) or {}
             if not data:
@@ -423,6 +416,14 @@ def register_mobile_auth_routes(bp, shared):
             otp_code = (data.get("otp_code") or data.get("otp") or "").strip()
             username = data.get("username", "").strip()
             password = data.get("password", "").strip()
+            phone_number = (
+                data.get("phoneNumber")
+                or data.get("phone")
+                or data.get("phone_number", "")
+            ).strip()
+            full_name = (
+                data.get("fullName") or data.get("full_name") or data.get("name", "")
+            ).strip()
 
             logger.info(f"📱 Mobile verify registration OTP: email={email}")
 
@@ -433,45 +434,179 @@ def register_mobile_auth_routes(bp, shared):
                 )
 
             if otp_service:
-                verified, result = otp_service.verify_email_otp(
-                    email, otp_code
-                )
+                verified, result = otp_service.verify_email_otp(email, otp_code)
 
                 if verified:
-                    # إنشاء الحساب
-                    auth_service = AuthService()
-                    user_data = auth_service.register_user(
-                        username=username,
-                        email=email,
-                        password=password,
-                        email_verified=True,
-                    )
+                    # إنشاء الحساب + المحفظة + الإعدادات (معاملة واحدة)
+                    import bcrypt as bcrypt_lib
+                    from backend.infrastructure.db_access import get_db_manager
 
-                    if user_data and user_data.get("success"):
-                        logger.info(f"✅ Account created: user_id={
-                            user_data['user']['id']}")
-                        user_payload = {
-                            **(user_data.get("user") or {}),
-                            "email_verified": True,
-                            "user_type": (user_data.get("user") or {}).get(
-                                "user_type", "user"
-                            ),
-                        }
-                        return jsonify(
-                            {
-                                "success": True,
-                                "message": "تم إنشاء الحساب بنجاح",
-                                "user": user_payload,
-                                "token": user_data.get("token"),
-                            }
-                        )
-                    else:
+                    db_manager = get_db_manager()
+
+                    password_hash = bcrypt_lib.hashpw(
+                        password.encode("utf-8"), bcrypt_lib.gensalt()
+                    ).decode("utf-8")
+
+                    user_id = None
+                    try:
+                        with db_manager.get_write_connection() as conn:
+                            cursor = conn.cursor()
+
+                            # تحقق من مستخدم موجود
+                            cursor.execute(
+                                """
+                                SELECT id, COALESCE(email_verified, FALSE) AS email_verified
+                                FROM users
+                                WHERE email = %s OR LOWER(username) = %s
+                                LIMIT 1
+                                """,
+                                (email, username.lower()),
+                            )
+                            existing_user = cursor.fetchone()
+
+                            if existing_user and bool(existing_user["email_verified"]):
+                                conn.rollback()
+                                return (
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "error": "المستخدم موجود مسبقاً",
+                                        }
+                                    ),
+                                    409,
+                                )
+
+                            if existing_user:
+                                user_id = existing_user["id"]
+                                cursor.execute(
+                                    """
+                                    UPDATE users
+                                    SET username = %s, email = %s, password_hash = %s,
+                                        phone_number = %s, name = %s,
+                                        email_verified = TRUE, is_phone_verified = FALSE,
+                                        preferred_verification_method = 'email'
+                                    WHERE id = %s
+                                    """,
+                                    (
+                                        username,
+                                        email,
+                                        password_hash,
+                                        phone_number,
+                                        full_name,
+                                        user_id,
+                                    ),
+                                )
+                            else:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO users (username, email, password_hash, phone_number, name,
+                                        email_verified, is_phone_verified, preferred_verification_method,
+                                        created_at, user_type)
+                                    VALUES (%s, %s, %s, %s, %s, TRUE, FALSE, 'email', CURRENT_TIMESTAMP, 'user')
+                                    RETURNING id
+                                    """,
+                                    (
+                                        username,
+                                        email,
+                                        password_hash,
+                                        phone_number,
+                                        full_name,
+                                    ),
+                                )
+                                row = cursor.fetchone()
+                                user_id = row[0] if row else None
+
+                            if not user_id:
+                                conn.rollback()
+                                return (
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "error": "فشل إنشاء المستخدم",
+                                        }
+                                    ),
+                                    500,
+                                )
+
+                            # إعدادات التداول (real mode)
+                            cursor.execute(
+                                """
+                                INSERT INTO user_settings (user_id, is_demo, trading_enabled, trade_amount,
+                                    position_size_percentage, stop_loss_pct, take_profit_pct, max_positions,
+                                    risk_level, max_daily_loss_pct, trading_mode)
+                                VALUES (%s, FALSE, FALSE, 100.0, 10.0, 2.0, 5.0, 5, 'medium', 10.0, 'real')
+                                """,
+                                (user_id,),
+                            )
+
+                            # المحفظة (real)
+                            cursor.execute(
+                                """
+                                INSERT INTO portfolio (user_id, total_balance, available_balance,
+                                    invested_balance, total_profit_loss, total_profit_loss_percentage,
+                                    initial_balance, is_demo)
+                                VALUES (%s, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, FALSE)
+                                """,
+                                (user_id,),
+                            )
+
+                            # إعدادات الإشعارات
+                            cursor.execute(
+                                """
+                                INSERT INTO user_notification_settings (user_id, settings_data)
+                                VALUES (%s, %s)
+                                ON CONFLICT DO NOTHING
+                                """,
+                                (
+                                    user_id,
+                                    '{"trade_notifications":true,"price_alerts":true,"system_notifications":true,"marketing_notifications":false,"push_enabled":true,"email_enabled":true,"sms_enabled":false,"notify_new_deal":true,"notify_deal_profit":true,"notify_deal_loss":true,"notify_daily_profit":true,"notify_daily_loss":true,"notify_low_balance":true}',
+                                ),
+                            )
+
+                            # حذف OTP المستخدم
+                            cursor.execute(
+                                "DELETE FROM verification_codes WHERE email = %s AND purpose = 'registration'",
+                                (email,),
+                            )
+
+                            conn.commit()
+                            logger.info(f"✅ Account created: user_id={user_id}")
+
+                    except Exception as e:
+                        logger.error(f"❌ Transaction error: {e}")
                         return (
-                            jsonify(
-                                {"success": False, "error": "فشل إنشاء الحساب"}
-                            ),
+                            jsonify({"success": False, "error": "خطأ في إنشاء الحساب"}),
                             500,
                         )
+
+                    # توليد التوكنات
+                    tokens = generate_tokens(user_id, username, "user")
+
+                    user_payload = {
+                        "id": user_id,
+                        "username": username,
+                        "email": email,
+                        "name": full_name,
+                        "full_name": full_name,
+                        "phone_number": phone_number,
+                        "user_type": "user",
+                        "trading_mode": "demo",
+                        "trading_enabled": 0,
+                        "has_binance_keys": 0,
+                        "is_active": 1,
+                        "email_verified": 1,
+                        "biometric_enabled": 0,
+                    }
+
+                    return jsonify(
+                        {
+                            "success": True,
+                            "message": "تم إنشاء الحساب بنجاح",
+                            "user": user_payload,
+                            "token": tokens["access_token"],
+                            "refresh_token": tokens["refresh_token"],
+                        }
+                    )
                 else:
                     error_msg = result.get("error", "رمز OTP غير صحيح")
                     logger.warning(
@@ -480,9 +615,7 @@ def register_mobile_auth_routes(bp, shared):
                     return jsonify({"success": False, "error": error_msg}), 400
             else:
                 return (
-                    jsonify(
-                        {"success": False, "error": "خدمة التحقق غير متاحة"}
-                    ),
+                    jsonify({"success": False, "error": "خدمة التحقق غير متاحة"}),
                     503,
                 )
 
@@ -506,9 +639,7 @@ def register_mobile_auth_routes(bp, shared):
             email = data.get("email", "").strip().lower()
             purpose = data.get("purpose", "verification")
 
-            logger.info(
-                f"📱 Mobile send OTP: email={email}, purpose={purpose}"
-            )
+            logger.info(f"📱 Mobile send OTP: email={email}, purpose={purpose}")
 
             if not email:
                 return (
@@ -517,15 +648,11 @@ def register_mobile_auth_routes(bp, shared):
                 )
 
             if otp_service:
-                success, otp_code = otp_service.send_email_otp(
-                    email, purpose=purpose
-                )
+                success, otp_code = otp_service.send_email_otp(email, purpose=purpose)
 
                 if success:
                     logger.info(f"✅ OTP sent: {email}")
-                    return jsonify(
-                        {"success": True, "message": "تم إرسال رمز التحقق"}
-                    )
+                    return jsonify({"success": True, "message": "تم إرسال رمز التحقق"})
                 else:
                     return (
                         jsonify({"success": False, "error": "فشل إرسال OTP"}),
@@ -561,27 +688,22 @@ def register_mobile_auth_routes(bp, shared):
 
             if not email or not otp_code:
                 return (
-                    jsonify(
-                        {"success": False, "error": "الإيميل ورمز OTP مطلوبان"}
-                    ),
+                    jsonify({"success": False, "error": "الإيميل ورمز OTP مطلوبان"}),
                     400,
                 )
 
             if otp_service:
-                verified, result = otp_service.verify_email_otp(
-                    email, otp_code
-                )
+                verified, result = otp_service.verify_email_otp(email, otp_code)
                 logger.info(
-                    f"🔍 OTP verification result: verified={verified}, result={result}")
+                    f"🔍 OTP verification result: verified={verified}, result={result}"
+                )
 
                 if verified:
                     logger.info(f"✅ OTP verified: {email}")
                     return jsonify(
                         {
                             "success": True,
-                            "message": result.get(
-                                "message", "تم التحقق بنجاح"
-                            ),
+                            "message": result.get("message", "تم التحقق بنجاح"),
                         }
                     )
                 else:
@@ -596,9 +718,7 @@ def register_mobile_auth_routes(bp, shared):
                     return jsonify(response), 400
             else:
                 return (
-                    jsonify(
-                        {"success": False, "error": "خدمة التحقق غير متاحة"}
-                    ),
+                    jsonify({"success": False, "error": "خدمة التحقق غير متاحة"}),
                     503,
                 )
 
@@ -631,9 +751,7 @@ def register_mobile_auth_routes(bp, shared):
                 )
 
             if otp_service:
-                can_send, wait_seconds = otp_service.can_send_otp(
-                    email, purpose
-                )
+                can_send, wait_seconds = otp_service.can_send_otp(email, purpose)
 
                 if not can_send:
                     return (
@@ -642,13 +760,12 @@ def register_mobile_auth_routes(bp, shared):
                                 "success": False,
                                 "error": f"يرجى الانتظار {wait_seconds} ثانية قبل إعادة الإرسال",
                                 "wait_seconds": wait_seconds,
-                            }),
+                            }
+                        ),
                         429,
                     )
 
-                success, otp_code = otp_service.send_email_otp(
-                    email, purpose=purpose
-                )
+                success, otp_code = otp_service.send_email_otp(email, purpose=purpose)
 
                 if success:
                     logger.info(f"✅ OTP resent: {email}")
@@ -698,9 +815,7 @@ def register_mobile_auth_routes(bp, shared):
                 or data.get("phone_number")
                 or ""
             ).strip()
-            logger.info(
-                f"📱 Mobile forgot password: email={email}, method={method}"
-            )
+            logger.info(f"📱 Mobile forgot password: email={email}, method={method}")
 
             if not email:
                 return (
@@ -734,32 +849,25 @@ def register_mobile_auth_routes(bp, shared):
                         try:
                             message = f"رمز استعادة كلمة المرور: {otp_code}\nصالح لمدة 5 دقائق"
                             sms_service.send_sms(phone, message)
-                            logger.info(
-                                f"📱 تم إرسال OTP استعادة عبر SMS إلى {phone}"
-                            )
+                            logger.info(f"📱 تم إرسال OTP استعادة عبر SMS إلى {phone}")
                         except Exception as sms_err:
                             logger.warning(f"⚠️ فشل إرسال SMS: {sms_err}")
 
                     masked_target = email
                     if method == "sms" and phone:
                         masked_target = (
-                            phone[:4] + "****" + phone[-2:]
-                            if len(phone) > 6
-                            else phone
+                            phone[:4] + "****" + phone[-2:] if len(phone) > 6 else phone
                         )
                     elif "@" in email:
-                        masked_target = (
-                            email[:2] + "***@" + email.split("@")[1]
-                        )
+                        masked_target = email[:2] + "***@" + email.split("@")[1]
 
-                    logger.info(
-                        f"✅ Password reset OTP sent via {method}: {email}"
-                    )
+                    logger.info(f"✅ Password reset OTP sent via {method}: {email}")
                     return jsonify(
                         {
                             "success": True,
-                            "message": f'تم إرسال رمز استعادة كلمة المرور إلى {
-                                "هاتفك" if method == "sms" else "إيميلك"}',
+                            "message": f"تم إرسال رمز استعادة كلمة المرور إلى {
+                                'هاتفك' if method == 'sms' else 'إيميلك'
+                            }",
                             "method": method,
                             "masked_target": masked_target,
                         }
@@ -807,23 +915,21 @@ def register_mobile_auth_routes(bp, shared):
 
             logger.info(
                 f"📱 Mobile verify reset OTP: email={email}, otp_length={
-                    len(otp_code) if otp_code else 0}"
+                    len(otp_code) if otp_code else 0
+                }"
             )
 
             if not email or not otp_code:
                 return (
-                    jsonify(
-                        {"success": False, "error": "الإيميل ورمز OTP مطلوبان"}
-                    ),
+                    jsonify({"success": False, "error": "الإيميل ورمز OTP مطلوبان"}),
                     400,
                 )
 
             if otp_service:
-                verified, result = otp_service.verify_email_otp(
-                    email, otp_code
-                )
+                verified, result = otp_service.verify_email_otp(email, otp_code)
                 logger.info(
-                    f"🔍 Reset OTP verification: verified={verified}, result={result}")
+                    f"🔍 Reset OTP verification: verified={verified}, result={result}"
+                )
 
                 if verified:
                     user = get_user_by_email(email)
@@ -862,9 +968,7 @@ def register_mobile_auth_routes(bp, shared):
 
                     # ✅ حذف OTP من قاعدة البيانات (استخدام واحد فقط)
                     cleanup_verification_data(email)
-                    logger.info(
-                        f"✅ Reset OTP verified and cleaned for: {email}"
-                    )
+                    logger.info(f"✅ Reset OTP verified and cleaned for: {email}")
 
                     return jsonify(
                         {
@@ -878,7 +982,8 @@ def register_mobile_auth_routes(bp, shared):
                     error_msg = result.get("error", "رمز OTP غير صحيح")
                     remaining = result.get("remaining_attempts")
                     logger.warning(
-                        f"❌ Reset OTP verification failed: {error_msg}, remaining={remaining}")
+                        f"❌ Reset OTP verification failed: {error_msg}, remaining={remaining}"
+                    )
 
                     response = {"success": False, "error": error_msg}
                     if remaining is not None:
@@ -888,9 +993,7 @@ def register_mobile_auth_routes(bp, shared):
             else:
                 logger.error("❌ OTP service not available")
                 return (
-                    jsonify(
-                        {"success": False, "error": "خدمة التحقق غير متاحة"}
-                    ),
+                    jsonify({"success": False, "error": "خدمة التحقق غير متاحة"}),
                     503,
                 )
 
@@ -939,20 +1042,17 @@ def register_mobile_auth_routes(bp, shared):
                         {
                             "success": False,
                             "error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حروف كبيرة وصغيرة وأرقام",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
             import jwt
 
-            secret_key = os.getenv(
-                "JWT_SECRET_KEY", "trading_ai_bot_secret_key_2026"
-            )
+            secret_key = os.getenv("JWT_SECRET_KEY", "trading_ai_bot_secret_key_2026")
 
             try:
-                payload = jwt.decode(
-                    reset_token, secret_key, algorithms=["HS256"]
-                )
+                payload = jwt.decode(reset_token, secret_key, algorithms=["HS256"])
 
                 if payload.get("purpose") != "password_reset":
                     return (
@@ -965,9 +1065,7 @@ def register_mobile_auth_routes(bp, shared):
                 success = auth_service.update_password(user_id, new_password)
 
                 if success:
-                    logger.info(
-                        f"✅ Password reset successfully for user {user_id}"
-                    )
+                    logger.info(f"✅ Password reset successfully for user {user_id}")
                     return jsonify(
                         {
                             "success": True,
@@ -987,16 +1085,12 @@ def register_mobile_auth_routes(bp, shared):
 
             except jwt.ExpiredSignatureError:
                 return (
-                    jsonify(
-                        {"success": False, "error": "انتهت صلاحية Reset Token"}
-                    ),
+                    jsonify({"success": False, "error": "انتهت صلاحية Reset Token"}),
                     400,
                 )
             except jwt.InvalidTokenError:
                 return (
-                    jsonify(
-                        {"success": False, "error": "Reset Token غير صالح"}
-                    ),
+                    jsonify({"success": False, "error": "Reset Token غير صالح"}),
                     400,
                 )
 
@@ -1047,15 +1141,11 @@ def register_mobile_auth_routes(bp, shared):
 
             if not id_token:
                 return (
-                    jsonify(
-                        {"success": False, "error": "Firebase ID Token مطلوب"}
-                    ),
+                    jsonify({"success": False, "error": "Firebase ID Token مطلوب"}),
                     400,
                 )
 
-            verified, result = verify_firebase_phone_token(
-                id_token, phone_number
-            )
+            verified, result = verify_firebase_phone_token(id_token, phone_number)
 
             if verified:
                 # تحديث حالة المستخدم في قاعدة البيانات

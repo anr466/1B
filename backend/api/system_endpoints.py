@@ -57,9 +57,7 @@ def get_system_status():
                 {
                     "success": True,
                     "data": {
-                        "status": (
-                            "running" if effective_running else "stopped"
-                        ),
+                        "status": ("running" if effective_running else "stopped"),
                         "lastUpdate": system_status[1],
                         "tradingActive": effective_running,
                         "totalUsers": system_status[3],
@@ -90,9 +88,7 @@ def reset_account_data():
         jwt_secret = os.getenv("JWT_SECRET_KEY")
         if not jwt_secret:
             return (
-                jsonify(
-                    {"success": False, "error": "Server configuration error"}
-                ),
+                jsonify({"success": False, "error": "Server configuration error"}),
                 500,
             )
         from ..utils.jwt_manager import JWTManager
@@ -121,21 +117,34 @@ def reset_account_data():
             )
 
         with db.get_write_connection() as conn:
-            # حذف المراكز النشطة (demo فقط)
+            # 1. نقل الصفقات المغلقة للتاريخ قبل الحذف (للتدقيق)
             conn.execute(
-                "DELETE FROM active_positions WHERE user_id = %s AND is_demo = 1",
+                """
+                INSERT INTO trading_history (user_id, symbol, side, entry_price, exit_price,
+                    quantity, profit_loss, profit_pct, status, entry_time, exit_time)
+                SELECT user_id, symbol, position_type, entry_price, exit_price,
+                    quantity, profit_loss, profit_pct, 'closed', entry_date, closed_at
+                FROM active_positions
+                WHERE user_id = %s AND is_demo = TRUE AND is_active = FALSE
+                """,
                 (user_id,),
             )
 
-            # إعادة تعيين المحفظة (demo فقط)
+            # 2. حذف جميع المراكز (المفتوحة + المغلقة)
+            conn.execute(
+                "DELETE FROM active_positions WHERE user_id = %s AND is_demo = TRUE",
+                (user_id,),
+            )
+
+            # 3. إعادة تعيين المحفظة
             portfolio_row = conn.execute(
                 """
-                SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = 1 LIMIT 1
-            """,
+                SELECT initial_balance FROM portfolio WHERE user_id = %s AND is_demo = TRUE LIMIT 1
+                """,
                 (user_id,),
             ).fetchone()
             initial_balance = (
-                float(portfolio_row[0] or 0.0) if portfolio_row else 0.0
+                float(portfolio_row[0] or 10000.0) if portfolio_row else 10000.0
             )
             conn.execute(
                 """
@@ -145,17 +154,29 @@ def reset_account_data():
                     invested_balance = 0,
                     total_profit_loss = 0,
                     total_profit_loss_percentage = 0,
+                    total_trades = 0,
+                    winning_trades = 0,
+                    losing_trades = 0,
                     initial_balance = %s,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s AND is_demo = 1
-            """,
+                WHERE user_id = %s AND is_demo = TRUE
+                """,
                 (initial_balance, initial_balance, initial_balance, user_id),
             )
 
-            # حذف الإشعارات
+            # 4. مسح سجل التعلم (ليبدأ من جديد)
             conn.execute(
-                "DELETE FROM notifications WHERE user_id = %s", (user_id,)
+                "DELETE FROM trade_learning_log WHERE user_id = %s AND is_demo = TRUE",
+                (user_id,),
             )
+
+            # 5. مسح إشارات التداول القديمة
+            conn.execute(
+                "DELETE FROM trading_signals WHERE id IN (SELECT id FROM trading_signals LIMIT 1000)"
+            )
+
+            # 6. حذف الإشعارات
+            conn.execute("DELETE FROM notifications WHERE user_id = %s", (user_id,))
 
         logger.info(f"✅ إعادة تعيين بيانات الحساب للمستخدم {user_id}")
         return jsonify(
@@ -191,9 +212,7 @@ def health_check():
     except Exception as e:
         logger.error(f"❌ خطأ في فحص الصحة: {e}")
         return (
-            jsonify(
-                {"success": False, "status": "unhealthy", "error": str(e)}
-            ),
+            jsonify({"success": False, "status": "unhealthy", "error": str(e)}),
             500,
         )
 

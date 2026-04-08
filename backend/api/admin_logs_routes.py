@@ -17,7 +17,6 @@ def register_admin_logs_routes(bp, shared):
     """Register all logs/cleanup routes on the admin blueprint."""
     require_admin = shared["require_admin"]
     get_safe_connection = shared["get_safe_connection"]
-    shared["db"]
     audit_logger = shared["audit_logger"]
 
     @bp.route("/activity-logs", methods=["GET"])
@@ -73,11 +72,10 @@ def register_admin_logs_routes(bp, shared):
                         where_clauses.append("status = %s")
                         params.append(status)
 
-                    where_sql = f"WHERE {
-                        ' AND '.join(where_clauses)}" if where_clauses else ""
-                    count_sql = (
-                        f"SELECT COUNT(*) FROM activity_logs {where_sql}"
+                    where_sql = (
+                        f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
                     )
+                    count_sql = f"SELECT COUNT(*) FROM activity_logs {where_sql}"
                     cursor.execute(count_sql, tuple(params))
                     total = cursor.fetchone()[0]
 
@@ -111,9 +109,7 @@ def register_admin_logs_routes(bp, shared):
                         "limit": limit,
                     }
                 except Exception as fallback_error:
-                    logger.warning(
-                        f"Activity logs fallback failed: {fallback_error}"
-                    )
+                    logger.warning(f"Activity logs fallback failed: {fallback_error}")
                     result = {
                         "logs": [],
                         "total": 0,
@@ -160,8 +156,7 @@ def register_admin_logs_routes(bp, shared):
                 where_clauses.append("requires_admin = %s")
                 params.append(requires_admin.lower() == "true")
 
-            where_sql = f"WHERE {
-                ' AND '.join(where_clauses)}" if where_clauses else ""
+            where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
             # Count total
             count_sql = f"SELECT COUNT(*) FROM system_errors {where_sql}"
@@ -324,9 +319,7 @@ def register_admin_logs_routes(bp, shared):
                     details={"error_id": error_id, "notes": notes},
                 )
 
-            return jsonify(
-                {"success": True, "message": "تم تعليم الخطأ كمحلول"}
-            )
+            return jsonify({"success": True, "message": "تم تعليم الخطأ كمحلول"})
 
         except Exception as e:
             logger.error(f"Error resolving error: {e}")
@@ -366,7 +359,8 @@ def register_admin_logs_routes(bp, shared):
                         {
                             "success": False,
                             "error": "هذا الخطأ يتطلب تحقيق يدوي ولا يمكن إصلاحه تلقائيًا",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
@@ -640,9 +634,7 @@ def register_admin_logs_routes(bp, shared):
                                 "to_delete": len(details.get("deleted", [])),
                                 "to_keep": len(details.get("kept", [])),
                             }
-                            for category, details in stats.get(
-                                "details", {}
-                            ).items()
+                            for category, details in stats.get("details", {}).items()
                         },
                     },
                 }
@@ -663,15 +655,11 @@ def register_admin_logs_routes(bp, shared):
             return jsonify(
                 {
                     "success": True,
-                    "message": f'تم حذف {stats["files_deleted"]} ملف',
+                    "message": f"تم حذف {stats['files_deleted']} ملف",
                     "data": {
                         "files_deleted": stats["files_deleted"],
-                        "directories_deleted": stats.get(
-                            "directories_deleted", 0
-                        ),
-                        "space_freed_mb": round(
-                            stats["space_freed"] / 1024 / 1024, 2
-                        ),
+                        "directories_deleted": stats.get("directories_deleted", 0),
+                        "space_freed_mb": round(stats["space_freed"] / 1024 / 1024, 2),
                         "errors": stats.get("errors", []),
                     },
                 }
@@ -697,9 +685,7 @@ def register_admin_logs_routes(bp, shared):
                         "auto_cleanup_on_startup": True,
                         "pending_cleanup": {
                             "files": stats["files_deleted"],
-                            "size_mb": round(
-                                stats["space_freed"] / 1024 / 1024, 2
-                            ),
+                            "size_mb": round(stats["space_freed"] / 1024 / 1024, 2),
                         },
                         "categories": list(manager.config.keys()),
                     },
@@ -744,9 +730,7 @@ def register_admin_logs_routes(bp, shared):
                         "operation_logs": operation_count,
                         "activity_logs": activity_count,
                         "system_errors": error_count,
-                        "total_logs": operation_count
-                        + activity_count
-                        + error_count,
+                        "total_logs": operation_count + activity_count + error_count,
                         "database_size_mb": round(db_size / 1024 / 1024, 2),
                     },
                 }

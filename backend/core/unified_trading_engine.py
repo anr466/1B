@@ -51,7 +51,7 @@ class UnifiedTradingEngine:
 
     def _load_user_settings(self) -> Dict:
         try:
-            with self.db.get_read_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT trading_enabled FROM user_settings WHERE user_id = %s AND is_demo = %s",
@@ -263,7 +263,7 @@ class UnifiedTradingEngine:
 
     def _get_balance(self, mode: str) -> float:
         try:
-            with self.db.get_read_connection() as conn:
+            with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",

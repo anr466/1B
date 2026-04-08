@@ -250,9 +250,7 @@ class StorageService {
     final hideBalance = isBalanceHidden;
     final onboarding = onboardingDone;
     final rememberMe = rememberMeEnabled;
-    final biometric = biometricEnabled;
     final (rememberedUser, rememberedPass) = rememberedCredentials;
-    final (bioUser, bioPass) = biometricCredentials;
 
     await _p.clear();
 
@@ -261,14 +259,9 @@ class StorageService {
     await setBalanceHidden(hideBalance);
     await setOnboardingDone(onboarding);
     await setRememberMeEnabled(rememberMe);
-    await setBiometricEnabled(biometric);
 
     if (rememberMe && rememberedUser != null && rememberedPass != null) {
       await saveRememberedCredentials(rememberedUser, rememberedPass);
-    }
-
-    if (biometric && bioUser != null && bioPass != null) {
-      await saveBiometricCredentials(bioUser, bioPass);
     }
   }
 

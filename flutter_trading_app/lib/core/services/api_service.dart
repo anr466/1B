@@ -165,6 +165,7 @@ class ApiService {
       } catch (e) {
         // Log error but don't crash
       }
+      return;
     }
     handler.next(err);
   }
