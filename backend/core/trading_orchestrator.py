@@ -12,6 +12,10 @@ from backend.core.monitoring_engine import MonitoringEngine
 from backend.core.exit_engine import ExitEngine
 from backend.core.portfolio_risk_manager import PortfolioRiskManager
 from backend.core.mtf_confirmation import MTFConfirmationEngine
+from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
+from backend.core.modules.trend_module import TrendModule
+from backend.core.modules.range_module import RangeModule
+from backend.core.modules.volatility_module import VolatilityModule
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,13 @@ class TradingOrchestrator:
         self.exit_engine = ExitEngine()
         self.risk_manager = PortfolioRiskManager()
         self.mtf = MTFConfirmationEngine(data_provider=data_provider)
+        self.decision_matrix = CognitiveDecisionMatrix()
+
+        self.strategy_modules = [
+            TrendModule(),
+            RangeModule(),
+            VolatilityModule(),
+        ]
 
     def run_cycle(self, symbols: List[str]) -> Dict:
         result = {
@@ -125,76 +136,83 @@ class TradingOrchestrator:
                     continue
 
                 df = self._add_indicators(df)
-
                 state = self.state_analyzer.analyze(symbol, df)
                 if not state or state.recommendation == "AVOID":
                     continue
 
-                route = self.strategy_router.route(state)
-                if not route:
+                context = {
+                    "trend": state.trend,
+                    "regime": state.regime,
+                    "volatility": state.volatility,
+                    "coin_type": state.coin_type,
+                    "volume_ratio": 1.0,
+                }
+
+                best_signal = None
+                best_score = -1
+
+                for module in self.strategy_modules:
+                    if state.regime not in module.supported_regimes():
+                        continue
+
+                    signal = module.evaluate(df, context)
+                    if not signal:
+                        continue
+
+                    signal["entry_price"] = module.get_entry_price(df, signal)
+                    signal["stop_loss"] = module.get_stop_loss(df, signal)
+                    signal["take_profit"] = module.get_take_profit(df, signal)
+
+                    decision = self.decision_matrix.evaluate(signal, context)
+                    if decision["decision"] in ["ENTER", "ENTER_REDUCED"]:
+                        if decision["score"] > best_score:
+                            best_score = decision["score"]
+                            best_signal = {**signal, **decision}
+
+                if not best_signal:
                     continue
 
-                signal = self.entry_executor.confirm_entry(symbol, df, state, route)
-                if not signal:
-                    continue
-
-                # ML Brain filtering
                 if self.trading_brain:
                     market_data = {
-                        "rsi": signal.get("rsi", 50),
-                        "adx": signal.get("adx", 20),
+                        "rsi": best_signal.get("rsi", 50),
+                        "adx": best_signal.get("adx", 20),
                         "volatility": state.atr_pct,
                         "trend": state.trend,
-                        "volume_ratio": signal.get("vol_ratio", 1.0),
+                        "volume_ratio": 1.0,
                         "bb_position": 0.5,
                     }
-                    brain_decision = self.trading_brain.think(signal, market_data)
+                    brain_decision = self.trading_brain.think(best_signal, market_data)
                     if brain_decision.get("action") == "REJECT":
                         logger.debug(
                             f"   🧠 [{symbol}] Brain rejected: {brain_decision.get('reason', 'unknown')}"
                         )
                         continue
-                    signal["brain_confidence"] = brain_decision.get("confidence", 0)
 
-                # MTF Entry Confirmation — wait for reversal on lower timeframes
-                mtf_result = self.mtf.confirm_entry(symbol, signal, df)
+                mtf_result = self.mtf.confirm_entry(symbol, best_signal, df)
                 if not mtf_result["confirmed"]:
                     logger.debug(
-                        f"   ⏳ [{symbol}] MTF entry not confirmed: {mtf_result['reason']} (score={mtf_result['score']})"
+                        f"   ⏳ [{symbol}] MTF not confirmed: {mtf_result['reason']}"
                     )
                     continue
-                signal["mtf_score"] = mtf_result["score"]
-
-                # Adaptive SL from optimizer
-                if self.adaptive_optimizer:
-                    opt_sl = self.adaptive_optimizer.get_optimal_sl(
-                        self.user_id, self.is_demo_trading, symbol
-                    )
-                    if opt_sl and opt_sl > 0:
-                        signal["stop_loss"] = opt_sl
-                        risk = (signal["entry_price"] - opt_sl) / signal["entry_price"]
-                        signal["risk_pct"] = round(risk * 100, 2)
+                best_signal["mtf_score"] = mtf_result["score"]
 
                 size_result = self.risk_manager.get_position_size(
-                    balance, state.coin_type, signal["confidence"], 0.05
+                    balance, state.coin_type, best_signal["confidence"], 0.05
                 )
                 if not size_result["can_trade"]:
-                    logger.debug(
-                        f"   ⏭️ [{symbol}] Size too small: {size_result['reason']}"
-                    )
                     continue
 
                 logger.info(
-                    f"   🎯 [{symbol}] {route['strategy']} | "
+                    f"   🎯 [{symbol}] {best_signal['strategy']} | "
                     f"State: {state.trend}/{state.regime} | "
-                    f"Tier: {tier.name} | Size: ${size_result['position_usd']:.0f} ({size_result['position_pct']}%) | "
-                    f"Score: {signal['score']} | Confidence: {signal['confidence']:.0f}"
+                    f"Tier: {tier.name} | Size: ${size_result['position_usd']:.0f} | "
+                    f"CognitiveScore: {best_signal['score']} | Decision: {best_signal['decision']}"
                 )
 
-                signal["position_size"] = size_result["position_usd"]
-                success = self._open_position(symbol, signal)
+                best_signal["position_size"] = size_result["position_usd"]
+                success = self._open_position(symbol, best_signal)
                 if success:
-                    opened.append(signal)
+                    opened.append(best_signal)
 
             except Exception as e:
                 logger.error(f"   ❌ [{symbol}] Error: {e}")
