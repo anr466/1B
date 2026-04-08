@@ -30,7 +30,8 @@ class ExitEngine:
             pnl_raw = (entry - exit_price) * closing_qty
 
         entry_commission = position.get("entry_commission", 0)
-        exit_commission = pnl_raw * 0.001
+        exit_notional = exit_price * closing_qty
+        exit_commission = exit_notional * 0.001
         pnl = pnl_raw - exit_commission
 
         position_size = entry * total_qty

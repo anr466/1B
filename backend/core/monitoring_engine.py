@@ -45,6 +45,10 @@ class MonitoringEngine:
             return action
 
         updates = self._update_trailing(pos, current_price, peak, pnl_pct)
+        be_updates = self._check_breakeven(pos, current_price, pnl_pct)
+        if be_updates:
+            updates = updates or {}
+            updates.update(be_updates)
         if updates:
             return {"type": "UPDATE", "symbol": pos["symbol"], "updates": updates}
 
@@ -98,44 +102,51 @@ class MonitoringEngine:
         return None
 
     def _update_trailing(self, pos, price, peak, pnl_pct):
-        if pos.get("position_type", "long").upper() != "LONG":
+        ptype = pos.get("position_type", "long").upper()
+        if ptype != "LONG":
             return None
-
-        if pnl_pct < 0.015:
+        if pnl_pct < 0.01:
             return None
 
         trail_dist = 0.010
-        if pnl_pct >= 0.02:
+        if pnl_pct >= 0.03:
+            trail_dist = 0.0015
+        elif pnl_pct >= 0.02:
             trail_dist = 0.002
         elif pnl_pct >= 0.015:
             trail_dist = 0.003
+        elif pnl_pct >= 0.01:
+            trail_dist = 0.005
 
         new_trail = peak * (1 - trail_dist)
         current_trail = pos.get("trailing_sl_price", 0)
-
         if new_trail > current_trail:
-            return {
-                "trailing_sl_price": new_trail,
-                "highest_price": max(peak, price),
-            }
+            return {"trailing_sl_price": new_trail, "highest_price": max(peak, price)}
+        return None
 
+    def _check_breakeven(self, pos, price, pnl_pct):
+        if pos.get("position_type", "long").upper() != "LONG":
+            return None
+        if pnl_pct < 0.01:
+            return None
+        sl = pos.get("stop_loss", 0)
+        entry = pos.get("entry_price", 0)
+        if sl > 0 and sl < entry and pnl_pct >= 0.01:
+            return {"stop_loss": entry * 1.0001}
         return None
 
     def _check_time_exits(self, pos, pnl_pct):
         created = pos.get("created_at")
         if not created:
             return None
-
         if isinstance(created, str):
             try:
                 created = datetime.fromisoformat(created.replace("Z", "+00:00"))
             except Exception:
                 return None
-
         hold_hours = (
             datetime.now(created.tzinfo if created.tzinfo else None) - created
         ).total_seconds() / 3600
-
         if hold_hours >= 8 and pnl_pct < 0.005:
             return {
                 "type": "CLOSE",
@@ -143,7 +154,6 @@ class MonitoringEngine:
                 "reason": "STAGNANT_8H",
                 "price": None,
             }
-
         if hold_hours >= 6 and pnl_pct < -0.015:
             return {
                 "type": "CLOSE",
@@ -151,26 +161,28 @@ class MonitoringEngine:
                 "reason": "EARLY_CUT_6H",
                 "price": None,
             }
-
         return None
 
     def _check_partial_close(self, pos, pnl_pct):
         tp_levels_hit = pos.get("tp_levels_hit", 0)
+        entry = pos.get("entry_price", 0)
+        sl = pos.get("stop_loss", 0)
+        risk = (entry - sl) / entry if entry > 0 and sl > 0 else 0.01
+        if risk <= 0:
+            return None
 
-        if pnl_pct >= 0.015 and tp_levels_hit < 1:
+        if pnl_pct >= risk * 1.5 and tp_levels_hit < 1:
             return {
                 "type": "PARTIAL_CLOSE",
                 "symbol": pos["symbol"],
-                "reason": "TP1_1.5x",
+                "reason": "TP1_1.5R",
                 "close_pct": 0.40,
             }
-
-        if pnl_pct >= 0.025 and tp_levels_hit < 2:
+        if pnl_pct >= risk * 2.5 and tp_levels_hit < 2:
             return {
                 "type": "PARTIAL_CLOSE",
                 "symbol": pos["symbol"],
-                "reason": "TP2_2.5x",
+                "reason": "TP2_2.5R",
                 "close_pct": 0.35,
             }
-
         return None
