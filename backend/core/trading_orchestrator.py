@@ -10,6 +10,7 @@ from backend.core.strategy_router import StrategyRouter
 from backend.core.entry_executor import EntryExecutor
 from backend.core.monitoring_engine import MonitoringEngine
 from backend.core.exit_engine import ExitEngine
+from backend.core.portfolio_risk_manager import PortfolioRiskManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class TradingOrchestrator:
         self.entry_executor = EntryExecutor()
         self.monitoring_engine = MonitoringEngine()
         self.exit_engine = ExitEngine()
+        self.risk_manager = PortfolioRiskManager()
 
     def run_cycle(self, symbols: List[str]) -> Dict:
         result = {
@@ -48,17 +50,26 @@ class TradingOrchestrator:
             "errors": [],
         }
 
+        balance = self._get_balance()
+        tier = self.risk_manager.classify_tier(balance)
+        result["tier"] = tier.name
+
         open_positions = self._get_open_positions()
         result["positions_monitored"] = len(open_positions)
 
         closed = self._monitor_and_exit(open_positions)
         result["positions_closed"] = len(closed)
 
-        can_open = self._can_open_new_positions(open_positions)
+        heat = self.risk_manager.check_heat(open_positions, balance)
+        result["heat"] = heat
+
+        can_open, reason = self._can_open_new_positions(open_positions, balance)
         if can_open:
-            new_signals = self._scan_and_enter(symbols, open_positions)
+            new_signals = self._scan_and_enter(symbols, open_positions, balance)
             result["signals"] = new_signals
             result["positions_opened"] = len(new_signals)
+        else:
+            logger.info(f"   ⏸️ Cannot open: {reason}")
 
         for sym in symbols:
             try:
@@ -76,6 +87,7 @@ class TradingOrchestrator:
                             "regime": state.regime,
                             "recommendation": state.recommendation,
                             "confidence": state.confidence,
+                            "coin_type": state.coin_type,
                         }
                     )
             except Exception as e:
@@ -83,13 +95,21 @@ class TradingOrchestrator:
 
         return result
 
-    def _scan_and_enter(self, symbols, open_positions) -> List[Dict]:
+    def _scan_and_enter(self, symbols, open_positions, balance) -> List[Dict]:
         opened = []
         open_symbols = {p["symbol"] for p in open_positions}
+        tier = self.risk_manager.classify_tier(balance)
 
         for symbol in symbols:
             if symbol in open_symbols:
                 continue
+
+            heat = self.risk_manager.check_heat(
+                open_positions + [{"symbol": s} for s in opened], balance
+            )
+            if not heat["can_open"]:
+                logger.info(f"   ⏸️ Heat limit reached, stopping scan")
+                break
 
             try:
                 df = self.data_provider.get_historical_data(symbol, "1h", limit=200)
@@ -110,13 +130,23 @@ class TradingOrchestrator:
                 if not signal:
                     continue
 
+                size_result = self.risk_manager.get_position_size(
+                    balance, state.coin_type, signal["confidence"], 0.05
+                )
+                if not size_result["can_trade"]:
+                    logger.debug(
+                        f"   ⏭️ [{symbol}] Size too small: {size_result['reason']}"
+                    )
+                    continue
+
                 logger.info(
                     f"   🎯 [{symbol}] {route['strategy']} | "
                     f"State: {state.trend}/{state.regime} | "
-                    f"Score: {signal['score']} | "
-                    f"Confidence: {signal['confidence']:.0f}"
+                    f"Tier: {tier.name} | Size: ${size_result['position_usd']:.0f} ({size_result['position_pct']}%) | "
+                    f"Score: {signal['score']} | Confidence: {signal['confidence']:.0f}"
                 )
 
+                signal["position_size"] = size_result["position_usd"]
                 success = self._open_position(symbol, signal)
                 if success:
                     opened.append(signal)
@@ -243,8 +273,35 @@ class TradingOrchestrator:
             pass
         return None
 
-    def _can_open_new_positions(self, open_positions):
-        return len(open_positions) < 5
+    def _get_balance(self):
+        if not self.db:
+            return 1000.0
+        try:
+            row = (
+                self.db.get_connection()
+                .execute(
+                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
+                    (self.user_id, self.is_demo_trading),
+                )
+                .fetchone()
+            )
+            return float(row[0]) if row and row[0] else 1000.0
+        except Exception:
+            return 1000.0
+
+    def _can_open_new_positions(self, open_positions, balance):
+        heat = self.risk_manager.check_heat(open_positions, balance)
+        if not heat["can_open"]:
+            return (
+                False,
+                f"Heat limit: {heat['current_heat_pct']}%/{heat['max_heat_pct']}%",
+            )
+        if heat["positions_count"] >= heat["max_positions"]:
+            return (
+                False,
+                f"Max positions: {heat['positions_count']}/{heat['max_positions']}",
+            )
+        return True, "OK"
 
     def _open_position(self, symbol, signal):
         if self.position_manager:

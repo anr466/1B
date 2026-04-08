@@ -921,12 +921,15 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 max_affordable = (
                     int(available_balance / position_size) if position_size > 0 else 0
                 )
-                effective_max = min(user_max_positions, max_affordable)
+
+                # Use tier-based max positions from new risk manager
+                tier_max = self.orchestrator.risk_manager.classify_tier(
+                    available_balance
+                ).max_positions
+                effective_max = min(user_max_positions, max_affordable, tier_max)
 
                 self.logger.info(
-                    f"🔍 Scan check: open={len(open_positions)}, max={
-                        effective_max
-                    }, can_scan={len(open_positions) < effective_max}"
+                    f"🔍 Scan check: open={len(open_positions)}, max={effective_max} (user={user_max_positions}, tier={tier_max}), can_scan={len(open_positions) < effective_max}"
                 )
 
                 if len(open_positions) < effective_max:
