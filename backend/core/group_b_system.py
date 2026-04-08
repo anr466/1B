@@ -43,6 +43,7 @@ from backend.core.unified_trading_engine import UnifiedTradingEngine
 from backend.core.dynamic_coin_selector import DynamicCoinSelector
 from backend.core.dual_mode_router import DualModeRouter
 from backend.core.demo_training_engine import DemoTrainingEngine
+from backend.core.trading_orchestrator import TradingOrchestrator
 
 # ===== مدير Binance للتداول الحقيقي =====
 try:
@@ -331,6 +332,16 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         # ===== Unified Trading Engine (Regime-Aware, Spot+Margin) =====
         self.unified_engine = UnifiedTradingEngine(self.user_id, self.is_demo_trading)
         self.logger.info("🔗 Unified Trading Engine initialized")
+
+        # ===== Trading Orchestrator (5-system architecture) =====
+        self.orchestrator = TradingOrchestrator(
+            data_provider=self.data_provider,
+            db=self.db,
+            position_manager=self,
+            is_demo_trading=self.is_demo_trading,
+            user_id=self.user_id,
+        )
+        self.logger.info("🎯 Trading Orchestrator initialized (5-system architecture)")
 
         # ===== الاستراتيجية النشطة (عبر واجهة BaseStrategy الموحدة) =====
         # القانون: النظام لا يعرف أي استراتيجية يشغّل — يستخدم الواجهة فقط
@@ -806,6 +817,42 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         )
         return False
 
+    def _get_tradeable_symbols(self) -> List[str]:
+        try:
+            coins = self.coin_selector.get_all_tradeable_coins()
+            return [c["symbol"] for c in coins[:28]]
+        except Exception:
+            return [
+                "BTCUSDT",
+                "ETHUSDT",
+                "BNBUSDT",
+                "SOLUSDT",
+                "XRPUSDT",
+                "DOGEUSDT",
+                "ADAUSDT",
+                "AVAXUSDT",
+                "DOTUSDT",
+                "LINKUSDT",
+                "MATICUSDT",
+                "LTCUSDT",
+                "BCHUSDT",
+                "ETCUSDT",
+                "FILUSDT",
+                "APTUSDT",
+                "ARBUSDT",
+                "OPUSDT",
+                "SUIUSDT",
+                "INJUSDT",
+                "NEARUSDT",
+                "PEPEUSDT",
+                "WIFUSDT",
+                "FLOKIUSDT",
+                "BONKUSDT",
+                "SHIBUSDT",
+                "MEMEUSDT",
+                "TURBOUSDT",
+            ]
+
     def run_monitoring_only(self) -> Dict:
         """
         مراقبة الصفقات المفتوحة فقط (بدون فتح صفقات جديدة)
@@ -884,13 +931,23 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
 
                 if len(open_positions) < effective_max:
                     self.logger.info(f"🚀 Starting scan for user {self.user_id}...")
-                    new_entries = self._scan_for_entries()
+
+                    # Use new 5-system orchestrator
+                    symbols = self._get_tradeable_symbols()
+                    orch_result = self.orchestrator.run_cycle(symbols)
+
+                    result["new_positions"] = orch_result.get("positions_opened", 0)
+                    for sig in orch_result.get("signals", []):
+                        result["actions"].append(sig)
+
+                    if orch_result.get("errors"):
+                        result["errors"].extend(orch_result["errors"])
+
                     self.logger.info(
-                        f"✅ Scan complete: {len(new_entries)} entries found"
+                        f"✅ Orchestrator: {len(orch_result.get('states', []))} states, "
+                        f"{orch_result.get('positions_opened', 0)} opened, "
+                        f"{orch_result.get('positions_closed', 0)} closed"
                     )
-                    for entry in new_entries:
-                        result["actions"].append(entry)
-                        result["new_positions"] += 1
                 else:
                     self.logger.info(
                         f"⏸️ Max positions reached ({len(open_positions)}/{
