@@ -53,6 +53,7 @@ class TrendModule(StrategyModule):
                 if 0 <= dist_to_ema21 <= 0.03:
                     return {
                         "type": "SHORT",
+                        "side": "SHORT",
                         "strategy": "Trend Pullback Short",
                         "confidence": 80,
                         "reason": f"Strong downtrend, price pulling back to EMA21 ({dist_to_ema21 * 100:.1f}%)",
