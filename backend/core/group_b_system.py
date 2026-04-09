@@ -273,9 +273,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 self.logger.warning(f"⚠️ BinanceManager init failed: {e}")
 
         # ===== Dynamic Coin Selector + Dual-Mode Router =====
-        binance_client = None
-        if self.binance_manager and hasattr(self.binance_manager, "client"):
-            binance_client = self.binance_manager.client
+        binance_client = self.data_provider.client
         self.coin_selector = DynamicCoinSelector(binance_client)
         self.dual_mode_router = DualModeRouter(
             spot_enabled=True,
@@ -596,12 +594,12 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         if hasattr(self, "last_regime"):
             regime = self.last_regime
 
-        max_coins = getattr(self, "config", {}).get("max_symbols_per_scan", 30)
+        max_coins = getattr(self, "config", {}).get("max_symbols_per_scan", 100)
         symbols = self.coin_selector.select_coins(
             regime=regime,
             max_coins=max_coins,
             include_memes=True,
-            min_volatility=2.0,
+            min_volatility=0.5,
         )
 
         if not symbols:
@@ -826,7 +824,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
         try:
             # Get dynamic coins from Binance based on volume/volatility
             coins = self.coin_selector.get_all_tradeable_coins()
-            return [c["symbol"] for c in coins[:28]]
+            return [c["symbol"] for c in coins[:100]]
         except Exception:
             # Fallback list if API fails
             return [

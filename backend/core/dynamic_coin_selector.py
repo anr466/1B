@@ -86,7 +86,7 @@ MEME_COINS = {
 }
 
 # Minimum 24h volume in USDT
-MIN_VOLUME_USDT = 1_000_000  # $1M minimum
+MIN_VOLUME_USDT = 200_000
 
 # Maximum coins to trade
 MAX_COINS = 30
@@ -164,7 +164,7 @@ class DynamicCoinSelector:
 
             # Sort by volume
             coins.sort(key=lambda x: x["volume_usd"], reverse=True)
-            return coins[:200]  # Top 200 by volume
+            return coins[:500]
 
         except Exception as e:
             logger.error(f"Error fetching coins from Binance: {e}")
@@ -193,6 +193,9 @@ class DynamicCoinSelector:
 
         # Filter by volatility
         coins = [c for c in all_coins if c["volatility_24h"] >= min_volatility]
+        logger.info(
+            f"DynamicCoinSelector: {len(all_coins)} total, {len(coins)} passed vol filter (>{min_volatility}%)"
+        )
 
         # Score coins based on regime
         scored = []
