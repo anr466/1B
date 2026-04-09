@@ -16,6 +16,7 @@ from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
 from backend.core.modules.trend_module import TrendModule
 from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
+from backend.core.modules.scalping_module import ScalpingModule
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class TradingOrchestrator:
             TrendModule(),
             RangeModule(),
             VolatilityModule(),
+            ScalpingModule(),
         ]
 
     def run_cycle(self, symbols: List[str]) -> Dict:
@@ -115,6 +117,7 @@ class TradingOrchestrator:
         return result
 
     def _scan_and_enter(self, symbols, open_positions, balance) -> List[Dict]:
+        logger.info(f"   🔎 Scanning {len(symbols)} symbols for entries...")
         opened = []
         open_symbols = {p["symbol"] for p in open_positions}
         tier = self.risk_manager.classify_tier(balance)
@@ -138,6 +141,10 @@ class TradingOrchestrator:
                 df = self._add_indicators(df)
                 state = self.state_analyzer.analyze(symbol, df)
                 if not state or state.recommendation == "AVOID":
+                    if symbol in ["BTCUSDT", "ETHUSDT", "SOLUSDT"]:
+                        logger.info(
+                            f"   ⏭️ [{symbol}] AVOID (trend={state.trend if state else 'N/A'}, regime={state.regime if state else 'N/A'})"
+                        )
                     continue
 
                 context = {
@@ -159,17 +166,26 @@ class TradingOrchestrator:
                     if not signal:
                         continue
 
+                    logger.info(
+                        f"   📈 [{symbol}] {module.name()} signal: {signal['strategy']} ({signal['type']})"
+                    )
                     signal["entry_price"] = module.get_entry_price(df, signal)
                     signal["stop_loss"] = module.get_stop_loss(df, signal)
                     signal["take_profit"] = module.get_take_profit(df, signal)
 
                     decision = self.decision_matrix.evaluate(signal, context)
+                    logger.info(
+                        f"   📊 [{symbol}] {module.name()}: score={decision['score']}, decision={decision['decision']}"
+                    )
                     if decision["decision"] in ["ENTER", "ENTER_REDUCED"]:
                         if decision["score"] > best_score:
                             best_score = decision["score"]
                             best_signal = {**signal, **decision}
 
                 if not best_signal:
+                    logger.info(
+                        f"   ⏭️ [{symbol}] No qualifying signal (regime={state.regime})"
+                    )
                     continue
 
                 if self.trading_brain:
@@ -183,14 +199,14 @@ class TradingOrchestrator:
                     }
                     brain_decision = self.trading_brain.think(best_signal, market_data)
                     if brain_decision.get("action") == "REJECT":
-                        logger.debug(
+                        logger.info(
                             f"   🧠 [{symbol}] Brain rejected: {brain_decision.get('reason', 'unknown')}"
                         )
                         continue
 
                 mtf_result = self.mtf.confirm_entry(symbol, best_signal, df)
                 if not mtf_result["confirmed"]:
-                    logger.debug(
+                    logger.info(
                         f"   ⏳ [{symbol}] MTF not confirmed: {mtf_result['reason']}"
                     )
                     continue
@@ -285,6 +301,10 @@ class TradingOrchestrator:
             df = self._compute_rsi(df)
         if "adx" not in df.columns:
             df = self._compute_adx(df)
+        if "ema21" not in df.columns:
+            close = df["close"]
+            df["ema21"] = close.ewm(span=21, adjust=False).mean()
+            df["ema55"] = close.ewm(span=55, adjust=False).mean()
         return df
 
     def _compute_rsi(self, df, period=14):

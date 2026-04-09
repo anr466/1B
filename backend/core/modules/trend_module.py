@@ -57,24 +57,6 @@ class TrendModule(StrategyModule):
                         "confidence": 80,
                         "reason": f"Strong downtrend, price pulling back to EMA21 ({dist_to_ema21 * 100:.1f}%)",
                     }
-                elif current_price > df["high"].tail(20).quantile(0.85):
-                    return {
-                        "type": "LONG",
-                        "strategy": "Trend Breakout",
-                        "confidence": 70,
-                        "reason": "Breakout above 20-period high in uptrend",
-                    }
-
-        elif trend == "DOWN":
-            if current_price < ema21 and ema21 < ema55:
-                dist_to_ema21 = (ema21.iloc[-1] - current_price) / ema21.iloc[-1]
-                if 0 <= dist_to_ema21 <= 0.03:
-                    return {
-                        "type": "SHORT",
-                        "strategy": "Trend Pullback Short",
-                        "confidence": 80,
-                        "reason": f"Strong downtrend, price pulling back to EMA21 ({dist_to_ema21 * 100:.1f}%)",
-                    }
 
         return None
 
