@@ -5,7 +5,7 @@ class ApiEndpoints {
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://72.60.190.188:3002/api',
+    defaultValue: 'http://10.118.134.44:3002/api',
   );
 
   // ─── Auth ───────────────────────────────────────

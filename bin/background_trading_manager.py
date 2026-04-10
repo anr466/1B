@@ -440,11 +440,26 @@ class BackgroundTradingManager:
         logger.info("🔄 بدء حلقة Group B")
         _consecutive_errors = 0
         _max_consecutive_for_error_status = 3
+        _cleanup_counter = 0
+        _cleanup_interval = 60  # Clean old data every 60 cycles (~1 hour)
 
         while not self.stop_event.is_set():
             try:
                 # تنفيذ Group B
                 self._execute_group_b()
+
+                # تنظيف البيانات القديمة كل ساعة
+                _cleanup_counter += 1
+                if _cleanup_counter >= _cleanup_interval:
+                    try:
+                        self.db_manager.execute_write(
+                            "SELECT cleanup_old_trading_data()"
+                        )
+                        logger.info("🧹 Auto-cleanup: old trading data cleaned")
+                    except Exception:
+                        pass  # Function may not exist yet
+                    _cleanup_counter = 0
+
                 if self.state_manager:
                     try:
                         from backend.core.heartbeat_monitor import get_heartbeat_monitor
