@@ -51,12 +51,12 @@ V8_CONFIG = {
     "breakeven_trigger": 0.010,
     "breakeven_at": 0.015,
     "trailing_activation": 0.015,
-    "trailing_distance": 0.010,
+    "trailing_distance": 0.025,
     "v8_progressive_trail": {
-        0.030: 0.0050,
-        0.025: 0.0080,
-        0.020: 0.0100,
-        0.015: 0.0150,
+        0.050: 0.0150,
+        0.040: 0.0180,
+        0.030: 0.0200,
+        0.020: 0.0250,
     },
     "v8_smart_cut_1": None,
     "v8_smart_cut_2": None,
@@ -76,7 +76,7 @@ AGGRESSIVE_CONFIG = {
     "max_positions": 7,
     "max_hold_hours": 6,
     "trailing_activation": 0.010,
-    "trailing_distance": 0.008,
+    "trailing_distance": 0.020,
 }
 
 CONSERVATIVE_CONFIG = {
@@ -85,7 +85,7 @@ CONSERVATIVE_CONFIG = {
     "max_positions": 3,
     "max_hold_hours": 12,
     "trailing_activation": 0.012,
-    "trailing_distance": 0.008,
+    "trailing_distance": 0.020,
     "breakeven_trigger": 0.010,
 }
 

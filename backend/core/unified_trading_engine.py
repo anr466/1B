@@ -185,7 +185,7 @@ class UnifiedTradingEngine:
             else:
                 pnl_pct = (pos["entry_price"] - current_price) / pos["entry_price"]
 
-            trail_dist = V8_CONFIG.get("trailing_distance", 0.0015)
+            trail_dist = V8_CONFIG.get("trailing_distance", 0.025)
             progressive = V8_CONFIG.get("v8_progressive_trail", {})
             if pos["side"] == "LONG" and current_price > pos.get(
                 "peak", pos["entry_price"]
