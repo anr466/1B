@@ -124,12 +124,23 @@ class ExecutorWorker:
                     FROM active_positions WHERE is_active = TRUE
                 """).fetchall()
 
+            if not positions:
+                return
+
+            symbols = list(set(pos[2] for pos in positions))
+            try:
+                all_tickers = self.data_provider.client.get_symbol_ticker()
+                price_map = {t["symbol"]: float(t["price"]) for t in all_tickers}
+            except Exception as e:
+                logger.warning(f"⚠️ Batch price fetch failed: {e}")
+                return
+
             for pos in positions:
                 pos_id, user_id, symbol, pos_type, entry, sl, tp, trail_sl, highest = (
                     pos
                 )
                 try:
-                    current_price = self.data_provider.get_current_price(symbol)
+                    current_price = price_map.get(symbol)
                     if not current_price:
                         continue
 

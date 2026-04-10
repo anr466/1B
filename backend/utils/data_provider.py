@@ -52,7 +52,7 @@ class DataProvider:
         use_testnet: bool = False,
         cache_dir: str = None,
         cache_ttl: int = 3600,
-        rate_limit_per_minute: int = 60,
+        rate_limit_per_minute: int = 200,
     ):
         """
         تهيئة مزود البيانات

@@ -447,10 +447,16 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             "daily_pnl": 0.0,
             "last_reset": datetime.now().date(),
             "cooldown_until": None,  # system-wide cooldown
-            "max_daily_trades": 5,  # حد يومي للصفقات (مخفض لمنع الإفراط)
+            "max_daily_trades": 15
+            if self.is_demo_trading
+            else 5,  # FIX: demo needs more trades to collect data
             "max_daily_loss_pct": self._resolve_max_daily_loss_pct(),
-            "max_consecutive_losses": 3,  # cooldown بعد 3 خسائر متتالية
-            "cooldown_hours": 2,  # مدة cooldown بالساعات
+            "max_consecutive_losses": 5
+            if self.is_demo_trading
+            else 3,  # FIX: demo gets more tolerance
+            "cooldown_hours": 0.25
+            if self.is_demo_trading
+            else 2,  # FIX: 15min demo, 2h real
             "max_same_direction": 3,  # أقصى 3 صفقات بنفس الاتجاه
             "max_drawdown_pct": 0.05,  # حد أقصى للسحب 5%
             "peak_balance": 0.0,  # سيتم تحديثه عند أول دورة

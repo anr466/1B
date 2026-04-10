@@ -48,26 +48,40 @@ class ScannerWorker:
 
     async def fetch_market_data(self):
         now = time.time()
-        if now - self.last_market_fetch < 30:
+        if now - self.last_market_fetch < 60:
             return self.market_cache
 
-        logger.info("🌐 Fetching fresh market data for 100 coins...")
-        coins = self.coin_selector.get_all_tradeable_coins()[:100]
-        symbols = [c["symbol"] for c in coins]
+        logger.info("🌐 Fetching fresh market data for top coins...")
 
-        new_cache = {}
-        for symbol in symbols:
-            try:
-                df = self.data_provider.get_historical_data(symbol, "1h", limit=100)
-                if df is not None and len(df) >= 60:
-                    new_cache[symbol] = df
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to fetch {symbol}: {e}")
+        try:
+            tickers = self.data_provider.client.get_ticker()
+            usdt_pairs = {
+                t["symbol"]: t for t in tickers if t["symbol"].endswith("USDT")
+            }
 
-        self.market_cache = new_cache
-        self.last_market_fetch = now
-        logger.info(f"✅ Market cache updated: {len(new_cache)} symbols ready.")
-        return new_cache
+            coins = self.coin_selector.get_all_tradeable_coins()[:50]
+            symbols = [c["symbol"] for c in coins]
+
+            new_cache = {}
+            for i, symbol in enumerate(symbols):
+                if symbol not in usdt_pairs:
+                    continue
+                try:
+                    df = self.data_provider.get_historical_data(symbol, "1h", limit=100)
+                    if df is not None and len(df) >= 60:
+                        new_cache[symbol] = df
+                    if i % 10 == 9:
+                        time.sleep(2)
+                except Exception as e:
+                    logger.debug(f"⚠️ Skip {symbol}: {e}")
+
+            self.market_cache = new_cache
+            self.last_market_fetch = now
+            logger.info(f"✅ Market cache updated: {len(new_cache)} symbols ready.")
+            return new_cache
+        except Exception as e:
+            logger.error(f"❌ Market fetch failed: {e}")
+            return self.market_cache
 
     async def analyze_user(self, user_id: int, market_data: dict):
         try:
