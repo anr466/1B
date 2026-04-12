@@ -105,18 +105,18 @@ class MonitoringEngine:
         ptype = pos.get("position_type", "long").upper()
         if ptype != "LONG":
             return None
-        if pnl_pct < 0.02:
+        if pnl_pct < 0.015:
             return None
 
-        trail_dist = 0.025
-        if pnl_pct >= 0.05:
-            trail_dist = 0.015
-        elif pnl_pct >= 0.04:
-            trail_dist = 0.018
-        elif pnl_pct >= 0.03:
-            trail_dist = 0.020
-        elif pnl_pct >= 0.02:
-            trail_dist = 0.025
+        trail_dist = 0.015
+        if pnl_pct >= 0.030:
+            trail_dist = 0.0050
+        elif pnl_pct >= 0.025:
+            trail_dist = 0.0080
+        elif pnl_pct >= 0.020:
+            trail_dist = 0.0100
+        elif pnl_pct >= 0.015:
+            trail_dist = 0.0150
 
         new_trail = peak * (1 - trail_dist)
         current_trail = pos.get("trailing_sl_price", 0)

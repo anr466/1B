@@ -46,7 +46,7 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
   final Ref _ref;
   bool _disposed = false;
   bool _busy = false;
-  Timer? _pollingTimer;
+  // NOTE: _pollingTimer removed — polling now handled by PortfolioRefreshCoordinator
   final Debouncer _debouncer = Debouncer(
     duration: const Duration(milliseconds: 500),
   );
@@ -58,7 +58,8 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
         ),
       ) {
     load();
-    _startPolling();
+    // NOTE: Polling is now handled by PortfolioRefreshCoordinator (15s unified).
+    // We no longer start a separate 10s timer here to avoid duplicate API calls.
     // Listen to auth state changes to reload trading state when user changes
     _ref.listen<AuthState>(authProvider, (previous, next) {
       if (previous?.user?.id != next.user?.id) {
@@ -84,46 +85,9 @@ class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
     });
   }
 
-  void _startPolling() {
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!_disposed) {
-        _loadSilent();
-      }
-    });
-  }
-
-  Future<void> _loadSilent() async {
-    if (_disposed) return;
-    final auth = _ref.read(authProvider);
-    final user = auth.user;
-    if (user == null) return;
-
-    try {
-      final repo = _ref.read(settingsRepositoryProvider);
-      final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
-      final settings = await repo.getSettings(user.id, mode: mode);
-
-      if (_disposed) return;
-      // Silent update - keep UI stable, just sync state
-      _setStateSafely(
-        state.copyWith(
-          enabled: settings.tradingEnabled,
-          systemRunning: settings.systemRunning,
-          systemState: settings.systemState,
-          isLoading: false,
-        ),
-      );
-      _syncAuthTrading(settings.tradingEnabled);
-    } catch (_) {
-      // Silent fail during polling - keep last known state
-    }
-  }
-
   @override
   void dispose() {
     _disposed = true;
-    _pollingTimer?.cancel();
     _debouncer.dispose();
     super.dispose();
   }
@@ -334,7 +298,10 @@ final portfolioRefreshCoordinatorProvider = StateNotifierProvider((ref) {
 class PortfolioRefreshCoordinator extends StateNotifier<int> {
   final Ref _ref;
   Timer? _pollingTimer;
-  static const _pollInterval = Duration(seconds: 10);
+  // Unified polling interval — handles portfolio, stats, positions, AND trading state
+  // Previously had TWO separate 10s timers (this + AccountTradingNotifier).
+  // Now AccountTradingNotifier delegates to this coordinator for data refresh.
+  static const _pollInterval = Duration(seconds: 15);
 
   PortfolioRefreshCoordinator(this._ref) : super(0) {
     _startPolling();
@@ -351,8 +318,12 @@ class PortfolioRefreshCoordinator extends StateNotifier<int> {
     _ref.invalidate(portfolioProvider);
     _ref.invalidate(statsProvider);
     _ref.invalidate(activePositionsProvider);
-    // Note: accountTradingProvider has its own polling, so we don't invalidate it here
-    // to avoid redundant API calls
+    // Also refresh trading state (was previously a separate 10s poller)
+    try {
+      _ref.read(accountTradingProvider.notifier).load();
+    } catch (_) {
+      // Silent — trading state refresh is non-critical
+    }
   }
 
   void refresh() => _invalidateAll();

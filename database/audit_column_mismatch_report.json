@@ -1,8 +1,0 @@
-[
-  {
-    "file": "backend/api/secure_actions_endpoints.py",
-    "table": "user_binance_keys",
-    "column": "updated_at",
-    "op": "INSERT"
-  }
-]

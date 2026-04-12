@@ -221,7 +221,7 @@ class PushNotificationService {
     final now = DateTime.now();
     final lastCheckAt = _lastCheckAt;
 
-    // Use atomic check-and-set pattern
+    // Use atomic check-and-set pattern with guaranteed cleanup
     if (_isCheckingNotifications) return;
     if (lastCheckAt != null && now.difference(lastCheckAt) < _minimumCheckGap) {
       return;
@@ -293,6 +293,7 @@ class PushNotificationService {
     } catch (_) {
       // Silent fail — polling continues
     } finally {
+      // ✅ CRITICAL: Always reset the flag, even on unexpected errors
       _isCheckingNotifications = false;
     }
   }

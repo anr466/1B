@@ -185,7 +185,7 @@ class UnifiedTradingEngine:
             else:
                 pnl_pct = (pos["entry_price"] - current_price) / pos["entry_price"]
 
-            trail_dist = V8_CONFIG.get("trailing_distance", 0.025)
+            trail_dist = V8_CONFIG.get("trailing_distance", 0.010)
             progressive = V8_CONFIG.get("v8_progressive_trail", {})
             if pos["side"] == "LONG" and current_price > pos.get(
                 "peak", pos["entry_price"]
@@ -204,10 +204,10 @@ class UnifiedTradingEngine:
                         trail_dist = dist
                 pos["trail"] = pos["peak"] * (1 + trail_dist)
 
-            trail_act = V8_CONFIG.get("trailing_activation", 0.002)
-            max_hold = V8_CONFIG.get("max_hold_hours", 6)
-            stagnant_h = V8_CONFIG.get("stagnant_hours", 2)
-            stagnant_thresh = V8_CONFIG.get("stagnant_threshold", 0.0005)
+            trail_act = V8_CONFIG.get("trailing_activation", 0.015)
+            max_hold = V8_CONFIG.get("max_hold_hours", 8)
+            stagnant_h = V8_CONFIG.get("stagnant_hours", 8)
+            stagnant_thresh = V8_CONFIG.get("stagnant_threshold", 0.005)
 
             should_exit = False
             exit_reason = ""

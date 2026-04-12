@@ -191,11 +191,21 @@ class ApiService {
     final currentUri = Uri.tryParse(current);
     if (currentUri == null) return false;
 
+    // Only try localhost variants if the current URL is already a localhost variant.
+    // On real devices, switching to 127.0.0.1/localhost would break connectivity
+    // by routing traffic to the device itself instead of the actual server.
+    final isLocalhost =
+        currentUri.host == 'localhost' ||
+        currentUri.host == '127.0.0.1' ||
+        currentUri.host == '10.0.2.2';
+
     final candidates = <String>{
       current,
-      currentUri.replace(host: '10.0.2.2').toString(),
-      currentUri.replace(host: '127.0.0.1').toString(),
-      currentUri.replace(host: 'localhost').toString(),
+      if (isLocalhost) ...[
+        currentUri.replace(host: '10.0.2.2').toString(),
+        currentUri.replace(host: '127.0.0.1').toString(),
+        currentUri.replace(host: 'localhost').toString(),
+      ],
     };
 
     for (final candidate in candidates) {

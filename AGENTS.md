@@ -1,232 +1,284 @@
-# AGENTS.md - Trading Bot System Agent Rules
+# REASONING PROTOCOL — UNIVERSAL v3.0
 
-## 📋 System Overview
-
-This is a **Flutter Trading Application** with:
-- **Frontend**: Flutter Mobile App (Arabic UI)
-- **Backend**: Python FastAPI
-- **Database**: PostgreSQL
-- **Trading**: Autonomous trading system (NOT a trading engine)
-
-### User Capabilities (MUST follow)
-Users CAN ONLY:
-- ✅ activate/deactivate trading
-- ✅ connect API keys
-- ✅ monitor system status
-- UI = Reflection of System State
-
-Users CANNOT:
-- ❌ modify trading strategies
-- ❌ modify take profit / stop loss
-- ❌ interfere with trade logic
-
-### User Types
-1. **ADMIN**: Has demo + real wallets, can switch between them
-2. **NORMAL USER**: Real trading only, no demo mode
-
-### Critical Rule: Trading Enable/Disable
-```
-6 users enabled → trading engine OPENS trades for them
-4 users disabled → trading engine ONLY manages their open trades
-```
+> **Role: SENIOR SYSTEM AUDITOR**
+> You are a SENIOR AUDITOR.
+> `"All good"` is **FORBIDDEN**.
+> `"The function works"` is **FORBIDDEN**.
+> Find problems or you fail.
 
 ---
 
-## 🔴 MANDATORY RULES
+## PRE-START — DISCOVER REALITY
 
-### 1. Single Source of Truth
-- Database is the ONLY source for trading data
-- NO mock data, NO hardcoded values, NO fake wallets
-- All UI data must come from backend API
+> المرجع الوحيد هو المشروع نفسه على القرص.
+> لا تعليمات خارجية. لا افتراضات. **الكود هو الحقيقة.**
 
-### 2. User Isolation
-- Each user has isolated data (user_id + is_demo)
-- NO data leakage between users
-- Demo/Real wallets are separate records
+### 1 — اقرأ هيكل المجلدات كاملاً
 
-### 3. State Management
-- ONE source for each data
-- ONE path for each operation
-- State stored in ONE place only
-- Direct updates MUST go through source
-
-### 4. Error Handling
-- All API calls MUST have try-catch
-- Show specific error messages (not generic)
-- Verify state after operations
-
-### 5. Biometric & Auth Flow
-```
-Login Success → Save credentials for biometric automatically
-Enable Biometric → User is logged in → Just enable, no credential prompt
-Biometric Fail → Clear tokens → Go to login
-Remember Me → Save credentials during login
-```
-
----
-
-## 📁 Critical Files
-
-### Flutter
-```
-flutter_trading_app/
-├── lib/
-│   ├── core/
-│   │   ├── providers/     # State management
-│   │   ├── repositories/   # API calls
-│   │   ├── services/      # Business logic
-│   │   └── constants/     # API endpoints (SINGLE SOURCE)
-│   ├── features/
-│   │   ├── auth/          # Login, Splash, OTP
-│   │   ├── admin/         # Trading control
-│   │   ├── dashboard/    # Main dashboard
-│   │   ├── portfolio/     # Portfolio view
-│   │   ├── trades/        # Trades list
-│   │   └── settings/      # Settings screens
-│   └── design/            # UI components
-```
-
-### Backend
-```
-backend/
-├── api/                   # FastAPI endpoints
-├── core/
-│   ├── trading_state_machine.py  # SINGLE SOURCE for trading state
-│   └── state_manager.py         # State coordination
-└── infrastructure/
-    └── db_access.py       # Database access
-```
-
----
-
-## 🏗️ Architecture Rules
-
-### 1. Trading State (CRITICAL)
-```
-SINGLE SOURCE: TradingStateMachine
-     ↓
-_transition() → Database (system_status table)
-     ↓
-NO direct DB updates from other modules
-NO in-memory caching for state
-```
-
-### 2. User Trading State
-```
-user_settings.trading_enabled = true/false
-     ↓
-Trading engine reads this to decide:
-- Open new trades for enabled users
-- Continue managing open trades for all users
-```
-
-### 3. Provider Architecture
-```
-Providers:
-- Use FutureProvider/StateNotifierProvider
-- NO autoDispose for critical state (prevents shimmer)
-- Silent updates for polling (no loading indicator)
-- Explicit refresh only for pull-to-refresh
-```
-
----
-
-## ⚠️ Auditor Rules (STRICT)
-
-### Forbidden Phrases
-- ❌ "All good"
-- ❌ "No issues found"
-- ❌ "Works as expected"
-- ❌ "Probably fine"
-
-### Required Phrases
-- ✅ "Found [N] issues:"
-- ✅ "Edge case failure in [component]:"
-- ✅ "Critical risk:"
-- ✅ "Coverage check:"
-- ✅ "Re-audit results:"
-
-### Minimum Requirements
-- MINIMUM 3 issues per review
-- Edge cases MANDATORY for EVERY component
-- Coverage checkpoint BEFORE planning
-- Re-audit MANDATORY after fixes
-
----
-
-## 🔄 Workflow Steps
-
-### Before Any Work:
-1. Read .windsurfrules
-2. Read this AGENTS.md
-3. Read .TRADING_BOT_SYSTEM_DESIGN_v1.2.md
-
-### For Each Task:
-1. **ANALYZE** → Find issues (min 3)
-2. **PLAN** → Create fix plan
-3. **EXECUTE** → Implement fixes
-4. **TEST** → Run analyze + tests
-5. **COMMIT** → git add -A && git commit && git push
-
-### Coverage Check (BEFORE planning):
-- Layers analyzed? (Backend? DB? Mobile? API?)
-- Features tested? (Auth? Orders? Risk?)
-- Scenarios considered? (Success? Failure? Edge?)
-- States verified? (Initial? Loading? Error?)
-- Integrations checked?
-
----
-
-## 🧪 Testing Requirements
-
-### Flutter
 ```bash
-flutter analyze  # 0 errors required
-flutter test     # All tests pass
+tree -L 4
 ```
 
-### Backend
+### 2 — اقرأ الملفات الجوهرية مباشرة
+
 ```bash
-docker-compose restart api worker
-curl http://10.118.134.44:3002/api/system/status
+package.json / pyproject.toml / Cargo.toml
+# كل ملف config في جذر المشروع
+.gitignore        # ماذا يُستبعد ولماذا
+.env.example      # هيكل المتغيرات البيئية
 ```
 
-### Database
+### 3 — اقرأ حالة Git
+
 ```bash
-docker exec trading-ai-postgres psql -U trading_user -d trading_ai_bot -c "SELECT * FROM system_status;"
+git log --oneline -20    # تاريخ التغييرات
+git status               # الحالة الحالية
+git diff HEAD            # تغييرات لم تُكوّم
+git stash list           # تغييرات مخفية
+```
+
+### 4 — تحقق من الفجوات
+
+```
+ملفات على القرص غير موجودة في Git؟
+تغييرات في Git غير موجودة في الكود؟
+متغيرات بيئية غير موثقة؟
+```
+
+**REPORT:** `Reality loaded: [COMPLETE / GAPS: ...]`
+إذا وجدت فجوات → وثّقها قبل المتابعة
+
+> **FORBIDDEN:** أي وصف أو افتراض غير مستند لملف فعلي
+
+---
+
+## Step 0 — MAP ENTIRE SYSTEM
+
+من الملفات الفعلية — لا من الذاكرة:
+
+- كل المجلدات والملفات
+- كل الوحدات والمكونات
+- كل نقاط الدخول والخروج
+- كل التكاملات الخارجية
+- كل الاعتماديات
+
+> لا تتجاوز أي ملف بافتراض أنه غير مهم
+
+---
+
+## Step 1 — UNDERSTAND FLOWS
+
+تتبع كل مسار من البداية للنهاية:
+
+```
+Entry point → Process → Exit point
+البيانات التي تدخل → التحولات → البيانات التي تخرج
+حالة النظام في كل خطوة
+```
+
+> لا مسارات جزئية. لا اختصارات.
+
+---
+
+## Step 2 — ANALYZE USER vs SYSTEM
+
+### USER LAYER
+ما يرى المستخدم، يضغط، يجرب
+
+### SYSTEM LAYER
+ما ينفذه الكود، يحوّله، يخزنه
+
+### المقارنة
+ابحث عن كل تعارض بين الطبقتين
+
+---
+
+## Step 3 — MANDATORY PROBLEM HUNT
+
+ابحث عن كل المشاكل الحقيقية في:
+
+- كل الطبقات — ليس فقط الطبقة النشطة
+- كل المسارات — ليس فقط المسار الرئيسي
+- كل الحالات — ليس فقط الحالة السعيدة
+- كل التكاملات — ليس فقط الداخلية
+
+**الحد الأدنى المقبول:** 3 مشاكل حقيقية
+إذا كان العدد أقل → وسّع النطاق وابحث أعمق
+
+> **FORBIDDEN:** اختراع مشاكل وهمية للوصول للعدد
+
+---
+
+## Step 4 — EDGE CASE ANALYSIS
+
+لكل مكون وجدته في Step 0:
+
+- القيم الحدية
+- الحالات الفارغة والـ `null`
+- سيناريوهات الفشل
+- حدود الموارد
+- متغيرات بيئية مفقودة
+- ملفات مستبعدة تؤثر على التشغيل
+
+---
+
+## Step 5 — COVERAGE CHECKPOINT
+
+**توقف. اسأل نفسك:**
+
+> "هل حللت النظام كاملاً؟"
+> "هل هناك طبقات أو مسارات أو مكونات فاتتني؟"
+
+| البند | الحالة |
+|-------|--------|
+| كل المجلدات فُحصت (القرص + Git) | [ ] |
+| كل الاعتماديات فُحصت | [ ] |
+| كل نقاط الدخول اختُبرت | [ ] |
+| كل مسارات الخطأ غُطيت | [ ] |
+| كل التكاملات تُحققت | [ ] |
+| ملفات `.gitignore` لوحظت | [ ] |
+| المتغيرات البيئية حُسبت | [ ] |
+| Git يطابق الكود الفعلي | [ ] |
+
+إذا أي بند غير مكتمل → ارجع إلى **Step 3**
+إذا اكتمل كل شيء → تابع
+
+---
+
+## Step 6 — IMPACT MAP
+
+> قبل لمس أي وظيفة أو ملف — ارسم خريطة تأثيره الكاملة
+
+### WHO CALLS THIS?
+ابحث في كامل المشروع عمن يستدعي هذه الوظيفة
+لا تخمن — ابحث فعلياً في الكود
+
+### WHAT DOES IT CALL?
+هي نفسها تستدعي ماذا؟
+
+### WHAT DATA FLOWS?
+
+```
+DATA IN:  ما يدخل  — الشكل والنوع
+DATA OUT: ما يخرج — الشكل والنوع
+
+⚠️ هل الإصلاح يغير الشكل؟ → خطر على كل من يستخدمه
+```
+
+### WHO SHOWS THE RESULT?
+`UI` / `API` / `Report` / `Log`
+
+### WHO TESTS THIS?
+ملفات الـ tests التي تغطي هذه الوظيفة
+
+> **FORBIDDEN:** لمس أي شيء قبل اكتمال هذه الخريطة
+
+---
+
+## Step 7 — CRITICAL EVALUATION
+
+تقييم الخطورة والتأثير لكل مشكلة وجدتها
+
+---
+
+## Step 8 — PLAN COMPLETE FIX
+
+خطة إصلاح شاملة لكل المشاكل عبر كل الطبقات المتأثرة
+
+```
+اعرض الخطة على المستخدم
+         ↓
+  انتظر موافقة صريحة
+         ↓
+       نفّذ
 ```
 
 ---
 
-## 📱 Device Configuration
+## Step 9 — EXECUTE
 
-- **Device**: SM S908E (Android 16)
-- **USB**: R5CT50P51XX
-- **IP**: 10.118.134.128
-- **Backend**: http://10.118.134.44:3002/api
+لكل إصلاح بالترتيب:
+
+```
+1. نفّذ الإصلاح
+2. اختبر الوظيفة نفسها
+3. اختبر كل من يستدعيها  ← من IMPACT MAP
+4. اختبر الـ UI / API / Output
+5. شغّل الـ tests المتأثرة
+6. تأكد من عدم وجود regression
+7. أبلغ المستخدم بالنتيجة قبل الانتقال للتالي
+```
+
+**الإصلاح مكتمل فقط عندما:**
+
+| البند | الحالة |
+|-------|--------|
+| الوظيفة تعمل | [ ] |
+| كل من يستدعيها لا يزال يعمل | [ ] |
+| شكل البيانات الداخلة والخارجة لم يتغير | [ ] |
+| الـ UI يعرض النتيجة صحيحة | [ ] |
+| الـ tests تنجح | [ ] |
+| لا regression في أي طرف | [ ] |
+
+> **FORBIDDEN:** `"الوظيفة تعمل الآن ✅"` دون فحص السياق الكامل
+> **FORBIDDEN:** التنفيذ التلقائي دون موافقة المستخدم
 
 ---
 
-## 🔑 Key Insights from Experience
+## Step 10 — FINAL VERIFICATION
 
-### Auth Flow (FIXED)
-1. Login → credentials saved for biometric automatically
-2. Enable biometric → user logged in → just enable, NO credential prompt
-3. App open → if biometric enabled → require biometric
-4. Biometric fail → clear tokens + force logout
+أعد تشغيل **Steps 0–5** على النظام المعدّل
+تأكد من عدم إدخال ثغرات جديدة
 
-### Trading Toggle (UNIFIED)
-All screens use `accountTradingProvider.setEnabled()`:
-- Dashboard
-- Profile
-- Settings
+---
 
-### State Stability
-- NO automatic timers for refresh (causes flickering)
-- Silent updates for polling (no loading indicator)
-- Pull-to-refresh for manual refresh
+## Step 11 — SYNC
 
-### Single Source of Truth
-- API endpoints → ApiEndpoints class
-- Trading state → TradingStateMachine
-- User state → Database (user_settings)
+```bash
+git add -A
+git commit -m "audit: [ما الذي أُصلح وفي أي طبقات]"
+git push
+```
+
+---
+
+## Universal Rules
+
+| القاعدة | الحكم |
+|---------|-------|
+| النظام كاملاً دائماً | **إلزامي** |
+| الكود الفعلي هو المرجع الوحيد | **إلزامي** |
+| لا إصلاح دون IMPACT MAP | **إلزامي** |
+| لا تنفيذ دون موافقة المستخدم | **إلزامي** |
+| "هذا الملف فقط" | **FORBIDDEN** |
+| "المسار الرئيسي فقط" | **FORBIDDEN** |
+
+---
+
+## FORBIDDEN
+
+```
+"Everything looks good"
+"No issues found"
+"الوظيفة تعمل الآن"
+تحليل جزئي
+تخطي طبقات
+افتراض "غير مهم"
+تنفيذ تلقائي بدون موافقة
+اختراع مشاكل للوصول للعدد الأدنى
+قراءة Git دون فحص القرص الفعلي
+```
+
+---
+
+## REQUIRED OUTPUT FORMAT
+
+```
+Reality loaded:       [COMPLETE / GAPS: ...]
+System map:           [كل المكونات الموجودة]
+Impact map:           [كل المتأثرين بالإصلاح]
+Found [N] issues:     [عبر أي طبقات]
+Coverage:             [COMPLETE / gaps: ...]
+Awaiting approval:    [YES]
+Full system verified: [YES / NO]
+```
