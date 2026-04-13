@@ -403,7 +403,7 @@ def register_mobile_auth_routes(bp, shared):
         try:
             from backend.api.auth_endpoints import otp_service
             from backend.services.auth_service import AuthService
-                    from backend.api.token_refresh_endpoint import generate_tokens
+            from backend.api.token_refresh_endpoint import generate_tokens
 
             data = request.get_json(silent=True) or {}
             if not data:

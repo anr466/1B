@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
-import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/main.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
