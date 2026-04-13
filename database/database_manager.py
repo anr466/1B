@@ -803,7 +803,7 @@ class DatabaseManager(
                     )
                 """)
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS biometric_auth (
+                    CREATE TABLE IF NOT EXISTS user_biometric_auth (
                         id BIGSERIAL PRIMARY KEY,
                         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         biometric_hash TEXT,
@@ -813,12 +813,12 @@ class DatabaseManager(
                     )
                 """)
                 conn.execute("""
-                    ALTER TABLE biometric_auth
+                    ALTER TABLE user_biometric_auth
                     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 """)
                 conn.execute("""
-                    CREATE UNIQUE INDEX IF NOT EXISTS ux_biometric_auth_user
-                    ON biometric_auth(user_id)
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_user_biometric_auth_user
+                    ON user_biometric_auth(user_id)
                 """)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_devices (
@@ -1130,6 +1130,36 @@ class DatabaseManager(
                         ELSE 1000
                     END
                     WHERE is_demo = TRUE AND (initial_balance IS NULL OR initial_balance <= 0)
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_binance_orders (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        symbol TEXT NOT NULL,
+                        order_id TEXT NOT NULL,
+                        client_order_id TEXT,
+                        side TEXT NOT NULL,
+                        order_type TEXT NOT NULL,
+                        quantity DOUBLE PRECISION NOT NULL,
+                        price DOUBLE PRECISION,
+                        stop_price DOUBLE PRECISION,
+                        status TEXT DEFAULT 'NEW',
+                        filled_quantity DOUBLE PRECISION DEFAULT 0,
+                        filled_quote_quantity DOUBLE PRECISION DEFAULT 0,
+                        avg_fill_price DOUBLE PRECISION,
+                        time_in_force TEXT DEFAULT 'GTC',
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_binance_orders_user ON user_binance_orders(user_id)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_binance_orders_user_symbol ON user_binance_orders(user_id, symbol)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_binance_orders_order_id ON user_binance_orders(order_id)
                 """)
                 conn.execute("""
                     INSERT INTO operation_log (operation_type, operation_name, status, start_time, details)

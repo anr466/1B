@@ -39,7 +39,7 @@ def register_registration_routes(bp, shared):
     require_idempotency = shared["require_idempotency"]
 
     try:
-        from backend.utils.error_handler import log_error
+        from backend.utils.unified_error_handler import log_error
     except ImportError:
 
         def log_error(message):

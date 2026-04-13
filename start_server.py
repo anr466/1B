@@ -49,9 +49,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.wsgi import WSGIMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from flask import Flask
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from flask_limiter import Limiter as FlaskLimiter
+from flask_limiter.util import get_remote_address as flask_get_remote_address
 import uvicorn
 import signal
 import atexit
@@ -290,6 +293,28 @@ app = FastAPI(
 )
 
 # ============================================================
+# 🔒 FastAPI Rate Limiting
+# ============================================================
+
+fastapi_limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = fastapi_limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=429,
+        content={
+            "success": False,
+            "error": "تم تجاوز حد الطلبات",
+            "error_code": "RATE_LIMIT_EXCEEDED",
+        },
+    )
+
+
+# ============================================================
 # API Versioning - إصدارات API
 # ============================================================
 
@@ -382,10 +407,37 @@ async def api_version():
 
 
 @app.get(f"/api/{API_VERSION}/portfolio")
-async def portfolio_endpoint(user_id: int = Header(None, alias="X-User-Id")):
-    # Portfolio endpoint bound to the authenticated user
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="User not authenticated")
+@fastapi_limiter.limit("60/minute")
+async def portfolio_endpoint(authorization: str = Header(None, alias="Authorization")):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401, detail="Missing or invalid Authorization header"
+        )
+
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        import jwt
+
+        jwt_secret = os.getenv("JWT_SECRET_KEY", "")
+        if not jwt_secret:
+            logger.error("JWT_SECRET_KEY not configured")
+            raise HTTPException(status_code=500, detail="Server configuration error")
+        payload = jwt.decode(token, jwt_secret, algorithms=["HS256"])
+        user_id = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(
+                status_code=401, detail="Invalid token: missing user_id"
+            )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"JWT decode error: {e}")
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
     try:
         db = get_db_manager()
         with db.get_connection() as conn:
@@ -416,6 +468,7 @@ async def portfolio_endpoint(user_id: int = Header(None, alias="X-User-Id")):
 
 
 @app.get("/health")
+@fastapi_limiter.limit("30/minute")
 async def health_check():
     """فحص صحة النظام"""
     try:

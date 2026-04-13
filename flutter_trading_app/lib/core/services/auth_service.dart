@@ -280,7 +280,7 @@ class AuthService {
     required String deviceId,
   }) async {
     final response = await _api.post(
-      ApiEndpoints.biometricVerify,
+      ApiEndpoints.secureVerify,
       data: {
         // Backend current contract expects biometric_data + type.
         // Keep legacy keys too for backward compatibility.

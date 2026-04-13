@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from backend.analysis.liquidity_analyzer import LiquidityAnalyzer
-from backend.analysis.market_regime_detector import MarketRegimeDetector
+from backend.analysis.market_regime_detector import SimpleRegimeDetector
 
 try:
     from backend.analysis.smart_money_orchestrator import (
@@ -62,7 +62,7 @@ class LiquidityCognitiveFilter:
         self.logger = logging.getLogger(f"{__name__}.LiquidityCognitiveFilter")
 
         self.liquidity_analyzer = LiquidityAnalyzer()
-        self.regime_detector = MarketRegimeDetector()
+        self.regime_detector = SimpleRegimeDetector()
         self.smart_money: Optional[SmartMoneyOrchestrator] = None
         if SMART_MONEY_AVAILABLE:
             try:

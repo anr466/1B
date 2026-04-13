@@ -80,7 +80,7 @@ except ImportError:
     sms_service = None
 
 try:
-    from backend.utils.error_handler import log_error
+    from backend.utils.unified_error_handler import log_error
 except ImportError:
 
     def log_error(message):

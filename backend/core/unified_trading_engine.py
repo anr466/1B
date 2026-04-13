@@ -21,7 +21,7 @@ from datetime import datetime
 
 from backend.infrastructure.db_access import get_db_manager
 from backend.utils.data_provider import DataProvider
-from backend.core.market_regime_detector import MarketRegimeDetector
+from backend.analysis.market_regime_detector import MarketRegimeDetector
 from backend.strategies.scalping_v8_engine import ScalpingV8Engine, V8_CONFIG
 
 logger = logging.getLogger(__name__)

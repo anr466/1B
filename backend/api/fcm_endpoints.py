@@ -4,7 +4,7 @@
 """
 
 from backend.api.auth_middleware import require_auth
-from backend.utils.error_handler import log_error
+from backend.utils.unified_error_handler import log_error
 from backend.infrastructure.db_access import get_db_manager
 import sys
 import os
@@ -12,9 +12,7 @@ from flask import Blueprint, request, jsonify, g
 
 # إضافة مسار المشروع
 sys.path.append(
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
 
@@ -70,9 +68,7 @@ def register_fcm_token():
         success = register_user_fcm_token(user_id, fcm_token, platform)
 
         if success:
-            return jsonify(
-                {"success": True, "message": "تم تسجيل FCM Token بنجاح"}
-            )
+            return jsonify({"success": True, "message": "تم تسجيل FCM Token بنجاح"})
         else:
             return (
                 jsonify({"success": False, "error": "فشل في تسجيل FCM Token"}),
@@ -111,9 +107,7 @@ def register_user_fcm_token(
 
             conn.commit()
 
-        log_error(
-            f"تم تسجيل FCM Token للمستخدم {user_id}: {fcm_token[:20]}..."
-        )
+        log_error(f"تم تسجيل FCM Token للمستخدم {user_id}: {fcm_token[:20]}...")
 
         return True
 
@@ -150,9 +144,7 @@ def unregister_fcm_token():
             )
         else:
             return (
-                jsonify(
-                    {"success": False, "error": "فشل في إلغاء تسجيل FCM Token"}
-                ),
+                jsonify({"success": False, "error": "فشل في إلغاء تسجيل FCM Token"}),
                 500,
             )
 

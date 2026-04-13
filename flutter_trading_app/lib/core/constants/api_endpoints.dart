@@ -106,9 +106,10 @@ class ApiEndpoints {
     return url;
   }
 
-  static String resetData(int userId) => '/user/reset-data/$userId';
+  static String resetData(int userId) =>
+      '/system/reset-account-data?user_id=$userId';
   static String dailyStatus(int userId, {String? mode}) {
-    var url = '/user/daily-status/$userId';
+    var url = '/user/daily-pnl/$userId';
     if (mode != null) url += '?mode=$mode';
     return url;
   }
@@ -138,8 +139,8 @@ class ApiEndpoints {
   static const String secureInitiate = '/user/secure/request-verification';
   static const String secureVerify = '/user/secure/verify-and-execute';
 
-  // ─── Biometric ──────────────────────────────────
-  static const String biometricVerify = '/user/biometric/verify';
+  // ─── Biometric (uses secure actions endpoint) ───
+  // biometricVerify → use secureVerify instead
 
   // ─── System ─────────────────────────────────────
   static const String systemStatus = '/system/status';
@@ -190,11 +191,4 @@ class ApiEndpoints {
   static String retrySystemError(int errorId) =>
       '/admin/system-errors/$errorId/retry';
   static const String clearResolvedErrors = '/admin/errors/resolved';
-
-  // Backward-compatible aliases used in some repositories
-  static const String adminTradingState = tradingState;
-  static const String adminTradingStart = tradingStart;
-  static const String adminTradingStop = tradingStop;
-  static const String adminEmergencyStop = tradingEmergencyStop;
-  static const String adminResetError = tradingResetError;
 }

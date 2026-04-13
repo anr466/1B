@@ -122,7 +122,6 @@ from backend.core.scanner_mixin import ScannerMixin
 from backend.core.risk_manager_mixin import RiskManagerMixin
 from backend.core.dynamic_coin_selector import DynamicCoinSelector
 from backend.core.dual_mode_router import DualModeRouter
-from backend.utils.smart_coin_selector import SmartCoinSelector
 
 # ===== Trading Brain (Phase-Aware Decision Layer) =====
 try:

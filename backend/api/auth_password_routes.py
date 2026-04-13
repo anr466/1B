@@ -39,7 +39,7 @@ def register_password_routes(bp, shared):
     require_idempotency = shared["require_idempotency"]
 
     try:
-        from backend.utils.error_handler import log_error
+        from backend.utils.unified_error_handler import log_error
     except ImportError:
 
         def log_error(message):
@@ -62,9 +62,7 @@ def register_password_routes(bp, shared):
             email = (data.get("email") or "").strip().lower()
             method = data.get("method", "sms")
             phone = (data.get("phone") or "").strip()
-            logger.info(
-                f"📧 Forgot password request for: {email}, method: {method}"
-            )
+            logger.info(f"📧 Forgot password request for: {email}, method: {method}")
 
             if not email:
                 return (
@@ -74,7 +72,7 @@ def register_password_routes(bp, shared):
 
             user = get_user_by_email(email)
             logger.info(
-                f'🔍 User found: {user is not None} - User ID: {user.get("id") if user else "N/A"}'
+                f"🔍 User found: {user is not None} - User ID: {user.get('id') if user else 'N/A'}"
             )
 
             if not user:
@@ -116,14 +114,10 @@ def register_password_routes(bp, shared):
                         try:
                             message = f"رمز استعادة كلمة المرور: {otp_code}\nصالح لمدة 5 دقائق"
                             sms_service.send_sms(phone, message)
-                            logger.info(
-                                f"📱 تم إرسال OTP استعادة عبر SMS إلى {phone}"
-                            )
+                            logger.info(f"📱 تم إرسال OTP استعادة عبر SMS إلى {phone}")
                         except Exception as sms_err:
                             logger.warning(f"⚠️ فشل إرسال SMS: {sms_err}")
-                            logger.info(
-                                f"📱 [DEV] OTP sent via email fallback"
-                            )
+                            logger.info(f"📱 [DEV] OTP sent via email fallback")
 
                     save_password_reset_request(user["id"], otp_code)
 
@@ -142,20 +136,17 @@ def register_password_routes(bp, shared):
                     masked_target = email
                     if method == "sms" and phone:
                         masked_target = (
-                            phone[:4] + "****" + phone[-2:]
-                            if len(phone) > 6
-                            else phone
+                            phone[:4] + "****" + phone[-2:] if len(phone) > 6 else phone
                         )
                     elif "@" in email:
-                        masked_target = (
-                            email[:2] + "***@" + email.split("@")[1]
-                        )
+                        masked_target = email[:2] + "***@" + email.split("@")[1]
 
                     return jsonify(
                         {
                             "success": True,
-                            "message": f'تم إرسال رمز استعادة كلمة المرور إلى {
-                                "هاتفك" if method == "sms" else "إيميلك"}',
+                            "message": f"تم إرسال رمز استعادة كلمة المرور إلى {
+                                'هاتفك' if method == 'sms' else 'إيميلك'
+                            }",
                             "method": method,
                             "masked_target": masked_target,
                         }
@@ -227,9 +218,7 @@ def register_password_routes(bp, shared):
         try:
             data = request.get_json(silent=True) or {}
             new_email = (
-                (data.get("new_email") or data.get("newEmail") or "")
-                .strip()
-                .lower()
+                (data.get("new_email") or data.get("newEmail") or "").strip().lower()
             )
             requested_user_id = data.get("user_id") or data.get("userId")
             user_id = g.user_id
@@ -245,9 +234,7 @@ def register_password_routes(bp, shared):
                     400,
                 )
 
-            if requested_user_id is not None and str(requested_user_id) != str(
-                user_id
-            ):
+            if requested_user_id is not None and str(requested_user_id) != str(user_id):
                 return (
                     jsonify({"success": False, "error": "لا توجد صلاحية"}),
                     403,
@@ -293,13 +280,14 @@ def register_password_routes(bp, shared):
                     new_email, purpose="change_email"
                 )
                 if success:
-                    logger.info(
-                        f"✅ تم إرسال OTP لتغيير الإيميل إلى: {new_email}"
+                    logger.info(f"✅ تم إرسال OTP لتغيير الإيميل إلى: {new_email}")
+                    return jsonify(
+                        {
+                            "success": True,
+                            "message": "تم إرسال رمز التحقق إلى الإيميل الجديد",
+                            "expires_in": 600,
+                        }
                     )
-                    return jsonify({"success": True,
-                                    "message": "تم إرسال رمز التحقق إلى الإيميل الجديد",
-                                    "expires_in": 600,
-                                    })
                 else:
                     return (
                         jsonify(
@@ -327,9 +315,7 @@ def register_password_routes(bp, shared):
         try:
             data = request.get_json(silent=True) or {}
             new_email = (
-                (data.get("new_email") or data.get("newEmail") or "")
-                .strip()
-                .lower()
+                (data.get("new_email") or data.get("newEmail") or "").strip().lower()
             )
             otp_code = (data.get("otp") or data.get("otp_code") or "").strip()
             requested_user_id = data.get("user_id") or data.get("userId")
@@ -337,15 +323,11 @@ def register_password_routes(bp, shared):
 
             if not new_email or not otp_code:
                 return (
-                    jsonify(
-                        {"success": False, "error": "جميع البيانات مطلوبة"}
-                    ),
+                    jsonify({"success": False, "error": "جميع البيانات مطلوبة"}),
                     400,
                 )
 
-            if requested_user_id is not None and str(requested_user_id) != str(
-                user_id
-            ):
+            if requested_user_id is not None and str(requested_user_id) != str(user_id):
                 return (
                     jsonify({"success": False, "error": "لا توجد صلاحية"}),
                     403,
@@ -366,9 +348,7 @@ def register_password_routes(bp, shared):
                                 "UPDATE users SET email = %s, email_verified = TRUE WHERE id = %s",
                                 (new_email, user_id),
                             )
-                            logger.info(
-                                f"✅ تم تغيير الإيميل للمستخدم {user_id}"
-                            )
+                            logger.info(f"✅ تم تغيير الإيميل للمستخدم {user_id}")
                             return jsonify(
                                 {
                                     "success": True,
@@ -392,12 +372,8 @@ def register_password_routes(bp, shared):
                         jsonify(
                             {
                                 "success": False,
-                                "error": result.get(
-                                    "error", "رمز التحقق غير صحيح"
-                                ),
-                                "remaining_attempts": result.get(
-                                    "remaining_attempts"
-                                ),
+                                "error": result.get("error", "رمز التحقق غير صحيح"),
+                                "remaining_attempts": result.get("remaining_attempts"),
                             }
                         ),
                         400,
@@ -436,7 +412,9 @@ def register_password_routes(bp, shared):
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute(
-                        "SELECT id, email, password_hash FROM users WHERE id = %s", (user_id,), )
+                        "SELECT id, email, password_hash FROM users WHERE id = %s",
+                        (user_id,),
+                    )
                     user = cursor.fetchone()
 
                     if not user:
@@ -488,9 +466,7 @@ def register_password_routes(bp, shared):
                     email, purpose="change_password"
                 )
                 if success:
-                    logger.info(
-                        f"✅ تم إرسال OTP لتغيير كلمة المرور إلى: {email}"
-                    )
+                    logger.info(f"✅ تم إرسال OTP لتغيير كلمة المرور إلى: {email}")
                     return jsonify(
                         {
                             "success": True,
@@ -530,9 +506,7 @@ def register_password_routes(bp, shared):
 
             if not otp_code or not new_password:
                 return (
-                    jsonify(
-                        {"success": False, "error": "جميع البيانات مطلوبة"}
-                    ),
+                    jsonify({"success": False, "error": "جميع البيانات مطلوبة"}),
                     400,
                 )
 
@@ -542,16 +516,15 @@ def register_password_routes(bp, shared):
                         {
                             "success": False,
                             "error": "كلمة المرور الجديدة يجب أن تحتوي على 8 أحرف على الأقل، وحرف كبير وصغير ورقم",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT email FROM users WHERE id = %s", (user_id,)
-                    )
+                    cursor.execute("SELECT email FROM users WHERE id = %s", (user_id,))
                     user = cursor.fetchone()
                     if not user:
                         return (
@@ -602,9 +575,7 @@ def register_password_routes(bp, shared):
                                 "UPDATE users SET password_hash = %s WHERE id = %s",
                                 (password_hash, user_id),
                             )
-                            logger.info(
-                                f"✅ تم تغيير كلمة المرور للمستخدم {user_id}"
-                            )
+                            logger.info(f"✅ تم تغيير كلمة المرور للمستخدم {user_id}")
                             return jsonify(
                                 {
                                     "success": True,
@@ -627,12 +598,8 @@ def register_password_routes(bp, shared):
                         jsonify(
                             {
                                 "success": False,
-                                "error": result.get(
-                                    "error", "رمز التحقق غير صحيح"
-                                ),
-                                "remaining_attempts": result.get(
-                                    "remaining_attempts"
-                                ),
+                                "error": result.get("error", "رمز التحقق غير صحيح"),
+                                "remaining_attempts": result.get("remaining_attempts"),
                             }
                         ),
                         400,
@@ -664,16 +631,12 @@ def register_password_routes(bp, shared):
 
             if not email or not otp_code:
                 return (
-                    jsonify(
-                        {"success": False, "error": "الإيميل ورمز OTP مطلوبان"}
-                    ),
+                    jsonify({"success": False, "error": "الإيميل ورمز OTP مطلوبان"}),
                     400,
                 )
 
             if otp_service:
-                verified, result = otp_service.verify_email_otp(
-                    email, otp_code
-                )
+                verified, result = otp_service.verify_email_otp(email, otp_code)
 
                 if verified:
                     user = get_user_by_email(email)
@@ -732,9 +695,7 @@ def register_password_routes(bp, shared):
                         jsonify(
                             {
                                 "success": False,
-                                "error": result.get(
-                                    "error", "رمز OTP غير صحيح"
-                                ),
+                                "error": result.get("error", "رمز OTP غير صحيح"),
                                 "remaining_attempts": result.get(
                                     "remaining_attempts", 0
                                 ),
@@ -744,9 +705,7 @@ def register_password_routes(bp, shared):
                     )
             else:
                 return (
-                    jsonify(
-                        {"success": False, "error": "خدمة التحقق غير متاحة"}
-                    ),
+                    jsonify({"success": False, "error": "خدمة التحقق غير متاحة"}),
                     503,
                 )
 
@@ -769,9 +728,7 @@ def register_password_routes(bp, shared):
             reset_token = (
                 data.get("reset_token") or data.get("resetToken") or ""
             ).strip()
-            new_password = (
-                data.get("new_password") or data.get("newPassword") or ""
-            )
+            new_password = data.get("new_password") or data.get("newPassword") or ""
 
             if not reset_token or not new_password:
                 return (
@@ -790,7 +747,8 @@ def register_password_routes(bp, shared):
                         {
                             "success": False,
                             "error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حروف كبيرة وصغيرة وأرقام",
-                        }),
+                        }
+                    ),
                     400,
                 )
 
@@ -801,9 +759,7 @@ def register_password_routes(bp, shared):
                     "JWT_SECRET_KEY", "trading_ai_bot_secret_key_2026"
                 )
 
-                payload = jwt.decode(
-                    reset_token, secret_key, algorithms=["HS256"]
-                )
+                payload = jwt.decode(reset_token, secret_key, algorithms=["HS256"])
 
                 if payload.get("purpose") != "password_reset":
                     return (
@@ -828,9 +784,7 @@ def register_password_routes(bp, shared):
                 user = get_user_by_email(email)
                 if not user or user["id"] != user_id:
                     return (
-                        jsonify(
-                            {"success": False, "error": "المستخدم غير موجود"}
-                        ),
+                        jsonify({"success": False, "error": "المستخدم غير موجود"}),
                         404,
                     )
 
@@ -907,8 +861,7 @@ def register_password_routes(bp, shared):
                         400,
                     )
                 else:
-                    log_error(f"خطأ في التحقق من Reset Token: {
-                        str(jwt_import_err)}")
+                    log_error(f"خطأ في التحقق من Reset Token: {str(jwt_import_err)}")
                     return (
                         jsonify({"success": False, "error": "رمز غير صالح"}),
                         400,
