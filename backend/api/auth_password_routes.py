@@ -39,7 +39,7 @@ def register_password_routes(bp, shared):
     require_idempotency = shared["require_idempotency"]
 
     try:
-        from utils.error_handler import log_error
+        from backend.utils.error_handler import log_error
     except ImportError:
 
         def log_error(message):

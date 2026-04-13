@@ -61,7 +61,7 @@ except ImportError as e:
 
 
 try:
-    from utils.audit_logger import audit_logger
+    from backend.utils.audit_logger import audit_logger
 except (ImportError, ModuleNotFoundError):
     audit_logger = None
 
@@ -124,7 +124,7 @@ except ImportError:
     limiter = MockLimiter()
 
 try:
-    from utils.uptime_calculator import uptime_calc
+    from backend.utils.uptime_calculator import uptime_calc
 except (ImportError, ModuleNotFoundError):
     uptime_calc = None
 

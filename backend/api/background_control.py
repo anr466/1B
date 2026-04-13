@@ -31,23 +31,23 @@ sys.path.insert(0, os.path.join(project_root, "utils"))
 
 
 try:
-    from utils.error_logger import error_logger
+    from backend.utils.error_logger import error_logger
 except (ImportError, ModuleNotFoundError):
     error_logger = None
 
 try:
-    from utils.unified_operation_logger import unified_logger
+    from backend.utils.unified_operation_logger import unified_logger
 except (ImportError, ModuleNotFoundError):
     unified_logger = None
 
 # استيراد الملفات من utils
 try:
-    from utils.audit_logger import audit_logger
+    from backend.utils.audit_logger import audit_logger
 except (ImportError, ModuleNotFoundError):
     audit_logger = None
 
 try:
-    from utils.admin_auth import require_admin as admin_require
+    from backend.utils.admin_auth import require_admin as admin_require
 except (ImportError, ModuleNotFoundError):
     try:
         from backend.utils.admin_auth import require_admin as admin_require
@@ -76,7 +76,7 @@ except (ImportError, ModuleNotFoundError):
 
 
 try:
-    from utils.uptime_calculator import uptime_calc
+    from backend.utils.uptime_calculator import uptime_calc
 except (ImportError, ModuleNotFoundError):
     uptime_calc = None
 
@@ -92,7 +92,7 @@ except (ImportError, ModuleNotFoundError):
 
 # ✅ SK-1 FIX: Process Lock لمنع التشغيل المزدوج
 try:
-    from utils.process_lock import get_process_lock, is_system_running
+    from backend.utils.process_lock import get_process_lock, is_system_running
 
     PROCESS_LOCK_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
