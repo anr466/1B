@@ -1389,7 +1389,7 @@ class DatabaseManager(
             tables = [
                 "users",
                 "successful_coins",
-                "user_trades",
+                "active_positions",
                 "trading_signals",
                 "activity_logs",
             ]

@@ -12,7 +12,9 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SQLITE_PATH = Path(os.getenv("SQLITE_PATH", PROJECT_ROOT / "database" / "trading_database.db"))
+SQLITE_PATH = Path(
+    os.getenv("SQLITE_PATH", PROJECT_ROOT / "database" / "trading_database.db")
+)
 POSTGRES_DSN = os.getenv("DATABASE_URL") or (
     f"dbname={os.getenv('POSTGRES_DB', 'trading_ai_bot')} "
     f"user={os.getenv('POSTGRES_USER', 'trading_user')} "
@@ -26,7 +28,6 @@ TABLES_IN_ORDER = [
     "user_settings",
     "portfolio",
     "user_binance_keys",
-    "user_trades",
     "active_positions",
     "activity_logs",
     "successful_coins",
@@ -104,16 +105,16 @@ def normalize_value(value, pg_type: str):
     if value is None:
         return None
 
-    if pg_type == 'boolean':
+    if pg_type == "boolean":
         if isinstance(value, bool):
             return value
         if isinstance(value, (int, float)):
             return bool(value)
         if isinstance(value, str):
             lowered = value.strip().lower()
-            if lowered in {'1', 'true', 't', 'yes', 'y'}:
+            if lowered in {"1", "true", "t", "yes", "y"}:
                 return True
-            if lowered in {'0', 'false', 'f', 'no', 'n'}:
+            if lowered in {"0", "false", "f", "no", "n"}:
                 return False
 
     return value
@@ -153,7 +154,9 @@ def copy_table(sqlite_conn: sqlite3.Connection, pg_conn, table: str):
     for row in rows:
         filtered_rows.append(
             tuple(
-                normalize_value(row[index], pg_column_types.get(common_columns[pos], 'text'))
+                normalize_value(
+                    row[index], pg_column_types.get(common_columns[pos], "text")
+                )
                 for pos, index in enumerate(column_indexes)
             )
         )

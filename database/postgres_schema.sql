@@ -42,25 +42,6 @@ CREATE TABLE IF NOT EXISTS user_settings (
     UNIQUE(user_id, is_demo)
 );
 
-CREATE TABLE IF NOT EXISTS demo_accounts (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    initial_balance DOUBLE PRECISION DEFAULT 1000.0,
-    available_balance DOUBLE PRECISION DEFAULT 1000.0,
-    invested_balance DOUBLE PRECISION DEFAULT 0.0,
-    total_balance DOUBLE PRECISION DEFAULT 1000.0,
-    total_profit_loss DOUBLE PRECISION DEFAULT 0.0,
-    total_profit_loss_percentage DOUBLE PRECISION DEFAULT 0.0,
-    total_trades INTEGER DEFAULT 0,
-    winning_trades INTEGER DEFAULT 0,
-    losing_trades INTEGER DEFAULT 0,
-    reset_count INTEGER DEFAULT 0,
-    last_reset_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id)
-);
-
 CREATE TABLE IF NOT EXISTS portfolio (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -95,27 +76,27 @@ CREATE TABLE IF NOT EXISTS user_binance_keys (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS user_trades (
+CREATE TABLE IF NOT EXISTS signals_queue (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     symbol TEXT NOT NULL,
-    entry_time TEXT NOT NULL,
-    exit_time TEXT,
+    type TEXT NOT NULL,
     entry_price DOUBLE PRECISION NOT NULL,
-    exit_price DOUBLE PRECISION,
-    quantity DOUBLE PRECISION NOT NULL,
-    status TEXT DEFAULT 'open',
-    profit_loss DOUBLE PRECISION,
-    profit_loss_percentage DOUBLE PRECISION,
-    is_demo BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    strategy TEXT DEFAULT 'SCALP_V8',
-    timeframe TEXT DEFAULT '1h',
-    side TEXT DEFAULT 'LONG',
     stop_loss DOUBLE PRECISION,
     take_profit DOUBLE PRECISION,
-    is_favorite BOOLEAN DEFAULT FALSE
+    score DOUBLE PRECISION DEFAULT 0,
+    strategy_name TEXT,
+    status TEXT DEFAULT 'PENDING',
+    rejection_reason TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    processed_at TIMESTAMPTZ,
+    trade_id BIGINT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_signals_queue_status ON signals_queue(status);
+CREATE INDEX IF NOT EXISTS idx_signals_queue_expires ON signals_queue(expires_at);
+CREATE INDEX IF NOT EXISTS idx_signals_queue_score ON signals_queue(score DESC);
 
 CREATE TABLE IF NOT EXISTS active_positions (
     id BIGSERIAL PRIMARY KEY,
@@ -222,7 +203,8 @@ CREATE TABLE IF NOT EXISTS system_status (
     mode TEXT DEFAULT 'demo',
     initiated_by TEXT,
     started_at TIMESTAMPTZ,
-    pid INTEGER
+    pid INTEGER,
+    subsystem_status TEXT DEFAULT '{}'
 );
 
 INSERT INTO system_status (id, status, is_running)
@@ -426,23 +408,6 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS paper_trading_log (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    symbol VARCHAR(50) NOT NULL,
-    strategy VARCHAR(100) NOT NULL,
-    side VARCHAR(10) NOT NULL DEFAULT 'LONG',
-    entry_price DOUBLE PRECISION NOT NULL,
-    exit_price DOUBLE PRECISION,
-    pnl_pct DOUBLE PRECISION DEFAULT 0,
-    is_win BOOLEAN,
-    exit_reason VARCHAR(50),
-    entry_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    exit_time TIMESTAMPTZ,
-    session_id VARCHAR(50),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS trading_phase_state (
     id INTEGER PRIMARY KEY DEFAULT 1,
     current_phase VARCHAR(50) NOT NULL DEFAULT 'BACKTEST_BOOTSTRAP',
@@ -459,8 +424,6 @@ CREATE TABLE IF NOT EXISTS trading_phase_state (
 CREATE INDEX IF NOT EXISTS idx_backtest_results_symbol ON backtest_results(symbol);
 CREATE INDEX IF NOT EXISTS idx_backtest_results_strategy ON backtest_results(strategy);
 CREATE INDEX IF NOT EXISTS idx_backtest_results_imported ON backtest_results(imported_to_ml);
-CREATE INDEX IF NOT EXISTS idx_paper_trading_user ON paper_trading_log(user_id);
-CREATE INDEX IF NOT EXISTS idx_paper_trading_symbol ON paper_trading_log(symbol);
 CREATE INDEX IF NOT EXISTS idx_portfolio_growth_user_date ON portfolio_growth_history(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_number_unique
@@ -476,10 +439,6 @@ CREATE INDEX IF NOT EXISTS idx_active_positions_symbol ON active_positions(symbo
 CREATE INDEX IF NOT EXISTS idx_active_positions_active ON active_positions(is_active);
 CREATE INDEX IF NOT EXISTS idx_active_positions_user_active ON active_positions(user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_active_positions_user_demo_active ON active_positions(user_id, is_demo, is_active);
-CREATE INDEX IF NOT EXISTS idx_user_trades_user_date ON user_trades(user_id, entry_time DESC);
-CREATE INDEX IF NOT EXISTS idx_user_trades_status ON user_trades(user_id, status);
-CREATE INDEX IF NOT EXISTS idx_user_trades_symbol ON user_trades(symbol);
-CREATE INDEX IF NOT EXISTS idx_user_trades_user_demo ON user_trades(user_id, is_demo);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_user_settings_user_demo ON user_settings(user_id, is_demo);
