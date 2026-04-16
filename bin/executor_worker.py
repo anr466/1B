@@ -6,7 +6,7 @@ import sys
 import time
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent
@@ -32,6 +32,26 @@ class ExecutorWorker:
         self.db = get_db_manager()
         self.binance_manager = BinanceManager()
         self.data_provider = DataProvider()
+        self._price_cache = {}
+        self._price_cache_ts = 0
+        self._price_cache_ttl = 30
+
+    def _get_cached_price(self, symbol: str) -> float:
+        cached = self._price_cache.get(symbol)
+        if cached and (time.time() - self._price_cache_ts) < self._price_cache_ttl:
+            return cached
+        return 0.0
+
+    def _refresh_price_cache(self, symbols: list) -> dict:
+        try:
+            all_tickers = self.data_provider.client.get_symbol_ticker()
+            price_map = {t["symbol"]: float(t["price"]) for t in all_tickers}
+            self._price_cache = price_map
+            self._price_cache_ts = time.time()
+            return price_map
+        except Exception as e:
+            logger.warning(f"⚠️ Batch price fetch failed: {e}")
+            return {}
 
     def _calculate_quantity(
         self, user_id: int, symbol: str, entry_price: float, settings: dict
@@ -101,6 +121,20 @@ class ExecutorWorker:
                         )
                         continue
 
+                    # FIX 1: Reject real signals when Binance client is unavailable
+                    # Previously: fell through to demo simulation (dangerous!)
+                    if not is_demo:
+                        client = self.binance_manager._get_binance_client(user_id)
+                        if not client:
+                            conn.execute(
+                                "UPDATE signals_queue SET status = 'REJECTED', rejection_reason = 'Binance client unavailable — no API keys or connection failed', processed_at = NOW() WHERE id = %s",
+                                (sig_id,),
+                            )
+                            logger.warning(
+                                f"⛔ REJECTED real signal for User {user_id}: {symbol} — Binance client unavailable"
+                            )
+                            continue
+
                     quantity = self._calculate_quantity(
                         user_id, symbol, entry_price, settings
                     )
@@ -114,8 +148,8 @@ class ExecutorWorker:
                     order_id = None
 
                     try:
-                        client = self.binance_manager._get_binance_client(user_id)
-                        if client and not is_demo:
+                        if not is_demo:
+                            client = self.binance_manager._get_binance_client(user_id)
                             order = client.create_order(
                                 symbol=symbol,
                                 side="BUY" if pos_type == "LONG" else "SELL",
@@ -126,6 +160,9 @@ class ExecutorWorker:
                                 order.get("fills", [{}])[0].get("price", entry_price)
                             )
                             order_id = str(order.get("orderId", ""))
+                            logger.info(
+                                f"📤 Binance order executed: {symbol} qty={quantity:.6f}"
+                            )
                         else:
                             logger.info(
                                 f"📝 Demo mode for User {user_id} — simulating fill"
@@ -187,12 +224,23 @@ class ExecutorWorker:
                 return
 
             symbols = list(set(pos[2] for pos in positions))
-            try:
-                all_tickers = self.data_provider.client.get_symbol_ticker()
-                price_map = {t["symbol"]: float(t["price"]) for t in all_tickers}
-            except Exception as e:
-                logger.warning(f"⚠️ Batch price fetch failed: {e}")
-                return
+
+            # FIX 3: Use cached prices when fetch fails — don't skip monitoring
+            price_map = self._refresh_price_cache(symbols)
+            if not price_map:
+                logger.warning(
+                    "⚠️ Price fetch failed — using cached prices for SL/TP monitoring"
+                )
+                price_map = {
+                    sym: self._get_cached_price(sym)
+                    for sym in symbols
+                    if self._get_cached_price(sym) > 0
+                }
+                if not price_map:
+                    logger.error(
+                        "❌ No prices available (fresh or cached) — skipping monitoring"
+                    )
+                    return
 
             for pos in positions:
                 (
@@ -212,7 +260,11 @@ class ExecutorWorker:
                 try:
                     current_price = price_map.get(symbol)
                     if not current_price:
-                        continue
+                        cached = self._get_cached_price(symbol)
+                        if cached > 0:
+                            current_price = cached
+                        else:
+                            continue
 
                     new_trail_sl = trail_sl or 0.0
                     new_highest = highest or entry
@@ -230,7 +282,11 @@ class ExecutorWorker:
                             sl = new_trail_sl
 
                         if current_price <= sl:
-                            should_exit, exit_reason, exit_price = True, "STOP_LOSS", sl
+                            should_exit, exit_reason, exit_price = (
+                                True,
+                                "STOP_LOSS",
+                                sl,
+                            )
                         elif current_price >= tp:
                             should_exit, exit_reason, exit_price = (
                                 True,
@@ -257,7 +313,11 @@ class ExecutorWorker:
                             sl = new_trail_sl
 
                         if current_price >= sl:
-                            should_exit, exit_reason, exit_price = True, "STOP_LOSS", sl
+                            should_exit, exit_reason, exit_price = (
+                                True,
+                                "STOP_LOSS",
+                                sl,
+                            )
                         elif current_price <= tp:
                             should_exit, exit_reason, exit_price = (
                                 True,
@@ -286,6 +346,8 @@ class ExecutorWorker:
                             f"🚪 Exiting {symbol} for User {user_id} via {exit_reason} @ {exit_price}"
                         )
 
+                        # FIX 2: Don't close DB position if Binance sell fails
+                        binance_sell_ok = True
                         if not is_demo:
                             try:
                                 client = self.binance_manager._get_binance_client(
@@ -301,44 +363,60 @@ class ExecutorWorker:
                                     logger.info(
                                         f"📤 Binance sell order executed for {symbol}"
                                     )
+                                else:
+                                    logger.error(
+                                        f"❌ Cannot sell {symbol}: no Binance client or invalid quantity"
+                                    )
+                                    binance_sell_ok = False
                             except Exception as sell_err:
                                 logger.error(
                                     f"❌ Binance sell failed for {symbol}: {sell_err}"
                                 )
+                                binance_sell_ok = False
 
-                        pnl = (
-                            (exit_price - entry)
-                            if pos_type == "LONG"
-                            else (entry - exit_price)
-                        )
-                        pnl_pct = (pnl / entry * 100) if entry > 0 else 0
-                        realized_pnl = pnl * quantity if quantity else pnl
-
-                        with get_db_write_connection() as conn:
-                            conn.execute(
-                                """
-                                UPDATE active_positions
-                                SET is_active = FALSE, exit_price = %s, exit_reason = %s,
-                                    profit_loss = %s, profit_pct = %s, closed_at = NOW()
-                                WHERE id = %s
-                                """,
-                                (
-                                    exit_price,
-                                    exit_reason,
-                                    realized_pnl,
-                                    pnl_pct,
-                                    pos_id,
-                                ),
+                        # Only close in DB if Binance sell succeeded OR it's demo mode
+                        if binance_sell_ok or is_demo:
+                            pnl = (
+                                (exit_price - entry)
+                                if pos_type == "LONG"
+                                else (entry - exit_price)
                             )
+                            pnl_pct = (pnl / entry * 100) if entry > 0 else 0
+                            realized_pnl = pnl * quantity if quantity else pnl
 
-                            conn.execute(
-                                """
-                                UPDATE portfolio
-                                SET total_balance = total_balance + %s,
-                                    available_balance = available_balance + %s
-                                WHERE user_id = %s AND is_demo = %s
-                                """,
-                                (realized_pnl, realized_pnl, user_id, is_demo),
+                            with get_db_write_connection() as conn:
+                                conn.execute(
+                                    """
+                                    UPDATE active_positions
+                                    SET is_active = FALSE, exit_price = %s, exit_reason = %s,
+                                        profit_loss = %s, profit_pct = %s, closed_at = NOW()
+                                    WHERE id = %s
+                                    """,
+                                    (
+                                        exit_price,
+                                        exit_reason,
+                                        realized_pnl,
+                                        pnl_pct,
+                                        pos_id,
+                                    ),
+                                )
+
+                                conn.execute(
+                                    """
+                                    UPDATE portfolio
+                                    SET total_balance = total_balance + %s,
+                                        available_balance = available_balance + %s
+                                    WHERE user_id = %s AND is_demo = %s
+                                    """,
+                                    (realized_pnl, realized_pnl, user_id, is_demo),
+                                )
+
+                            logger.info(
+                                f"✅ Position {pos_id} closed in DB: {symbol} PnL={realized_pnl:.2f}"
+                            )
+                        else:
+                            logger.warning(
+                                f"⏸️ Position {pos_id} ({symbol}) NOT closed in DB — Binance sell failed, will retry next cycle"
                             )
 
                 except Exception as e:

@@ -6,7 +6,7 @@ import sys
 import time
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent
@@ -174,7 +174,8 @@ class ScannerWorker:
                             "take_profit": best_signal["take_profit"],
                             "score": best_score,
                             "strategy_name": best_signal.get("strategy", "Unknown"),
-                            "expires_at": datetime.utcnow() + timedelta(seconds=30),
+                            "expires_at": datetime.now(timezone.utc)
+                            + timedelta(seconds=30),
                         }
                     )
 
