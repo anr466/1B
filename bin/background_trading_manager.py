@@ -595,6 +595,13 @@ class BackgroundTradingManager:
                 del self._user_systems[uid]
                 self._user_context_fingerprints.pop(uid, None)
 
+            # حماية من تسرب الذاكرة — حد أقصى 20 نظام في الذاكرة
+            if len(self._user_systems) > 20:
+                excess = list(self._user_systems.keys())[: len(self._user_systems) - 20]
+                for uid in excess:
+                    del self._user_systems[uid]
+                    self._user_context_fingerprints.pop(uid, None)
+
             # ========== تشغيل التداول لكل مستخدم ==========
             for user in active_users:
                 try:
@@ -730,16 +737,9 @@ class BackgroundTradingManager:
                             trading_enabled and eligible_for_execution
                         ) or has_open_positions
 
-                        logger.warning(
-                            f"🔍 DECISION: user={username} mode={requested_mode} "
-                            f"trading_enabled={trading_enabled} eligible={eligible_for_execution} "
-                            f"has_open={has_open_positions} -> include={include_user}"
-                        )
-
-                        if trading_enabled and eligible_for_execution:
-                            logger.warning(
-                                f"🚨 ADDING USER TO ACTIVE LIST: {username} mode={requested_mode} trading_enabled={trading_enabled} eligible={eligible_for_execution}"
-                            )
+                        include_user = (
+                            trading_enabled and eligible_for_execution
+                        ) or has_open_positions
 
                         if not include_user:
                             continue

@@ -6,16 +6,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# نظام deps منفصل لتحسين cache
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
+    libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-prod.txt ./requirements-prod.txt
+COPY requirements-prod.txt ./
 RUN pip install --upgrade pip && pip install -r requirements-prod.txt
 
-COPY . .
+# نسخ الكود فقط (بدون .venv, .agents, logs, flutter, إلخ)
+COPY backend/ ./backend/
+COPY bin/ ./bin/
+COPY database/ ./database/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
+COPY start_server.py ./
+COPY setup.sh ./
 
 RUN mkdir -p logs backups tmp
 

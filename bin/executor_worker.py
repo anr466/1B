@@ -19,6 +19,7 @@ from backend.infrastructure.db_access import (
 )
 from backend.utils.binance_manager import BinanceManager
 from backend.utils.data_provider import DataProvider
+from backend.utils.trading_context import get_effective_is_demo
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -31,6 +32,34 @@ class ExecutorWorker:
         self.db = get_db_manager()
         self.binance_manager = BinanceManager()
         self.data_provider = DataProvider()
+
+    def _calculate_quantity(
+        self, user_id: int, symbol: str, entry_price: float, settings: dict
+    ) -> float:
+        """حساب حجم الصفقة ديناميكياً من إعدادات المستخدم"""
+        trade_amount = settings.get("trade_amount", 100.0)
+        position_size_pct = settings.get("position_size_percentage", 10.0) / 100.0
+
+        budget = trade_amount * position_size_pct
+        if budget <= 0 or entry_price <= 0:
+            return 0.001
+
+        raw_qty = budget / entry_price
+
+        try:
+            info = self.data_provider.client.get_symbol_info(symbol)
+            if info:
+                for f in info.get("filters", []):
+                    if f["filterType"] == "LOT_SIZE":
+                        step = float(f["stepSize"])
+                        min_qty = float(f["minQty"])
+                        raw_qty = max(raw_qty, min_qty)
+                        raw_qty = round(raw_qty - (raw_qty % step), 8)
+                        break
+        except Exception:
+            pass
+
+        return max(raw_qty, 0.001)
 
     async def process_pending_signals(self):
         try:
@@ -52,7 +81,8 @@ class ExecutorWorker:
                         row
                     )
 
-                    settings = self.db.get_trading_settings(user_id, is_demo=True)
+                    is_demo = bool(get_effective_is_demo(self.db, user_id))
+                    settings = self.db.get_trading_settings(user_id, is_demo=is_demo)
                     if not settings or not settings.get("trading_enabled", False):
                         conn.execute(
                             "UPDATE signals_queue SET status = 'REJECTED', rejection_reason = 'Trading disabled', processed_at = NOW() WHERE id = %s",
@@ -61,8 +91,8 @@ class ExecutorWorker:
                         continue
 
                     open_count = conn.execute(
-                        "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_active = TRUE",
-                        (user_id,),
+                        "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_active = TRUE AND is_demo = %s",
+                        (user_id, is_demo),
                     ).fetchone()[0]
                     if open_count >= settings.get("max_positions", 4):
                         conn.execute(
@@ -71,24 +101,35 @@ class ExecutorWorker:
                         )
                         continue
 
-                    logger.info(
-                        f"⚡ Executing {pos_type} for User {user_id}: {symbol} @ {entry_price}"
+                    quantity = self._calculate_quantity(
+                        user_id, symbol, entry_price, settings
                     )
+                    position_size = quantity * entry_price
+
+                    logger.info(
+                        f"⚡ Executing {pos_type} for User {user_id}: {symbol} @ {entry_price} qty={quantity:.6f}"
+                    )
+
+                    filled_price = entry_price
+                    order_id = None
 
                     try:
                         client = self.binance_manager._get_binance_client(user_id)
-                        if client:
+                        if client and not is_demo:
                             order = client.create_order(
                                 symbol=symbol,
                                 side="BUY" if pos_type == "LONG" else "SELL",
                                 type="MARKET",
-                                quantity=0.001,
+                                quantity=quantity,
                             )
                             filled_price = float(
                                 order.get("fills", [{}])[0].get("price", entry_price)
                             )
+                            order_id = str(order.get("orderId", ""))
                         else:
-                            filled_price = entry_price
+                            logger.info(
+                                f"📝 Demo mode for User {user_id} — simulating fill"
+                            )
                     except Exception as e:
                         logger.error(f"❌ Execution failed for {symbol}: {e}")
                         conn.execute(
@@ -99,10 +140,27 @@ class ExecutorWorker:
 
                     conn.execute(
                         """
-                        INSERT INTO active_positions (user_id, symbol, position_type, entry_price, stop_loss, take_profit, strategy, is_active, entry_date)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, NOW())
-                    """,
-                        (user_id, symbol, pos_type, filled_price, sl, tp, strategy),
+                        INSERT INTO active_positions (
+                            user_id, symbol, position_type, entry_price, stop_loss, take_profit,
+                            strategy, is_active, is_demo, entry_date, quantity, position_size,
+                            order_id, trailing_sl_price, highest_price
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, NOW(), %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            user_id,
+                            symbol,
+                            pos_type,
+                            filled_price,
+                            sl,
+                            tp,
+                            strategy,
+                            is_demo,
+                            quantity,
+                            position_size,
+                            order_id,
+                            filled_price,
+                            filled_price,
+                        ),
                     )
 
                     conn.execute(
@@ -110,7 +168,7 @@ class ExecutorWorker:
                         (sig_id,),
                     )
                     logger.info(
-                        f"✅ Filled {symbol} for User {user_id} @ {filled_price}"
+                        f"✅ Filled {symbol} for User {user_id} @ {filled_price} qty={quantity:.6f}"
                     )
 
         except Exception as e:
@@ -120,7 +178,8 @@ class ExecutorWorker:
         try:
             with get_db_connection() as conn:
                 positions = conn.execute("""
-                    SELECT id, user_id, symbol, position_type, entry_price, stop_loss, take_profit, trailing_sl_price, highest_price, is_demo
+                    SELECT id, user_id, symbol, position_type, entry_price, stop_loss, take_profit,
+                           trailing_sl_price, highest_price, is_demo, quantity, position_size
                     FROM active_positions WHERE is_active = TRUE
                 """).fetchall()
 
@@ -147,17 +206,29 @@ class ExecutorWorker:
                     trail_sl,
                     highest,
                     is_demo,
+                    quantity,
+                    position_size,
                 ) = pos
                 try:
                     current_price = price_map.get(symbol)
                     if not current_price:
                         continue
 
-                    should_exit = False
-                    exit_reason = ""
-                    exit_price = current_price
+                    new_trail_sl = trail_sl or 0.0
+                    new_highest = highest or entry
 
                     if pos_type == "LONG":
+                        if current_price > new_highest:
+                            new_highest = current_price
+                            trail_distance = entry * 0.03
+                            new_trail_sl = max(
+                                new_trail_sl, current_price - trail_distance
+                            )
+                            new_trail_sl = max(new_trail_sl, entry)
+
+                        if new_trail_sl > 0 and current_price <= new_trail_sl:
+                            sl = new_trail_sl
+
                         if current_price <= sl:
                             should_exit, exit_reason, exit_price = True, "STOP_LOSS", sl
                         elif current_price >= tp:
@@ -166,33 +237,108 @@ class ExecutorWorker:
                                 "TAKE_PROFIT",
                                 tp,
                             )
+                        else:
+                            should_exit, exit_reason, exit_price = (
+                                False,
+                                "",
+                                current_price,
+                            )
+                    else:
+                        if current_price < new_highest:
+                            new_highest = current_price
+                            trail_distance = entry * 0.03
+                            new_trail_sl = min(
+                                new_trail_sl if new_trail_sl > 0 else current_price,
+                                current_price + trail_distance,
+                            )
+                            new_trail_sl = min(new_trail_sl, entry)
+
+                        if new_trail_sl > 0 and current_price >= new_trail_sl:
+                            sl = new_trail_sl
+
+                        if current_price >= sl:
+                            should_exit, exit_reason, exit_price = True, "STOP_LOSS", sl
+                        elif current_price <= tp:
+                            should_exit, exit_reason, exit_price = (
+                                True,
+                                "TAKE_PROFIT",
+                                tp,
+                            )
+                        else:
+                            should_exit, exit_reason, exit_price = (
+                                False,
+                                "",
+                                current_price,
+                            )
+
+                    with get_db_write_connection() as conn:
+                        conn.execute(
+                            """
+                            UPDATE active_positions
+                            SET trailing_sl_price = %s, highest_price = %s
+                            WHERE id = %s AND is_active = TRUE
+                            """,
+                            (new_trail_sl, new_highest, pos_id),
+                        )
 
                     if should_exit:
                         logger.info(
                             f"🚪 Exiting {symbol} for User {user_id} via {exit_reason} @ {exit_price}"
                         )
-                        pnl = exit_price - entry
+
+                        if not is_demo:
+                            try:
+                                client = self.binance_manager._get_binance_client(
+                                    user_id
+                                )
+                                if client and quantity and quantity > 0:
+                                    client.create_order(
+                                        symbol=symbol,
+                                        side="SELL" if pos_type == "LONG" else "BUY",
+                                        type="MARKET",
+                                        quantity=quantity,
+                                    )
+                                    logger.info(
+                                        f"📤 Binance sell order executed for {symbol}"
+                                    )
+                            except Exception as sell_err:
+                                logger.error(
+                                    f"❌ Binance sell failed for {symbol}: {sell_err}"
+                                )
+
+                        pnl = (
+                            (exit_price - entry)
+                            if pos_type == "LONG"
+                            else (entry - exit_price)
+                        )
                         pnl_pct = (pnl / entry * 100) if entry > 0 else 0
+                        realized_pnl = pnl * quantity if quantity else pnl
 
                         with get_db_write_connection() as conn:
-                            # تحديث الحالة في active_positions (المصدر الوحيد للبيانات)
                             conn.execute(
                                 """
-                                UPDATE active_positions 
-                                SET is_active = FALSE, exit_price = %s, exit_reason = %s, 
+                                UPDATE active_positions
+                                SET is_active = FALSE, exit_price = %s, exit_reason = %s,
                                     profit_loss = %s, profit_pct = %s, closed_at = NOW()
                                 WHERE id = %s
-                            """,
-                                (exit_price, exit_reason, pnl, pnl_pct, pos_id),
+                                """,
+                                (
+                                    exit_price,
+                                    exit_reason,
+                                    realized_pnl,
+                                    pnl_pct,
+                                    pos_id,
+                                ),
                             )
 
-                            # تحديث المحفظة
                             conn.execute(
                                 """
-                                UPDATE portfolio SET total_balance = total_balance + %s, available_balance = available_balance + %s
-                                WHERE user_id = %s
-                            """,
-                                (pnl, pnl, user_id),
+                                UPDATE portfolio
+                                SET total_balance = total_balance + %s,
+                                    available_balance = available_balance + %s
+                                WHERE user_id = %s AND is_demo = %s
+                                """,
+                                (realized_pnl, realized_pnl, user_id, is_demo),
                             )
 
                 except Exception as e:

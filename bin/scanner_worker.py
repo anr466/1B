@@ -12,7 +12,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from backend.infrastructure.db_access import get_db_manager, get_db_connection
+from backend.infrastructure.db_access import (
+    get_db_manager,
+    get_db_connection,
+    get_db_write_connection,
+)
 from backend.core.coin_state_analyzer import CoinStateAnalyzer
 from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
 from backend.core.modules.trend_module import TrendModule
@@ -21,6 +25,7 @@ from backend.core.modules.volatility_module import VolatilityModule
 from backend.core.modules.scalping_module import ScalpingModule
 from backend.core.dynamic_coin_selector import DynamicCoinSelector
 from backend.utils.data_provider import DataProvider
+from backend.utils.trading_context import get_effective_is_demo
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -85,14 +90,15 @@ class ScannerWorker:
 
     async def analyze_user(self, user_id: int, market_data: dict):
         try:
-            settings = self.db.get_trading_settings(user_id, is_demo=True)
+            is_demo = bool(get_effective_is_demo(self.db, user_id))
+            settings = self.db.get_trading_settings(user_id, is_demo=is_demo)
             if not settings or not settings.get("trading_enabled", False):
                 return
 
             with get_db_connection() as conn:
                 open_count = conn.execute(
-                    "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_active = TRUE",
-                    (user_id,),
+                    "SELECT COUNT(*) FROM active_positions WHERE user_id = %s AND is_active = TRUE AND is_demo = %s",
+                    (user_id, is_demo),
                 ).fetchone()[0]
 
                 max_pos = settings.get("max_positions", 4)
@@ -100,14 +106,26 @@ class ScannerWorker:
                     return
 
                 daily_loss = conn.execute(
-                    "SELECT COALESCE(SUM(profit_loss), 0) FROM trading_history WHERE user_id = %s AND created_at >= CURRENT_DATE",
-                    (user_id,),
+                    """
+                    SELECT COALESCE(SUM(profit_loss), 0)
+                    FROM active_positions
+                    WHERE user_id = %s AND is_demo = %s
+                      AND is_active = FALSE
+                      AND closed_at >= CURRENT_DATE
+                    """,
+                    (user_id, is_demo),
                 ).fetchone()[0]
 
+                total_balance = settings.get("total_balance", 1000.0)
+                if total_balance <= 0:
+                    portfolio_row = conn.execute(
+                        "SELECT total_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",
+                        (user_id, is_demo),
+                    ).fetchone()
+                    total_balance = portfolio_row[0] if portfolio_row else 1000.0
+
                 max_loss = (
-                    settings.get("max_daily_loss_pct", 10.0)
-                    / 100
-                    * settings.get("total_balance", 1000)
+                    settings.get("max_daily_loss_pct", 10.0) / 100 * total_balance
                 )
                 if daily_loss <= -max_loss:
                     return
@@ -165,7 +183,7 @@ class ScannerWorker:
                     for sig in signals_to_insert:
                         conn.execute(
                             """
-                            INSERT INTO signals_queue 
+                            INSERT INTO signals_queue
                             (user_id, symbol, type, entry_price, stop_loss, take_profit, score, strategy_name, expires_at)
                             VALUES (%(user_id)s, %(symbol)s, %(type)s, %(entry_price)s, %(stop_loss)s, %(take_profit)s, %(score)s, %(strategy_name)s, %(expires_at)s)
                         """,

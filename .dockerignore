@@ -107,5 +107,16 @@ coverage/
 .dmypy.json
 dmypy.json
 
+# Agent tools
+.agents/
+.claude/
+.memory/
+.opencode/
+.sisyphus/
+.ruff_cache/
+
+# Web
+web/
+
 # Misc
 *.pid
