@@ -261,7 +261,25 @@ class DbUsersMixin:
                     )
                     return self._get_default_trading_settings()
 
-                settings_data = dict(settings_row)
+                # psycopg2 returns tuples, not dicts — map manually
+                cols = [
+                    "trading_enabled",
+                    "max_positions",
+                    "stop_loss_pct",
+                    "take_profit_pct",
+                    "risk_level",
+                    "trade_amount",
+                    "max_daily_loss_pct",
+                    "trading_mode",
+                    "trailing_distance",
+                    "volatility_buffer",
+                    "min_signal_strength",
+                    "position_size_percentage",
+                    "daily_loss_limit",
+                    "created_at",
+                    "updated_at",
+                ]
+                settings_data = dict(zip(cols, settings_row))
 
                 return {
                     "stop_loss_pct": float(settings_data.get("stop_loss_pct", 2.0)),

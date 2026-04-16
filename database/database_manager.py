@@ -260,6 +260,9 @@ def _translate_sql_for_postgres(sql: str) -> Optional[str]:
 def _coerce_postgres_boolean_params(sql: str, params):
     if not params:
         return params
+    # Named parameters (dict) — skip coercion, psycopg2 handles them directly
+    if isinstance(params, dict):
+        return params
     coerced = list(params)
     for col in POSTGRES_BOOLEAN_COLUMNS:
         pattern = re.compile(rf"\b{re.escape(col)}\s*=\s*%s\b", re.IGNORECASE)
