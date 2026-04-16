@@ -992,34 +992,22 @@ def verify_phone_token():
 def validate_session():
     """التحقق من صحة الجلسة الحالية"""
     try:
-        # الحصول على Token من Header
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             return jsonify({"success": False, "message": "لا يوجد token"}), 401
 
         token = auth_header.split(" ")[1]
 
-        # فك تشفير Token والتحقق منه
-        import os
+        # FIX 1: Use unified verify_token() which checks revoked_tokens blocklist
+        from backend.api.token_refresh_endpoint import verify_token
 
-        jwt_secret = os.getenv("JWT_SECRET_KEY")
-        if not jwt_secret:
-            return (
-                jsonify({"success": False, "message": "Server configuration error"}),
-                500,
-            )
-        from ..utils.jwt_manager import JWTManager
-
-        jwt_manager = JWTManager(secret_key=jwt_secret)
-        payload = jwt_manager.verify_token(token)
-
+        payload = verify_token(token, "access")
         if not payload:
             return (
-                jsonify({"success": False, "message": "Token غير صالح"}),
+                jsonify({"success": False, "message": "Token غير صالح أو ملغي"}),
                 401,
             )
 
-        # التحقق من وجود المستخدم في قاعدة البيانات
         user_id = payload.get("user_id")
         if not user_id:
             return (
@@ -1071,7 +1059,6 @@ def refresh_token():
         data = request.get_json(silent=True) or {}
         refresh_token_str = data.get("refresh_token")
 
-        # محاولة الحصول على refresh_token من Authorization header
         if not refresh_token_str:
             auth_header = request.headers.get("Authorization")
             if auth_header and auth_header.startswith("Bearer "):
@@ -1083,27 +1070,16 @@ def refresh_token():
                 400,
             )
 
-        # فك تشفير refresh_token والتحقق منه
-        import os
+        # FIX 1: Use unified verify_token() which checks revoked_tokens blocklist
+        from backend.api.token_refresh_endpoint import verify_token
 
-        jwt_secret = os.getenv("JWT_SECRET_KEY")
-        if not jwt_secret:
-            return (
-                jsonify({"success": False, "error": "Server configuration error"}),
-                500,
-            )
-        from ..utils.jwt_manager import JWTManager
-
-        jwt_manager = JWTManager(secret_key=jwt_secret)
-        payload = jwt_manager.verify_token(refresh_token_str)
-
+        payload = verify_token(refresh_token_str, "refresh")
         if not payload:
             return (
-                jsonify({"success": False, "error": "refresh_token غير صالح"}),
+                jsonify({"success": False, "error": "refresh_token غير صالح أو ملغي"}),
                 401,
             )
 
-        # التحقق من وجود المستخدم
         user_id = payload.get("user_id")
         if not user_id:
             return (

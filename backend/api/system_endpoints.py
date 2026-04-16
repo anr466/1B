@@ -83,24 +83,17 @@ def reset_account_data():
     يحذف جميع الصفقات والمحفظة والإعدادات
     """
     try:
-        import os
-
-        jwt_secret = os.getenv("JWT_SECRET_KEY")
-        if not jwt_secret:
-            return (
-                jsonify({"success": False, "error": "Server configuration error"}),
-                500,
-            )
-        from ..utils.jwt_manager import JWTManager
-
         db = get_db_manager()
         data = request.get_json()
 
-        # الحصول على user_id من Token
+        # FIX 1: Use unified verify_token() which checks revoked_tokens blocklist
+        from backend.api.token_refresh_endpoint import verify_token
+
         auth_header = request.headers.get("Authorization", "")
         token = auth_header.split(" ")[1]
-        jwt_manager = JWTManager(secret_key=jwt_secret)
-        payload = jwt_manager.verify_token(token)
+        payload = verify_token(token, "access")
+        if not payload:
+            return jsonify({"success": False, "error": "Token غير صالح أو ملغي"}), 401
         user_id = payload.get("user_id")
 
         # يمكن للمستخدم فقط إعادة تعيين حسابه الخاص

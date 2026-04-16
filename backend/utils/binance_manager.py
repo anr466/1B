@@ -52,6 +52,30 @@ class BinanceManager:
         self._balance_cache = self.__class__._shared_balance_cache
         self._balance_cache_ttl_seconds = 2
 
+    # FIX 3: Encryption method — fails explicitly if encryption unavailable
+    def _encrypt_api_secret(self, api_secret: str, user_id: int) -> str:
+        """تشفير المفتاح السري — يفشل صراحةً إذا لم يكن التشفير متاحاً"""
+        if ENCRYPTION_AVAILABLE:
+            try:
+                from config.security.encryption_service import encrypt_text
+
+                return encrypt_text(api_secret)
+            except Exception as e:
+                self.logger.error(f"خطأ في تشفير المفتاح السري للمستخدم {user_id}: {e}")
+                raise RuntimeError(
+                    f"فشل تشفير مفتاح API للمستخدم {user_id}: {e}. "
+                    "لا يمكن حفظ المفاتيح بدون تشفير."
+                )
+        else:
+            self.logger.error(
+                f"⚠️ خدمة التشفير غير متاحة — لا يمكن حفظ مفاتيح API للمستخدم {user_id}. "
+                "يجب تفعيل ENCRYPTION_AVAILABLE."
+            )
+            raise RuntimeError(
+                f"Encryption service unavailable for user {user_id}. "
+                "Cannot save API keys without encryption."
+            )
+
     def _get_balance_lock(self, user_id: int) -> threading.Lock:
         with self.__class__._shared_guard_lock:
             lock = self.__class__._shared_balance_locks.get(user_id)

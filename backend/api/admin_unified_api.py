@@ -1377,6 +1377,10 @@ def close_position(position_id):
             400,
         )
 
+    # FIX 2: Log which admin is closing the position
+    admin_user_id = getattr(g, "current_user_id", "unknown")
+    admin_username = getattr(g, "current_username", "unknown")
+
     payload = request.get_json(silent=True) or {}
     reason = str(payload.get("reason") or "ADMIN_MANUAL_CLOSE")
     requested_exit = payload.get("exit_price")
@@ -1459,13 +1463,19 @@ def close_position(position_id):
             exit_reason=reason,
             pnl=pnl,
             exit_commission=exit_commission,
-            exit_order_id="ADMIN_MANUAL_CLOSE",
+            exit_order_id=f"ADMIN_CLOSE_{admin_user_id}",
         )
         if not close_ok:
             return (
                 jsonify({"success": False, "message": "close_position_failed"}),
                 500,
             )
+
+        # FIX 2: Log the admin action
+        logger.info(
+            f"🔒 Admin {admin_username} (id={admin_user_id}) closed position #{pid} "
+            f"for user {position['user_id']}: {position['symbol']} @ {exit_price}"
+        )
 
         try:
             user_id = int(position["user_id"])

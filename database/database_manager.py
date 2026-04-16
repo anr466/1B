@@ -456,9 +456,9 @@ class DatabaseManager(
         self.logger = logging.getLogger(__name__)
         self._postgres_dsn = self._build_postgres_dsn()
 
-        # نظام منع التضارب
+        # FIX 5: Increased connection pool from 5→20, maxsize from 10→30
         self._write_lock = threading.RLock()
-        self._connection_pool = queue.Queue(maxsize=10)
+        self._connection_pool = queue.Queue(maxsize=30)
         self._pool_initialized = False
 
         if not self.is_postgres():
@@ -487,7 +487,8 @@ class DatabaseManager(
     def _init_connection_pool(self):
         """تهيئة مجموعة الاتصالات لتجنب التضارب"""
         try:
-            for _ in range(5):  # 5 اتصالات في المجموعة
+            # FIX 5: Increased from 5 to 15 initial connections
+            for _ in range(15):
                 conn = self._build_connection(timeout=30.0)
                 self._connection_pool.put(conn, block=False)
 

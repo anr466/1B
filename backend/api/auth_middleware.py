@@ -40,9 +40,7 @@ def _verify_jwt_and_set_g():
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         return (
-            jsonify(
-                {"success": False, "error": "Authorization header missing"}
-            ),
+            jsonify({"success": False, "error": "Authorization header missing"}),
             401,
         )
 
@@ -52,13 +50,12 @@ def _verify_jwt_and_set_g():
                 {
                     "success": False,
                     "error": "Invalid authorization format. Use: Bearer <token>",
-                }),
+                }
+            ),
             401,
         )
 
-    token = (
-        auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
-    )
+    token = auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
     if not token:
         return jsonify({"success": False, "error": "Token missing"}), 401
 
@@ -77,9 +74,7 @@ def _verify_jwt_and_set_g():
         except Exception as e:
             logger.error(f"❌ Token verification error: {e}")
             return (
-                jsonify(
-                    {"success": False, "error": "Token verification failed"}
-                ),
+                jsonify({"success": False, "error": "Token verification failed"}),
                 401,
             )
     else:
@@ -122,23 +117,17 @@ def _verify_jwt_atomic():
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         return (
-            jsonify(
-                {"success": False, "error": "Authorization header missing"}
-            ),
+            jsonify({"success": False, "error": "Authorization header missing"}),
             401,
         )
 
     if not auth_header.startswith("Bearer "):
         return (
-            jsonify(
-                {"success": False, "error": "Invalid authorization format"}
-            ),
+            jsonify({"success": False, "error": "Invalid authorization format"}),
             401,
         )
 
-    token = (
-        auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
-    )
+    token = auth_header.split(" ")[1] if len(auth_header.split(" ")) > 1 else None
     if not token:
         return jsonify({"success": False, "error": "Token missing"}), 401
 
@@ -157,9 +146,7 @@ def _verify_jwt_atomic():
         except Exception as e:
             logger.error(f"❌ Token verification error (atomic): {e}")
             return (
-                jsonify(
-                    {"success": False, "error": "Token verification failed"}
-                ),
+                jsonify({"success": False, "error": "Token verification failed"}),
                 401,
             )
     else:
@@ -190,10 +177,7 @@ def require_auth_atomic(f):
             return error_response
 
         user_id_from_url = kwargs.get("user_id")
-        if (
-            user_id_from_url
-            and getattr(g, "current_user_type", None) != "admin"
-        ):
+        if user_id_from_url and getattr(g, "current_user_type", None) != "admin":
             try:
                 user_id_int = int(user_id_from_url)
                 if g.current_user_id != user_id_int:
@@ -202,9 +186,7 @@ def require_auth_atomic(f):
                         f"tried to access User {user_id_from_url} data"
                     )
                     return (
-                        jsonify(
-                            {"success": False, "error": "Unauthorized access"}
-                        ),
+                        jsonify({"success": False, "error": "Unauthorized access"}),
                         403,
                     )
             except ValueError:
@@ -221,15 +203,18 @@ def require_auth_atomic(f):
 def require_admin(f):
     """
     Decorator for admin-only endpoints.
-    Must be used AFTER @require_auth.
+    FIX 4: Now includes JWT verification — no longer requires @require_auth first.
     """
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if (
-            not hasattr(g, "current_user_type")
-            or g.current_user_type != "admin"
-        ):
+        # FIX 4: Verify JWT and set g.current_user_type if not already set
+        if not hasattr(g, "current_user_type"):
+            error_response = _verify_jwt_and_set_g()
+            if error_response is not None:
+                return error_response
+
+        if not hasattr(g, "current_user_type") or g.current_user_type != "admin":
             return (
                 jsonify({"success": False, "error": "Admin access required"}),
                 403,

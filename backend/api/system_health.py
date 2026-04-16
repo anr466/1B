@@ -5,6 +5,7 @@ System Health Check API - مراقبة صحة النظام
 
 from backend.core.trading_state_machine import get_trading_state_machine
 from backend.infrastructure.db_access import get_db_manager
+from backend.api.auth_middleware import require_admin
 from flask import Blueprint, jsonify
 import os
 import sys
@@ -147,9 +148,7 @@ def get_system_health():
         )
     except Exception as e:
         return (
-            jsonify(
-                {"success": False, "message": f"خطأ في فحص النظام: {str(e)}"}
-            ),
+            jsonify({"success": False, "message": f"خطأ في فحص النظام: {str(e)}"}),
             500,
         )
 
@@ -197,9 +196,7 @@ def get_critical_errors():
                         }
                     )
 
-                return jsonify(
-                    {"success": True, "data": errors, "count": len(errors)}
-                )
+                return jsonify({"success": True, "data": errors, "count": len(errors)})
             except Exception as inner_error:
                 return (
                     jsonify(
@@ -212,14 +209,13 @@ def get_critical_errors():
                 )
     except Exception as e:
         return (
-            jsonify(
-                {"success": False, "message": f"خطأ في جلب الأخطاء: {str(e)}"}
-            ),
+            jsonify({"success": False, "message": f"خطأ في جلب الأخطاء: {str(e)}"}),
             500,
         )
 
 
 @health_bp.route("/admin/system/errors/<error_id>/resolve", methods=["POST"])
+@require_admin
 def resolve_error(error_id):
     """وضع علامة على خطأ كمحلول"""
     try:
@@ -235,9 +231,7 @@ def resolve_error(error_id):
                 (datetime.now().isoformat(), error_id),
             )
 
-        return jsonify(
-            {"success": True, "message": "تم وضع علامة محلول على الخطأ"}
-        )
+        return jsonify({"success": True, "message": "تم وضع علامة محلول على الخطأ"})
     except Exception as e:
         return jsonify({"success": False, "message": f"خطأ: {str(e)}"}), 500
 
@@ -254,7 +248,8 @@ def restart_system():
                 "success": False,
                 "message": "هذا المسار مُلغى. استخدم POST /api/admin/trading/start أو /api/admin/trading/stop",
                 "redirect": "/api/admin/trading/start",
-            }),
+            }
+        ),
         410,
     )
 
