@@ -37,7 +37,10 @@ class ScannerWorker:
     def __init__(self):
         self.db = get_db_manager()
         self.data_provider = DataProvider()
-        self.coin_selector = DynamicCoinSelector(self.data_provider.client)
+        # FIX: Use _get_active_client() which falls back to system Binance client
+        self.coin_selector = DynamicCoinSelector(
+            self.data_provider._get_active_client()
+        )
 
         self.analyzer = CoinStateAnalyzer()
         self.decision_matrix = CognitiveDecisionMatrix()
@@ -59,7 +62,13 @@ class ScannerWorker:
         logger.info("🌐 Fetching fresh market data for top coins...")
 
         try:
-            tickers = self.data_provider.client.get_ticker()
+            # FIX: Use _get_active_client() for system Binance fallback
+            client = self.data_provider._get_active_client()
+            if client is None:
+                logger.error("❌ No Binance client available (local or system)")
+                return self.market_cache
+
+            tickers = client.get_ticker()
             usdt_pairs = {
                 t["symbol"]: t for t in tickers if t["symbol"].endswith("USDT")
             }

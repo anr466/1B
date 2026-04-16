@@ -87,6 +87,11 @@ class DataProvider:
         self._last_successful_connection = None
         self._fallback_mode = False
 
+        # FIX: System Binance client as fallback for market data
+        self._system_client = None
+        self._system_client_failures = 0
+        self._max_system_failures = 5
+
         # إعدادات إعادة الاتصال التلقائي
         self._auto_reconnect_enabled = True
         self._reconnect_attempts = 0
@@ -137,6 +142,35 @@ class DataProvider:
             "XMRUSDT",
             "EOSUSDT",
         ]
+
+    def _get_active_client(self):
+        """
+        FIX: الحصول على عميل Binance نشط مع failover للنظام.
+        الترتيب: 1. self.client → 2. System Binance client → 3. None
+        """
+        if self.client is not None:
+            return self.client
+
+        # Fallback to system Binance client
+        if (
+            self._system_client is None
+            or self._system_client_failures >= self._max_system_failures
+        ):
+            try:
+                from backend.utils.system_binance_client import system_binance
+
+                self._system_client = system_binance
+                self._system_client_failures = 0
+            except Exception as e:
+                logger.debug(f"System Binance client unavailable: {e}")
+                return None
+
+        sys_client = self._system_client.get_client()
+        if sys_client is not None:
+            return sys_client
+
+        self._system_client_failures += 1
+        return None
 
     def _get_cache_key(self, prefix: str, **kwargs) -> str:
         """
@@ -258,7 +292,10 @@ class DataProvider:
     )
     def _fetch_klines_from_api(self, symbol: str, interval: str, limit: int):
         """جلب بيانات الشموع من API مع Retry Logic و Circuit Breaker"""
-        return self.client.get_klines(symbol=symbol, interval=interval, limit=limit)
+        client = self._get_active_client()
+        if client is None:
+            raise ConnectionError("No Binance client available (local or system)")
+        return client.get_klines(symbol=symbol, interval=interval, limit=limit)
 
     def get_klines(
         self,
@@ -474,7 +511,10 @@ class DataProvider:
     )
     def _fetch_tickers_from_api(self):
         """جلب بيانات Tickers من API مع Retry Logic و Circuit Breaker"""
-        return self.client.get_ticker()
+        client = self._get_active_client()
+        if client is None:
+            raise ConnectionError("No Binance client available (local or system)")
+        return client.get_ticker()
 
     def get_top_volume_coins(
         self, limit: int = 20, min_volume: float = 1000000
@@ -590,7 +630,10 @@ class DataProvider:
     )
     def _fetch_exchange_info_from_api(self):
         """جلب معلومات البورصة من API مع Retry Logic و Circuit Breaker"""
-        return self.client.get_exchange_info()
+        client = self._get_active_client()
+        if client is None:
+            raise ConnectionError("No Binance client available (local or system)")
+        return client.get_exchange_info()
 
     def get_exchange_info(self) -> Dict:
         """
@@ -677,10 +720,13 @@ class DataProvider:
     )
     def _fetch_symbol_ticker_from_api(self, symbol: str = None):
         """جلب أسعار الرموز من API مع Retry Logic و Circuit Breaker"""
+        client = self._get_active_client()
+        if client is None:
+            raise ConnectionError("No Binance client available (local or system)")
         if symbol:
-            return self.client.get_symbol_ticker(symbol=symbol)
+            return client.get_symbol_ticker(symbol=symbol)
         else:
-            return self.client.get_symbol_ticker()
+            return client.get_symbol_ticker()
 
     def get_current_price(self, symbol: str = None) -> Union[Dict, float]:
         """
