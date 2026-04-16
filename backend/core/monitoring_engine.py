@@ -20,6 +20,9 @@ class MonitoringEngine:
 
             action = self._evaluate_position(pos, current_price)
             if action:
+                # Time exits need current_price injected
+                if action.get("price") is None:
+                    action["price"] = current_price
                 actions.append(action)
 
         return actions
@@ -102,40 +105,73 @@ class MonitoringEngine:
         return None
 
     def _update_trailing(self, pos, price, peak, pnl_pct):
+        """تحديث وقف الخسارة المتحرك — يدعم LONG و SHORT بشكل متساوٍ"""
         ptype = pos.get("position_type", "long").upper()
-        if ptype != "LONG":
+        entry = pos.get("entry_price", 0)
+        if entry <= 0:
             return None
+
         if pnl_pct < 0.015:
             return None
 
+        # مسافة التتبع تتقلص مع زيادة الربح (يحمي الأرباح تدريجياً)
         trail_dist = 0.015
         if pnl_pct >= 0.030:
-            trail_dist = 0.0050
+            trail_dist = 0.0050  # 0.5% — ضيق جداً عند ربح 3%
         elif pnl_pct >= 0.025:
-            trail_dist = 0.0080
+            trail_dist = 0.0080  # 0.8%
         elif pnl_pct >= 0.020:
-            trail_dist = 0.0100
+            trail_dist = 0.0100  # 1.0%
         elif pnl_pct >= 0.015:
-            trail_dist = 0.0150
+            trail_dist = 0.0150  # 1.5%
 
-        new_trail = peak * (1 - trail_dist)
         current_trail = pos.get("trailing_sl_price", 0)
-        if new_trail > current_trail:
-            return {"trailing_sl_price": new_trail, "highest_price": max(peak, price)}
+
+        if ptype == "LONG":
+            # للـ LONG: trailing يكون تحت السعر (يحمي من الهبوط)
+            new_trail = peak * (1 - trail_dist)
+            if new_trail > current_trail:
+                return {
+                    "trailing_sl_price": new_trail,
+                    "highest_price": max(peak, price),
+                }
+        else:
+            # للـ SHORT: trailing يكون فوق السعر (يحمي من الصعود)
+            # peak = lowest_price للـ SHORT
+            new_trail = peak * (1 + trail_dist)
+            if current_trail == 0 or new_trail < current_trail:
+                return {
+                    "trailing_sl_price": new_trail,
+                    "highest_price": min(peak, price),
+                }
+
         return None
 
     def _check_breakeven(self, pos, price, pnl_pct):
-        if pos.get("position_type", "long").upper() != "LONG":
+        """نقل وقف الخسارة إلى نقطة الدخول — يدعم LONG و SHORT"""
+        entry = pos.get("entry_price", 0)
+        sl = pos.get("stop_loss", 0)
+        if entry <= 0 or sl <= 0:
             return None
+
+        ptype = pos.get("position_type", "long").upper()
+
         if pnl_pct < 0.01:
             return None
-        sl = pos.get("stop_loss", 0)
-        entry = pos.get("entry_price", 0)
-        if sl > 0 and sl < entry and pnl_pct >= 0.01:
-            return {"stop_loss": entry * 1.0001}
+
+        if ptype == "LONG":
+            # نقل SL فوق نقطة الدخول قليلاً (يضمن ربح بسيط حتى لو عاد السعر)
+            if sl < entry:
+                return {"stop_loss": entry * 1.0001}
+        else:
+            # للـ SHORT: نقل SL تحت نقطة الدخول
+            if sl > entry:
+                return {"stop_loss": entry * 0.9999}
+
         return None
 
     def _check_time_exits(self, pos, pnl_pct):
+        """خروج زمني — صفقات راكدة أو خسارة مبكرة"""
         created = pos.get("created_at")
         if not created:
             return None
@@ -147,30 +183,39 @@ class MonitoringEngine:
         hold_hours = (
             datetime.now(created.tzinfo if created.tzinfo else None) - created
         ).total_seconds() / 3600
+
+        # صفقة راكدة 8 ساعات بدون حركة — أخرجها لتحرير رأس المال
         if hold_hours >= 8 and pnl_pct < 0.005:
             return {
                 "type": "CLOSE",
                 "symbol": pos["symbol"],
                 "reason": "STAGNANT_8H",
-                "price": None,
+                "price": None,  # سيُملأ من monitor_positions
             }
+        # خسارة مبكرة بعد 6 ساعات — اقطع الخسارة
         if hold_hours >= 6 and pnl_pct < -0.015:
             return {
                 "type": "CLOSE",
                 "symbol": pos["symbol"],
                 "reason": "EARLY_CUT_6H",
-                "price": None,
+                "price": None,  # سيُملأ من monitor_positions
             }
         return None
 
     def _check_partial_close(self, pos, pnl_pct):
+        """إغلاق جزئي عند مستويات جني الأرباح"""
         tp_levels_hit = pos.get("tp_levels_hit", 0)
         entry = pos.get("entry_price", 0)
         sl = pos.get("stop_loss", 0)
-        risk = (entry - sl) / entry if entry > 0 and sl > 0 else 0.01
+        if entry <= 0:
+            return None
+
+        # حساب المخاطرة (دائماً موجب — يعمل مع LONG و SHORT)
+        risk = abs(entry - sl) / entry if sl > 0 else 0.01
         if risk <= 0:
             return None
 
+        # TP1: عند 1.5R — أغلق 40% من المركز
         if pnl_pct >= risk * 1.5 and tp_levels_hit < 1:
             return {
                 "type": "PARTIAL_CLOSE",
@@ -178,6 +223,7 @@ class MonitoringEngine:
                 "reason": "TP1_1.5R",
                 "close_pct": 0.40,
             }
+        # TP2: عند 2.5R — أغلق 35% إضافية
         if pnl_pct >= risk * 2.5 and tp_levels_hit < 2:
             return {
                 "type": "PARTIAL_CLOSE",

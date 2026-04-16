@@ -3,8 +3,18 @@
 import logging
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
+
+from backend.utils.indicator_calculator import (
+    compute_rsi,
+    compute_adx,
+    compute_atr,
+    compute_ema,
+    compute_macd,
+    compute_bollinger_bands,
+    compute_obv,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +22,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CoinState:
     symbol: str
-    coin_type: str  # MAJOR / MID_CAP / MEME / VOLATILE
-    trend: str  # UP / DOWN / NEUTRAL
-    trend_strength: str  # STRONG / MODERATE / WEAK
+    coin_type: str
+    trend: str
+    trend_strength: str
     trend_confirmed_4h: bool
-    volatility: str  # VERY_HIGH / HIGH / MEDIUM / LOW / VERY_LOW
-    regime: str  # STRONG_TREND / WEAK_TREND / WIDE_RANGE / NARROW_RANGE / CHOPPY
+    trend_confirmed_macd: bool
+    trend_confirmed_volume: bool
+    volatility: str
+    regime: str
     range_width_pct: float
     support_level: float
     resistance_level: float
@@ -26,18 +38,27 @@ class CoinState:
     macd_histogram: float
     atr_pct: float
     bb_width_pct: float
-    volume_trend: str  # SURGE / INCREASING / FLAT / DECLINING
-    obv_trend: str  # RISING / FALLING / FLAT
-    momentum: str  # ACCELERATING / STEADY / DECAYING / NONE
-    ema_alignment: (
-        str  # FULL_BULLISH / PARTIAL_BULLISH / MIXED / PARTIAL_BEARISH / FULL_BEARISH
-    )
-    recommendation: str  # TREND_CONT / BREAKOUT / RANGE / AVOID
+    bb_position: float
+    volume_trend: str
+    volume_ratio: float
+    obv_trend: str
+    momentum: str
+    ema_alignment: str
+    recommendation: str
     confidence: float
-    risk_profile: str  # LOW_RISK / MEDIUM_RISK / HIGH_RISK
+    risk_profile: str
 
 
 class CoinStateAnalyzer:
+    """
+    محلل حالة العملة — محسّن بـ:
+    1. Dynamic thresholds حسب regime
+    2. Multi-factor confirmation (EMA + MACD + Volume + Price)
+    3. Divergence detection (RSI/Price)
+    4. Regime-aware confidence scoring
+    5. Volume profile analysis
+    """
+
     VOLATILITY_THRESHOLDS = {
         "MAJOR": {"very_high": 4.0, "high": 2.0, "medium": 1.0, "low": 0.5},
         "MID_CAP": {"very_high": 6.0, "high": 3.5, "medium": 1.5, "low": 0.8},
@@ -93,66 +114,98 @@ class CoinStateAnalyzer:
         volume = df["volume"]
         cur = close.iloc[-1]
 
-        ema8 = close.ewm(span=8, adjust=False).mean()
-        ema21 = close.ewm(span=21, adjust=False).mean()
-        ema55 = close.ewm(span=55, adjust=False).mean() if len(close) >= 55 else ema21
-        e8, e21, e55 = ema8.iloc[-1], ema21.iloc[-1], ema55.iloc[-1]
-
-        # === 1. TREND (3 confirmations: EMA alignment + price position + slope) ===
-        trend, ema_align = self._analyze_trend(e8, e21, e55, cur, close)
-
-        # === 2. 4H TREND CONFIRMATION ===
-        trend_confirmed_4h = (
-            self._confirm_trend_4h(df_4h, trend) if df_4h is not None else True
+        # === المؤشرات الأساسية ===
+        emas = compute_ema(df)
+        e8, e21, e55 = (
+            emas["ema8"].iloc[-1],
+            emas["ema21"].iloc[-1],
+            emas["ema55"].iloc[-1],
         )
-
-        # === 3. TREND STRENGTH (multi-factor) ===
-        trend_strength = self._analyze_trend_strength(e8, e21, e55, cur, trend)
-
-        # === 4. VOLATILITY (ATR% + BB Width) ===
-        atr, atr_pct = self._compute_atr(high, low, close, cur)
-        bb_width_pct = self._compute_bb_width(close, cur)
-        coin_type = self._classify_coin_type(symbol, atr_pct)
-        volatility = self._classify_volatility(atr_pct, coin_type)
-
-        # === 5. RANGE ANALYSIS ===
-        support, resistance, range_width_pct = self._analyze_range(high, low, cur)
-
-        # === 6. REGIME (ADX + BB Width + Range combined) ===
         adx_val = self._get_indicator(df, "adx", 20)
-        regime = self._classify_regime(adx_val, trend, range_width_pct, bb_width_pct)
-
-        # === 7. VOLUME ANALYSIS (ratio + OBV trend) ===
+        rsi_val = self._get_indicator(df, "rsi", 50)
+        atr, atr_pct = self._compute_atr(high, low, close, cur)
+        bb = compute_bollinger_bands(df)
+        bb_width_pct = bb["bb_width"].iloc[-1]
+        bb_position = (
+            (cur - bb["bb_lower"].iloc[-1])
+            / (bb["bb_upper"].iloc[-1] - bb["bb_lower"].iloc[-1])
+            if bb["bb_upper"].iloc[-1] != bb["bb_lower"].iloc[-1]
+            else 0.5
+        )
+        macd = compute_macd(df)
+        macd_hist = macd["macd_histogram"].iloc[-1]
         vol_ratio, volume_trend = self._analyze_volume_trend(volume)
         obv_trend = self._analyze_obv_trend(close, volume)
 
-        # === 8. MOMENTUM (RSI + MACD + rate of change) ===
-        rsi_val = self._get_indicator(df, "rsi", 50)
-        macd_hist = self._compute_macd_histogram(close)
-        momentum = self._analyze_momentum(rsi_val, macd_hist, vol_ratio, trend)
+        # === 1. TREND (EMA alignment) ===
+        trend, ema_align = self._analyze_trend(e8, e21, e55, cur, close)
 
-        # === 9. RECOMMENDATION (all factors combined) ===
+        # === 2. TREND CONFIRMATIONS (3 عوامل مستقلة) ===
+        trend_confirmed_4h = (
+            self._confirm_trend_4h(df_4h, trend) if df_4h is not None else True
+        )
+        trend_confirmed_macd = self._confirm_trend_macd(
+            macd_hist, macd["macd"].iloc[-1], macd["macd_signal"].iloc[-1], trend
+        )
+        trend_confirmed_volume = self._confirm_trend_volume(
+            volume_trend, obv_trend, trend
+        )
+
+        # === 3. TREND STRENGTH ===
+        trend_strength = self._analyze_trend_strength(e8, e21, e55, cur, trend)
+
+        # === 4. VOLATILITY ===
+        coin_type = self._classify_coin_type(symbol, atr_pct)
+        volatility = self._classify_volatility(atr_pct, coin_type)
+
+        # === 5. RANGE ===
+        support, resistance, range_width_pct = self._analyze_range(high, low, cur)
+
+        # === 6. REGIME (dynamic thresholds) ===
+        regime = self._classify_regime(
+            adx_val, trend, range_width_pct, bb_width_pct, atr_pct
+        )
+
+        # === 7. MOMENTUM (محسّن) ===
+        momentum = self._analyze_momentum(
+            rsi_val, macd_hist, vol_ratio, trend, bb_position
+        )
+
+        # === 8. DIVERGENCE DETECTION ===
+        has_bullish_div = self._detect_bullish_divergence(close, rsi_val, df)
+        has_bearish_div = self._detect_bearish_divergence(close, rsi_val, df)
+
+        # === 9. RECOMMENDATION (multi-factor) ===
         recommendation = self._recommend(
             trend,
             trend_strength,
             trend_confirmed_4h,
+            trend_confirmed_macd,
+            trend_confirmed_volume,
             regime,
             range_width_pct,
             volatility,
             momentum,
             volume_trend,
+            has_bullish_div,
+            has_bearish_div,
         )
 
-        # === 10. CONFIDENCE (weighted multi-factor) ===
+        # === 10. CONFIDENCE (regime-aware weighted scoring) ===
         confidence = self._confidence(
             trend,
             trend_strength,
             trend_confirmed_4h,
+            trend_confirmed_macd,
+            trend_confirmed_volume,
             adx_val,
             vol_ratio,
             rsi_val,
             range_width_pct,
             momentum,
+            bb_position,
+            has_bullish_div,
+            has_bearish_div,
         )
 
         # === 11. RISK PROFILE ===
@@ -166,6 +219,8 @@ class CoinStateAnalyzer:
             trend=trend,
             trend_strength=trend_strength,
             trend_confirmed_4h=trend_confirmed_4h,
+            trend_confirmed_macd=trend_confirmed_macd,
+            trend_confirmed_volume=trend_confirmed_volume,
             volatility=volatility,
             regime=regime,
             range_width_pct=round(range_width_pct, 2),
@@ -176,7 +231,9 @@ class CoinStateAnalyzer:
             macd_histogram=round(macd_hist, 6),
             atr_pct=round(atr_pct, 2),
             bb_width_pct=round(bb_width_pct, 2),
+            bb_position=round(bb_position, 3),
             volume_trend=volume_trend,
+            volume_ratio=round(vol_ratio, 2),
             obv_trend=obv_trend,
             momentum=momentum,
             ema_alignment=ema_align,
@@ -211,6 +268,22 @@ class CoinStateAnalyzer:
             return cur_4 < e21_4 and e21_4 <= e55_4
         return True
 
+    def _confirm_trend_macd(self, macd_hist, macd_line, macd_signal, trend):
+        """تأكيد الاتجاه من MACD (خط MACD فوق/تحت signal + histogram متوافق)"""
+        if trend == "UP":
+            return macd_line > macd_signal and macd_hist > 0
+        if trend == "DOWN":
+            return macd_line < macd_signal and macd_hist < 0
+        return True
+
+    def _confirm_trend_volume(self, volume_trend, obv_trend, trend):
+        """تأكيد الاتجاه من الحجم (حجم متزايد + OBV متوافق)"""
+        if trend == "UP":
+            return volume_trend in ("SURGE", "INCREASING") or obv_trend == "RISING"
+        if trend == "DOWN":
+            return volume_trend in ("SURGE", "INCREASING") or obv_trend == "FALLING"
+        return True
+
     def _analyze_trend_strength(self, e8, e21, e55, cur, trend):
         if trend == "NEUTRAL":
             return "WEAK"
@@ -232,25 +305,11 @@ class CoinStateAnalyzer:
         return "WEAK"
 
     def _compute_atr(self, high, low, close, cur):
-        tr = pd.concat(
-            [high - low, (high - close.shift(1)).abs(), (low - close.shift(1)).abs()],
-            axis=1,
-        ).max(axis=1)
-        atr = tr.rolling(14).mean().iloc[-1]
+        df_temp = pd.DataFrame({"high": high, "low": low, "close": close})
+        atr_series = compute_atr(df_temp)
+        atr = atr_series.iloc[-1]
         atr_pct = (atr / cur * 100) if cur > 0 else 0
         return atr, atr_pct
-
-    def _compute_bb_width(self, close, cur):
-        sma20 = close.rolling(20).mean()
-        std20 = close.rolling(20).std()
-        upper = sma20 + 2 * std20
-        lower = sma20 - 2 * std20
-        width = (
-            (upper.iloc[-1] - lower.iloc[-1]) / sma20.iloc[-1] * 100
-            if sma20.iloc[-1] > 0
-            else 0
-        )
-        return width
 
     def _analyze_range(self, high, low, cur):
         support = low.tail(30).quantile(0.15)
@@ -258,15 +317,21 @@ class CoinStateAnalyzer:
         range_w = (resistance - support) / support * 100 if support > 0 else 0
         return support, resistance, range_w
 
-    def _classify_regime(self, adx, trend, range_w, bb_width):
+    def _classify_regime(self, adx, trend, range_w, bb_width, atr_pct):
+        """تصنيف نظام السوق — dynamic thresholds"""
+        # نظام اتجاه قوي: ADX عالي + اتجاه واضح
         if adx > 30 and trend != "NEUTRAL":
             return "STRONG_TREND"
+        # نظام اتجاه ضعيف: ADX متوسط + اتجاه
         if adx > 20 and trend != "NEUTRAL":
             return "WEAK_TREND"
-        if range_w > 2.0 and adx < 20:
+        # نظام نطاق واسع: BB Width عالي + ADX منخفض
+        if bb_width > 3.0 and adx < 20:
             return "WIDE_RANGE"
-        if range_w > 0.8 and adx < 25:
+        # نظام نطاق ضيق: BB Width متوسط + ADX منخفض
+        if bb_width > 1.0 and adx < 25:
             return "NARROW_RANGE"
+        # نظام عشوائي (choppy): لا اتجاه + تقلب منخفض
         return "CHOPPY"
 
     def _analyze_volume_trend(self, volume):
@@ -286,96 +351,188 @@ class CoinStateAnalyzer:
         obv = (np.sign(close.diff()) * volume).cumsum()
         if len(obv) < 20:
             return "FLAT"
-        obv_slope = (obv.iloc[-1] - obv.iloc[-20]) / max(obv.iloc[-20], 1)
+        obv_slope = (obv.iloc[-1] - obv.iloc[-20]) / max(abs(obv.iloc[-20]), 1)
         if obv_slope > 0.05:
             return "RISING"
         if obv_slope < -0.05:
             return "FALLING"
         return "FLAT"
 
-    def _compute_macd_histogram(self, close):
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
-        macd = ema12 - ema26
-        signal = macd.ewm(span=9, adjust=False).mean()
-        hist = (macd - signal).iloc[-1]
-        return hist
-
-    def _analyze_momentum(self, rsi, macd_hist, vol_ratio, trend):
-        if trend == "UP" and rsi > 55 and macd_hist > 0 and vol_ratio > 1.0:
-            return "ACCELERATING"
-        if trend == "UP" and rsi > 50 and macd_hist > 0:
-            return "STEADY"
-        if trend == "UP" and macd_hist < 0:
-            return "DECAYING"
-        if trend == "DOWN" and rsi < 45 and macd_hist < 0:
-            return "ACCELERATING"
+    def _analyze_momentum(self, rsi, macd_hist, vol_ratio, trend, bb_position):
+        """تحليل الزخم — محسّن مع BB position"""
+        if trend == "UP":
+            if rsi > 55 and macd_hist > 0 and vol_ratio > 1.0 and bb_position > 0.5:
+                return "ACCELERATING"
+            if rsi > 50 and macd_hist > 0:
+                return "STEADY"
+            if macd_hist < 0 and rsi > 65:
+                return "DECAYING"  # RSI مرتفع لكن MACD يتراجع = ضعف
+        elif trend == "DOWN":
+            if rsi < 45 and macd_hist < 0 and vol_ratio > 1.0:
+                return "ACCELERATING"
+            if rsi < 50 and macd_hist < 0:
+                return "STEADY"
         if abs(rsi - 50) < 10 and abs(macd_hist) < 0.001:
             return "NONE"
         return "STEADY"
+
+    def _detect_bullish_divergence(self, close, rsi, df, lookback=20):
+        """كشف تباعد صاعد: سعر ينخفض لكن RSI يرتفع"""
+        if len(close) < lookback * 2:
+            return False
+        recent_close = close.tail(lookback)
+        recent_rsi = df.get("rsi", pd.Series([50] * len(close))).tail(lookback)
+        if len(recent_rsi) < lookback:
+            return False
+        price_low_1 = recent_close.iloc[: lookback // 2].min()
+        price_low_2 = recent_close.iloc[lookback // 2 :].min()
+        rsi_low_1 = recent_rsi.iloc[: lookback // 2].min()
+        rsi_low_2 = recent_rsi.iloc[lookback // 2 :].min()
+        return price_low_2 < price_low_1 and rsi_low_2 > rsi_low_1
+
+    def _detect_bearish_divergence(self, close, rsi, df, lookback=20):
+        """كشف تباعد هابط: سعر يرتفع لكن RSI ينخفض"""
+        if len(close) < lookback * 2:
+            return False
+        recent_close = close.tail(lookback)
+        recent_rsi = df.get("rsi", pd.Series([50] * len(close))).tail(lookback)
+        if len(recent_rsi) < lookback:
+            return False
+        price_high_1 = recent_close.iloc[: lookback // 2].max()
+        price_high_2 = recent_close.iloc[lookback // 2 :].max()
+        rsi_high_1 = recent_rsi.iloc[: lookback // 2].max()
+        rsi_high_2 = recent_rsi.iloc[lookback // 2 :].max()
+        return price_high_2 > price_high_1 and rsi_high_2 < rsi_high_1
 
     def _recommend(
         self,
         trend,
         strength,
         confirmed_4h,
+        confirmed_macd,
+        confirmed_volume,
         regime,
         range_w,
         volatility,
         momentum,
         vol_trend,
+        has_bullish_div,
+        has_bearish_div,
     ):
+        """توصية محسّنة — multi-factor confirmation"""
+        # رفض الاتجاه الهابط
         if trend == "DOWN":
             return "AVOID"
+
+        # رفض التشويش الشديد
         if regime == "CHOPPY" and range_w < 0.8:
             return "AVOID"
+
+        # رفض التقلب العالي مع زخم متدهور
         if volatility == "VERY_HIGH" and momentum == "DECAYING":
             return "AVOID"
-        if regime in ("STRONG_TREND", "WEAK_TREND") and trend == "UP" and confirmed_4h:
-            if strength in ("STRONG", "MODERATE") and momentum in (
-                "ACCELERATING",
-                "STEADY",
+
+        # تباعد هابط = تحذير
+        if has_bearish_div and momentum != "ACCELERATING":
+            return "AVOID"
+
+        # نظام اتجاه + تأكيد 4H + MACD
+        if regime in ("STRONG_TREND", "WEAK_TREND") and trend == "UP":
+            confirmations = sum([confirmed_4h, confirmed_macd, confirmed_volume])
+            if (
+                confirmations >= 2
+                and strength in ("STRONG", "MODERATE")
+                and momentum in ("ACCELERATING", "STEADY")
             ):
                 return "TREND_CONT"
-            return "BREAKOUT"
+            if confirmations >= 2:
+                return "BREAKOUT"
+
+        # نظام نطاق واسع
         if regime == "WIDE_RANGE" and range_w > 1.5:
             return "RANGE"
-        if trend == "UP" and range_w > 1.0:
+
+        # تباعد صاعد + اتجاه صاعد = فرصة
+        if has_bullish_div and trend == "UP" and momentum != "DECAYING":
             return "BREAKOUT"
+
+        # نطاق ضيق
         if trend == "NEUTRAL" and regime == "NARROW_RANGE" and range_w > 0.8:
             return "RANGE"
+
         return "AVOID"
 
     def _confidence(
-        self, trend, strength, confirmed_4h, adx, vol_ratio, rsi, range_w, momentum
+        self,
+        trend,
+        strength,
+        confirmed_4h,
+        confirmed_macd,
+        confirmed_volume,
+        adx,
+        vol_ratio,
+        rsi,
+        range_w,
+        momentum,
+        bb_position,
+        has_bullish_div,
+        has_bearish_div,
     ):
-        score = 40.0
+        """Confidence scoring — regime-aware weighted"""
+        score = 35.0
+
+        # الاتجاه (15 نقطة)
         if trend == "UP":
             score += 10
-        if strength == "STRONG":
-            score += 10
-        elif strength == "MODERATE":
-            score += 5
+            if strength == "STRONG":
+                score += 5
+            elif strength == "MODERATE":
+                score += 3
+
+        # التأكيدات المتعددة (18 نقطة — 6 لكل تأكيد)
         if confirmed_4h:
-            score += 8
+            score += 6
+        if confirmed_macd:
+            score += 6
+        if confirmed_volume:
+            score += 6
+
+        # قوة الاتجاه (ADX) (8 نقاط)
         if adx > 30:
             score += 8
         elif adx > 20:
             score += 4
+
+        # الحجم (8 نقاط)
         if vol_ratio > 2.0:
             score += 8
         elif vol_ratio > 1.3:
             score += 4
+
+        # RSI في المنطقة المثالية (5 نقاط)
         if 40 < rsi < 70:
             score += 5
+        elif rsi > 75 or rsi < 25:
+            score -= 3  # مناطق متطرفة
+
+        # الزخم (7 نقاط)
         if momentum == "ACCELERATING":
             score += 7
         elif momentum == "STEADY":
             score += 3
-        if range_w > 1.5:
+        elif momentum == "DECAYING":
+            score -= 3
+
+        # BB position (3 نقاط)
+        if 0.3 < bb_position < 0.8:
+            score += 3  # ليس عند الحدود المتطرفة
+
+        # التباعد
+        if has_bullish_div:
             score += 5
-        elif range_w > 0.8:
-            score += 2
+        if has_bearish_div:
+            score -= 5
+
         return min(98, max(15, score))
 
     def _risk_profile(self, coin_type, volatility, atr_pct, range_w):

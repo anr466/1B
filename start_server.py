@@ -386,7 +386,7 @@ else:
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """الصفحة الرئيسية"""
     return {
         "message": "Trading AI Bot API v1.0.0",
@@ -401,14 +401,16 @@ async def root():
 
 @app.get("/api/version")
 @app.get("/api/v1/version")
-async def api_version():
+async def api_version(request: Request):
     """معلومات إصدار API"""
     return API_INFO
 
 
 @app.get(f"/api/{API_VERSION}/portfolio")
 @fastapi_limiter.limit("60/minute")
-async def portfolio_endpoint(authorization: str = Header(None, alias="Authorization")):
+async def portfolio_endpoint(
+    request: Request, authorization: str = Header(None, alias="Authorization")
+):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401, detail="Missing or invalid Authorization header"
@@ -469,7 +471,7 @@ async def portfolio_endpoint(authorization: str = Header(None, alias="Authorizat
 
 @app.get("/health")
 @fastapi_limiter.limit("30/minute")
-async def health_check():
+async def health_check(request: Request):
     """فحص صحة النظام"""
     try:
         db = get_db_manager()
@@ -488,7 +490,7 @@ async def health_check():
 
 
 @app.get("/api/connection/info")
-async def get_connection_info():
+async def get_connection_info(request: Request):
     """معلومات الاتصال للتطبيق"""
     return {
         "server_ip": LOCAL_IP,
@@ -587,12 +589,12 @@ def method_not_allowed(error):
 # 🚦 إعداد Rate Limiting
 # ============================================================
 
-limiter = Limiter(
-    app=flask_app,
-    key_func=get_remote_address,
-    default_limits=["100 per minute"],  # الحد الافتراضي: 100 طلب/دقيقة
-    storage_uri="memory://",  # استخدام الذاكرة (يمكن تغييره لـ Redis للإنتاج)
+limiter = FlaskLimiter(
+    key_func=flask_get_remote_address,
+    default_limits=["100 per minute"],
+    storage_uri="memory://",
 )
+limiter.init_app(flask_app)
 
 logger.info("✅ Rate Limiter تم تفعيله بنجاح")
 logger.info("   - الحد الافتراضي: 100 طلب/دقيقة")

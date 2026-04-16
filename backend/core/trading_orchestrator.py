@@ -10,6 +10,7 @@ from backend.core.strategy_router import StrategyRouter
 from backend.core.entry_executor import EntryExecutor
 from backend.core.monitoring_engine import MonitoringEngine
 from backend.core.exit_engine import ExitEngine
+from backend.core.exit_manager import ExitManager
 from backend.core.portfolio_risk_manager import PortfolioRiskManager
 from backend.core.mtf_confirmation import MTFConfirmationEngine
 from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
@@ -17,6 +18,7 @@ from backend.core.modules.trend_module import TrendModule
 from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
 from backend.core.modules.scalping_module import ScalpingModule
+from backend.utils.indicator_calculator import add_all_indicators
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +44,21 @@ class TradingOrchestrator:
         self.adaptive_optimizer = adaptive_optimizer
         self.ml_training_manager = ml_training_manager
 
+        # ===== أنظمة التحليل =====
         self.state_analyzer = CoinStateAnalyzer()
         self.strategy_router = StrategyRouter()
         self.entry_executor = EntryExecutor()
-        self.monitoring_engine = MonitoringEngine()
-        self.exit_engine = ExitEngine()
         self.risk_manager = PortfolioRiskManager()
+        self.risk_manager.load_state()  # 🧠 تحميل التعلم الذاتي
         self.mtf = MTFConfirmationEngine(data_provider=data_provider)
         self.decision_matrix = CognitiveDecisionMatrix()
 
+        # ===== أنظمة الخروج =====
+        self.monitoring_engine = MonitoringEngine()
+        self.exit_engine = ExitEngine()
+        self.exit_manager = ExitManager()
+
+        # ===== وحدات الاستراتيجيات =====
         self.strategy_modules = [
             TrendModule(),
             RangeModule(),
@@ -75,12 +83,22 @@ class TradingOrchestrator:
         tier = self.risk_manager.classify_tier(balance)
         result["tier"] = tier.name
 
+        # تحديث وضع النمو في قاعدة البيانات
+        try:
+            self.risk_manager.update_growth_mode_in_db(
+                self.db, self.user_id, self.is_demo_trading, balance
+            )
+        except Exception:
+            pass  # Non-critical
+
         open_positions = self._get_open_positions()
         result["positions_monitored"] = len(open_positions)
 
+        # ===== المرحلة 1: مراقبة المخارج =====
         closed = self._monitor_and_exit(open_positions)
         result["positions_closed"] = len(closed)
 
+        # ===== المرحلة 2: فحص الحرارة والقدرات =====
         heat = self.risk_manager.check_heat(open_positions, balance)
         result["heat"] = heat
 
@@ -92,14 +110,16 @@ class TradingOrchestrator:
         else:
             logger.info(f"   ⏸️ Cannot open: {reason}")
 
+        # ===== المرحلة 3: تحليل حالات العملات =====
         for sym in symbols:
             try:
                 df = self.data_provider.get_historical_data(sym, "1h", limit=200)
                 if df is None or len(df) < 55:
                     continue
 
+                df_4h = self.data_provider.get_historical_data(sym, "4h", limit=100)
                 df = self._add_indicators(df)
-                state = self.state_analyzer.analyze(sym, df)
+                state = self.state_analyzer.analyze(sym, df, df_4h=df_4h)
                 if state:
                     result["states"].append(
                         {
@@ -109,6 +129,9 @@ class TradingOrchestrator:
                             "recommendation": state.recommendation,
                             "confidence": state.confidence,
                             "coin_type": state.coin_type,
+                            "trend_confirmed_4h": state.trend_confirmed_4h,
+                            "trend_confirmed_macd": state.trend_confirmed_macd,
+                            "trend_confirmed_volume": state.trend_confirmed_volume,
                         }
                     )
             except Exception as e:
@@ -138,13 +161,30 @@ class TradingOrchestrator:
                 if df is None or len(df) < 55:
                     continue
 
+                df_4h = self.data_provider.get_historical_data(symbol, "4h", limit=100)
                 df = self._add_indicators(df)
-                state = self.state_analyzer.analyze(symbol, df)
+                state = self.state_analyzer.analyze(symbol, df, df_4h=df_4h)
+
                 if not state or state.recommendation == "AVOID":
                     if symbol in ["BTCUSDT", "ETHUSDT", "SOLUSDT"]:
                         logger.info(
-                            f"   ⏭️ [{symbol}] AVOID (trend={state.trend if state else 'N/A'}, regime={state.regime if state else 'N/A'})"
+                            f"   ⏭️ [{symbol}] AVOID (trend={state.trend if state else 'N/A'}, "
+                            f"regime={state.regime if state else 'N/A'})"
                         )
+                    continue
+
+                # ===== التحقق من التأكيدات المتعددة =====
+                confirmations = sum(
+                    [
+                        state.trend_confirmed_4h,
+                        state.trend_confirmed_macd,
+                        state.trend_confirmed_volume,
+                    ]
+                )
+                if confirmations < 1 and state.regime in ("STRONG_TREND", "WEAK_TREND"):
+                    logger.info(
+                        f"   ⏭️ [{symbol}] No trend confirmations ({confirmations}/3)"
+                    )
                     continue
 
                 context = {
@@ -152,11 +192,14 @@ class TradingOrchestrator:
                     "regime": state.regime,
                     "volatility": state.volatility,
                     "coin_type": state.coin_type,
-                    "volume_ratio": 1.0,
+                    "volume_ratio": state.volume_ratio,
+                    "bb_position": state.bb_position,
                 }
 
+                # ===== Ensemble Scoring: جمع إشارات الوحدات =====
                 best_signal = None
                 best_score = -1
+                all_signals = []
 
                 for module in self.strategy_modules:
                     if state.regime not in module.supported_regimes():
@@ -166,17 +209,19 @@ class TradingOrchestrator:
                     if not signal:
                         continue
 
-                    logger.info(
-                        f"   📈 [{symbol}] {module.name()} signal: {signal['strategy']} ({signal['type']})"
-                    )
                     signal["entry_price"] = module.get_entry_price(df, signal)
                     signal["stop_loss"] = module.get_stop_loss(df, signal)
                     signal["take_profit"] = module.get_take_profit(df, signal)
 
                     decision = self.decision_matrix.evaluate(signal, context)
+                    signal.update(decision)
+                    all_signals.append({**signal, "module": module.name()})
+
                     logger.info(
-                        f"   📊 [{symbol}] {module.name()}: score={decision['score']}, decision={decision['decision']}"
+                        f"   📈 [{symbol}] {module.name()}: {signal['strategy']} | "
+                        f"score={decision['score']} | decision={decision['decision']}"
                     )
+
                     if decision["decision"] in ["ENTER", "ENTER_REDUCED"]:
                         if decision["score"] > best_score:
                             best_score = decision["score"]
@@ -188,14 +233,30 @@ class TradingOrchestrator:
                     )
                     continue
 
+                # ===== Ensemble bonus: إذا أكثر من وحدة أعطت إشارة =====
+                enter_signals = [
+                    s
+                    for s in all_signals
+                    if s.get("decision") in ("ENTER", "ENTER_REDUCED")
+                ]
+                if len(enter_signals) > 1:
+                    ensemble_bonus = min(10, len(enter_signals) * 3)
+                    best_signal["score"] = best_signal.get("score", 0) + ensemble_bonus
+                    best_signal["ensemble_count"] = len(enter_signals)
+                    logger.info(
+                        f"   🎯 [{symbol}] Ensemble bonus: +{ensemble_bonus} ({len(enter_signals)} signals)"
+                    )
+
+                # ===== ML Brain confirmation =====
                 if self.trading_brain:
                     market_data = {
-                        "rsi": best_signal.get("rsi", 50),
-                        "adx": best_signal.get("adx", 20),
+                        "rsi": state.rsi,
+                        "adx": state.adx,
                         "volatility": state.atr_pct,
                         "trend": state.trend,
-                        "volume_ratio": 1.0,
-                        "bb_position": 0.5,
+                        "volume_ratio": state.volume_ratio,
+                        "bb_position": state.bb_position,
+                        "momentum": state.momentum,
                     }
                     brain_decision = self.trading_brain.think(best_signal, market_data)
                     if brain_decision.get("action") == "REJECT":
@@ -203,7 +264,9 @@ class TradingOrchestrator:
                             f"   🧠 [{symbol}] Brain rejected: {brain_decision.get('reason', 'unknown')}"
                         )
                         continue
+                    best_signal["brain_score"] = brain_decision.get("score", 50)
 
+                # ===== MTF Confirmation =====
                 mtf_result = self.mtf.confirm_entry(symbol, best_signal, df)
                 if not mtf_result["confirmed"]:
                     logger.info(
@@ -212,6 +275,7 @@ class TradingOrchestrator:
                     continue
                 best_signal["mtf_score"] = mtf_result["score"]
 
+                # ===== Risk-based position sizing =====
                 size_result = self.risk_manager.get_position_size(
                     balance, state.coin_type, best_signal["confidence"], 0.05
                 )
@@ -221,8 +285,9 @@ class TradingOrchestrator:
                 logger.info(
                     f"   🎯 [{symbol}] {best_signal['strategy']} | "
                     f"State: {state.trend}/{state.regime} | "
+                    f"Confirmations: {confirmations}/3 | "
                     f"Tier: {tier.name} | Size: ${size_result['position_usd']:.0f} | "
-                    f"CognitiveScore: {best_signal['score']} | Decision: {best_signal['decision']}"
+                    f"Score: {best_signal['score']} | Decision: {best_signal['decision']}"
                 )
 
                 best_signal["position_size"] = size_result["position_usd"]
@@ -245,7 +310,8 @@ class TradingOrchestrator:
             if price:
                 current_prices[pos["symbol"]] = price
 
-        actions = self.monitoring_engine.monitor_positions(positions, current_prices)
+        # استخدام ExitManager الموحد
+        actions = self.exit_manager.evaluate_positions(positions, current_prices)
         closed = []
 
         for action in actions:
@@ -259,21 +325,16 @@ class TradingOrchestrator:
                 if not exit_price:
                     continue
 
-                # MTF Exit Confirmation for discretionary exits (not SL)
                 reason = action.get("reason", "")
-                if reason not in ("STOP_LOSS",):
+                if reason not in ("STOP_LOSS", "TRAILING_STOP"):
                     mtf_exit = self.mtf.confirm_exit(symbol, pos)
                     if mtf_exit["confirmed"]:
                         logger.info(
                             f"   📉 [{symbol}] MTF exit confirmed: {mtf_exit['reason']} (score={mtf_exit['score']})"
                         )
-                    else:
-                        logger.debug(
-                            f"   ⏳ [{symbol}] MTF exit not confirmed: {mtf_exit['reason']}, proceeding anyway"
-                        )
 
                 result = self.exit_engine.execute_exit(
-                    pos, exit_price, action["reason"], close_pct=1.0
+                    pos, exit_price, reason, close_pct=1.0
                 )
                 if result["success"]:
                     self._close_position_in_db(pos, result)
@@ -297,56 +358,7 @@ class TradingOrchestrator:
         return closed
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        if "rsi" not in df.columns:
-            df = self._compute_rsi(df)
-        if "adx" not in df.columns:
-            df = self._compute_adx(df)
-        if "ema21" not in df.columns:
-            close = df["close"]
-            df["ema21"] = close.ewm(span=21, adjust=False).mean()
-            df["ema55"] = close.ewm(span=55, adjust=False).mean()
-        return df
-
-    def _compute_rsi(self, df, period=14):
-        delta = df["close"].diff()
-        gain = delta.where(delta > 0, 0.0)
-        loss = (-delta).where(delta < 0, 0.0)
-        avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-        avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
-        rs = avg_gain / avg_loss.replace(0, float("inf"))
-        df["rsi"] = 100 - (100 / (1 + rs))
-        return df
-
-    def _compute_adx(self, df, period=14):
-        high = df["high"]
-        low = df["low"]
-        close = df["close"]
-
-        plus_dm = high.diff()
-        minus_dm = -low.diff()
-        plus_dm[plus_dm < 0] = 0
-        minus_dm[minus_dm < 0] = 0
-
-        atr = (
-            pd.concat(
-                [
-                    high - low,
-                    (high - close.shift(1)).abs(),
-                    (low - close.shift(1)).abs(),
-                ],
-                axis=1,
-            )
-            .max(axis=1)
-            .rolling(period)
-            .mean()
-        )
-
-        plus_di = 100 * plus_dm.ewm(alpha=1 / period).mean() / atr
-        minus_di = 100 * minus_dm.ewm(alpha=1 / period).mean() / atr
-
-        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
-        df["adx"] = dx.ewm(alpha=1 / period).mean()
-        return df
+        return add_all_indicators(df)
 
     def _get_open_positions(self):
         if not self.db:
@@ -373,15 +385,14 @@ class TradingOrchestrator:
         if not self.db:
             return 1000.0
         try:
-            row = (
-                self.db.get_connection()
-                .execute(
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
                     "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
                     (self.user_id, self.is_demo_trading),
                 )
-                .fetchone()
-            )
-            return float(row[0]) if row and row[0] else 1000.0
+                row = cursor.fetchone()
+                return float(row[0]) if row and row[0] else 1000.0
         except Exception:
             return 1000.0
 
@@ -428,7 +439,6 @@ class TradingOrchestrator:
                         conn, self.user_id, new_balance, self.is_demo_trading
                     )
 
-            # Record trade for ML learning
             if self.ml_training_manager:
                 try:
                     self.ml_training_manager.add_real_trade(
@@ -451,7 +461,6 @@ class TradingOrchestrator:
                 except Exception as ml_err:
                     logger.debug(f"   ⚠️ ML recording failed: {ml_err}")
 
-            # Learn from result via TradingBrain
             if self.trading_brain and result.get("reason"):
                 try:
                     self.trading_brain.learn_from_result(
@@ -465,6 +474,15 @@ class TradingOrchestrator:
                     )
                 except Exception as learn_err:
                     logger.debug(f"   ⚠️ Brain learning failed: {learn_err}")
+
+            # 🧠 تحديث التعلم الذاتي للمخاطر
+            try:
+                self.risk_manager.update_performance(
+                    result.get("pnl_pct", 0), result.get("is_win", False)
+                )
+                self.risk_manager.save_state()
+            except Exception as risk_err:
+                logger.debug(f"   ⚠️ Risk learning update failed: {risk_err}")
 
         except Exception as e:
             logger.error(f"   ❌ DB close error: {e}")

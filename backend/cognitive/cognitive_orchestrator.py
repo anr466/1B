@@ -29,18 +29,40 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from .market_state_detector import (
-    MarketState,
-    MarketStateResult,
-    get_market_state_detector,
-)
-from .market_surveillance_engine import (
-    MarketQuality,
-    MarketPhase,
-    BehaviorSignal,
-    SurveillanceReport,
-    get_surveillance_engine,
-)
+# Optional: market state detector (may not exist)
+try:
+    from .market_state_detector import (
+        MarketState,
+        MarketStateResult,
+        get_market_state_detector,
+    )
+
+    _MARKET_STATE_AVAILABLE = True
+except ImportError:
+    _MARKET_STATE_AVAILABLE = False
+    MarketState = None
+    MarketStateResult = None
+    get_market_state_detector = None
+
+# Optional: market surveillance (may not exist)
+try:
+    from .market_surveillance_engine import (
+        MarketQuality,
+        MarketPhase,
+        BehaviorSignal,
+        SurveillanceReport,
+        get_surveillance_engine,
+    )
+
+    _SURVEILLANCE_AVAILABLE = True
+except ImportError:
+    _SURVEILLANCE_AVAILABLE = False
+    MarketQuality = None
+    MarketPhase = None
+    BehaviorSignal = None
+    SurveillanceReport = None
+    get_surveillance_engine = None
+
 from .multi_exit_engine import ExitUrgency, get_multi_exit_engine
 
 logger = logging.getLogger(__name__)
@@ -143,16 +165,18 @@ class CognitiveOrchestrator:
         self.logger = logger
 
         # الأنظمة الأساسية
-        self.market_detector = get_market_state_detector(
-            self.config.get("market_state", {})
-        )
-        self.surveillance = get_surveillance_engine(
-            self.config.get("surveillance", {})
-        )
-        self.multi_exit = get_multi_exit_engine(
-            self.config.get(
-                "exit", {"max_loss_pct": 0.02, "max_hold_hours": 72}
+        self.market_detector = None
+        if _MARKET_STATE_AVAILABLE and get_market_state_detector:
+            self.market_detector = get_market_state_detector(
+                self.config.get("market_state", {})
             )
+        self.surveillance = None
+        if _SURVEILLANCE_AVAILABLE and get_surveillance_engine:
+            self.surveillance = get_surveillance_engine(
+                self.config.get("surveillance", {})
+            )
+        self.multi_exit = get_multi_exit_engine(
+            self.config.get("exit", {"max_loss_pct": 0.02, "max_hold_hours": 72})
         )
 
         # ذاكرة التعلّم
@@ -160,9 +184,7 @@ class CognitiveOrchestrator:
         self._adaptation_log: List[Dict] = []
 
         # إعدادات
-        self.min_opportunity_score = self.config.get(
-            "min_opportunity_score", 60
-        )
+        self.min_opportunity_score = self.config.get("min_opportunity_score", 60)
         self.max_risk_score = self.config.get("max_risk_score", 58)
         self.min_entry_confidence = self.config.get("min_entry_confidence", 72)
 
@@ -198,9 +220,7 @@ class CognitiveOrchestrator:
         READ → ANALYZE → THINK → INFER → DECIDE
         """
         try:
-            self.logger.info(
-                f"🧠 [{symbol}] Starting cognitive entry analysis"
-            )
+            self.logger.info(f"🧠 [{symbol}] Starting cognitive entry analysis")
 
             # ========== 1. READ: قراءة البيانات ==========
             if df_4h is None or len(df_4h) < 50:
@@ -219,8 +239,7 @@ class CognitiveOrchestrator:
             if not surveillance.is_tradeable:
                 return self._stay_out(
                     symbol,
-                    f"Market not tradeable: {
-                        surveillance.market_quality.value}",
+                    f"Market not tradeable: {surveillance.market_quality.value}",
                     market_state=market_state.state.value,
                     market_quality=surveillance.market_quality.value,
                     market_phase=surveillance.market_phase.value,
@@ -245,9 +264,9 @@ class CognitiveOrchestrator:
             if surveillance.opportunity_score < self.min_opportunity_score:
                 return self._stay_out(
                     symbol,
-                    f"Opportunity too low: {
-                        surveillance.opportunity_score:.0f}% < {
-                        self.min_opportunity_score}%",
+                    f"Opportunity too low: {surveillance.opportunity_score:.0f}% < {
+                        self.min_opportunity_score
+                    }%",
                     market_state=market_state.state.value,
                     market_quality=surveillance.market_quality.value,
                     market_phase=surveillance.market_phase.value,
@@ -258,9 +277,9 @@ class CognitiveOrchestrator:
             if surveillance.risk_score > self.max_risk_score:
                 return self._stay_out(
                     symbol,
-                    f"Risk too high: {
-                        surveillance.risk_score:.0f}% > {
-                        self.max_risk_score}%",
+                    f"Risk too high: {surveillance.risk_score:.0f}% > {
+                        self.max_risk_score
+                    }%",
                     market_state=market_state.state.value,
                     market_quality=surveillance.market_quality.value,
                     market_phase=surveillance.market_phase.value,
@@ -289,9 +308,7 @@ class CognitiveOrchestrator:
             confidence = entry_signal.get("confidence", 0)
 
             # تعديل الثقة بناءً على سياق السوق
-            confidence = self._adjust_confidence(
-                confidence, market_state, surveillance
-            )
+            confidence = self._adjust_confidence(confidence, market_state, surveillance)
 
             # تعديل حد الثقة حسب فئة العملة
             category_adj = 0
@@ -306,8 +323,7 @@ class CognitiveOrchestrator:
             if confidence < required_confidence:
                 return self._stay_out(
                     symbol,
-                    f"Confidence too low: {
-                        confidence:.0f}% < {required_confidence}%",
+                    f"Confidence too low: {confidence:.0f}% < {required_confidence}%",
                     market_state=market_state.state.value,
                     market_quality=surveillance.market_quality.value,
                     market_phase=surveillance.market_phase.value,
@@ -347,15 +363,14 @@ class CognitiveOrchestrator:
             )
 
             # بناء منطق الدخول
-            entry_logic = f"Strategy: {
-                entry_strategy.value} | " f"Market: {
-                market_state.state.value} (conf {
-                market_state.confidence:.0f}%) | " f"Phase: {
-                surveillance.market_phase.value} | " f"Quality: {
-                surveillance.market_quality.value} | " f"Signal: {
-                entry_signal.get(
-                    'signal_type',
-                    'combined')}"
+            entry_logic = (
+                f"Strategy: {entry_strategy.value} | "
+                f"Market: {market_state.state.value} (conf {
+                    market_state.confidence:.0f}%) | "
+                f"Phase: {surveillance.market_phase.value} | "
+                f"Quality: {surveillance.market_quality.value} | "
+                f"Signal: {entry_signal.get('signal_type', 'combined')}"
+            )
 
             # بناء منطق الخروج
             sl_pct = abs(entry_price - stop_loss) / entry_price * 100
@@ -454,10 +469,9 @@ class CognitiveOrchestrator:
                     opportunity_score=surveillance.opportunity_score,
                     risk_score=surveillance.risk_score,
                     reasoning=exit_decision.reasoning,
-                    exit_logic=f"Exit {
-                        exit_pct *
-                        100:.0f}%: {
-                        exit_decision.primary_reason.value}",
+                    exit_logic=f"Exit {exit_pct * 100:.0f}%: {
+                        exit_decision.primary_reason.value
+                    }",
                     warnings=surveillance.warnings,
                 )
 
@@ -524,13 +538,9 @@ class CognitiveOrchestrator:
 
         # 3. Breakout Confirmation - أفضل في RANGE مع تضييق
         if market_state.state == MarketState.RANGE:
-            signal = self._check_breakout_entry(
-                df_4h, market_state, surveillance
-            )
+            signal = self._check_breakout_entry(df_4h, market_state, surveillance)
             if signal:
-                candidates.append(
-                    (EntryStrategy.BREAKOUT_CONFIRMATION, signal)
-                )
+                candidates.append((EntryStrategy.BREAKOUT_CONFIRMATION, signal))
 
         # 4. Volatility Expansion - أفضل بعد انكماش التقلب
         if surveillance.volatility_state in ["low", "normal"]:
@@ -600,9 +610,7 @@ class CognitiveOrchestrator:
             # Volume confirmation
             vol = df_4h["volume"]
             vol_ratio = (
-                vol.iloc[-1] / vol.rolling(20).mean().iloc[-1]
-                if len(vol) >= 20
-                else 1
+                vol.iloc[-1] / vol.rolling(20).mean().iloc[-1] if len(vol) >= 20 else 1
             )
             vol_ok = vol_ratio > 0.8
 
@@ -679,17 +687,10 @@ class CognitiveOrchestrator:
             # Volume not dropping (buying interest present)
             vol = df_4h["volume"]
             vol_ratio = (
-                vol.iloc[-1] / vol.rolling(20).mean().iloc[-1]
-                if len(vol) >= 20
-                else 1
+                vol.iloc[-1] / vol.rolling(20).mean().iloc[-1] if len(vol) >= 20 else 1
             )
 
-            if (
-                at_pullback_zone
-                and above_ema55
-                and rsi_pullback
-                and bullish_candle
-            ):
+            if at_pullback_zone and above_ema55 and rsi_pullback and bullish_candle:
                 confidence = 52
                 if market_state.state == MarketState.UPTREND:
                     confidence += 15
@@ -814,9 +815,7 @@ class CognitiveOrchestrator:
             # Was compressed, now expanding
             min_width = bb_width.tail(10).min()
             current_width = bb_width.iloc[-1]
-            expanding = (
-                current_width > min_width * 1.8
-            )  # Stronger expansion required
+            expanding = current_width > min_width * 1.8  # Stronger expansion required
 
             # Expansion is bullish (price above SMA AND rising)
             bullish_expansion = current > sma_20.iloc[-1]
@@ -911,8 +910,7 @@ class CognitiveOrchestrator:
             bullish_candle = close.iloc[-1] > df_4h["open"].iloc[-1]
             body = abs(close.iloc[-1] - df_4h["open"].iloc[-1])
             lower_wick = (
-                min(close.iloc[-1], df_4h["open"].iloc[-1])
-                - df_4h["low"].iloc[-1]
+                min(close.iloc[-1], df_4h["open"].iloc[-1]) - df_4h["low"].iloc[-1]
             )
             hammer = lower_wick > body * 2  # Long lower wick
 
@@ -990,10 +988,7 @@ class CognitiveOrchestrator:
         # Behavior signals
         if BehaviorSignal.MOMENTUM_DIVERGENCE in surveillance.behavior_signals:
             adjusted -= 10
-        if (
-            BehaviorSignal.OPPORTUNITY_APPROACHING
-            in surveillance.behavior_signals
-        ):
+        if BehaviorSignal.OPPORTUNITY_APPROACHING in surveillance.behavior_signals:
             adjusted += 5
 
         return max(0, min(100, adjusted))
@@ -1047,9 +1042,7 @@ class CognitiveOrchestrator:
             strategy, f"SL at ${stop_loss:.2f} (-{sl_pct:.1f}%)"
         )
 
-    def _stay_out(
-        self, symbol: str, reason: str, **kwargs
-    ) -> CognitiveDecision:
+    def _stay_out(self, symbol: str, reason: str, **kwargs) -> CognitiveDecision:
         """قرار البقاء خارج السوق"""
         return CognitiveDecision(
             action=CognitiveAction.STAY_OUT,

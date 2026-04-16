@@ -794,16 +794,16 @@ class PositionManagerMixin:
 
             self.logger.info(
                 f"   💱 Executing REAL close on Binance: {position_type} {symbol} qty={
-                    quantity:.6f}"
+                    closing_quantity:.6f}"
             )
 
             if position_type == "LONG":
                 close_result = self._execute_real_order_with_retry(
-                    "sell", symbol, quantity, "close"
+                    "sell", symbol, closing_quantity, "close"
                 )
             else:
                 close_result = self._execute_real_order_with_retry(
-                    "buy", symbol, quantity, "close"
+                    "buy", symbol, closing_quantity, "close"
                 )
 
             if close_result.get("success"):
@@ -1037,25 +1037,30 @@ class PositionManagerMixin:
         }
 
     def _open_position(self, symbol: str, signal: Dict) -> Optional[Dict]:
-        """فتح صفقة جديدة (LONG أو SHORT) - Thread-safe with lock"""
-        # ✅ TOCTOU Prevention: Acquire lock before check-and-execute
+        """فتح صفقة جديدة (LONG أو SHORT) — Thread-safe مع TOCTOU prevention مزدوج"""
+        # ===== المرحلة 1: فحص المخاطر داخل القفل (atomic مع التنفيذ) =====
+        locked_balance = None
         with TradeExecutionLock(self.logger) as acquired:
             if not acquired:
                 return None
 
-            # Re-verify risk gates while holding lock (atomic with execution)
+            # إعادة قراءة الحالة الطازجة داخل القفل
             open_positions = self._get_open_positions()
             portfolio = self._load_user_portfolio()
-            risk_balance = portfolio.get("total_value", portfolio.get("balance", 0))
+            # ✅ توحيد مصدر الرصيد: available_balance هو المصدر الوحيد
+            locked_balance = portfolio.get(
+                "available_balance", portfolio.get("balance", 0)
+            )
 
-            can_trade, reason = self._check_risk_gates(open_positions, risk_balance)
+            can_trade, reason = self._check_risk_gates(open_positions, locked_balance)
             if not can_trade:
                 self.logger.warning(
                     f"   🛡️ [{symbol}] Lock-time risk gate BLOCKED: {reason}"
                 )
                 return None
 
-        balance = self.user_portfolio.get("balance", 0)
+        # ===== المرحلة 2: التحضير خارج القفل (لا يحجز موارد) =====
+        balance = locked_balance
 
         # ✅ Phase 0: حساب حجم الصفقة عبر Kelly (بدلاً من النسبة الثابتة)
         position_size = self._calculate_position_size(balance, signal)
@@ -1232,6 +1237,26 @@ class PositionManagerMixin:
                 metadata_json = _json.dumps({"entry_indicators": entry_indicators})
             except Exception:
                 pass
+
+        # ========== فحص مخاطر نهائي قبل التنفيذ (TOCTOU layer 2) ==========
+        with TradeExecutionLock(self.logger) as acquired:
+            if acquired:
+                open_positions = self._get_open_positions()
+                # ✅ قراءة الرصيد الطازج من DB
+                fresh_portfolio = self._load_user_portfolio()
+                fresh_balance = fresh_portfolio.get(
+                    "available_balance", fresh_portfolio.get("balance", 0)
+                )
+                can_trade, reason = self._check_risk_gates(
+                    open_positions, fresh_balance
+                )
+                if not can_trade:
+                    self.logger.warning(
+                        f"   🛡️ [{symbol}] Pre-execution risk gate BLOCKED: {reason}"
+                    )
+                    return None
+                # تحديث الرصيد المستخدم للحفظ
+                balance = fresh_balance
 
         # ========== حفظ الصفقة وخصم الرصيد بشكل atomic ==========
         try:

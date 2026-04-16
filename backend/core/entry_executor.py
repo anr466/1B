@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 from typing import Dict, Optional
 from backend.core.coin_state_analyzer import CoinState
+from backend.utils.indicator_calculator import compute_atr
 
 logger = logging.getLogger(__name__)
 
@@ -198,15 +199,8 @@ class EntryExecutor:
         return default if pd.isna(val) else val
 
     def _compute_atr(self, df):
-        tr = pd.concat(
-            [
-                df["high"] - df["low"],
-                (df["high"] - df["close"].shift(1)).abs(),
-                (df["low"] - df["close"].shift(1)).abs(),
-            ],
-            axis=1,
-        ).max(axis=1)
-        atr = tr.rolling(14).mean().iloc[-1]
+        atr_series = compute_atr(df)
+        atr = atr_series.iloc[-1]
         return atr, atr
 
     def _vol_ratio(self, df):

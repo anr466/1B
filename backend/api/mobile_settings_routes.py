@@ -10,6 +10,7 @@ import os
 import re
 
 from backend.utils.trading_context import get_trading_context
+from config.security.encryption_service import encrypt_binance_keys
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,12 @@
+{
+  "total_trades": 3,
+  "winning_trades": 2,
+  "avg_win_pct": 0.0165,
+  "avg_loss_pct": -0.011000000000000001,
+  "consecutive_losses": 0,
+  "last_10_results": [
+    true,
+    false,
+    true
+  ]
+}

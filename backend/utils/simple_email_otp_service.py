@@ -16,9 +16,7 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ),
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
 )
 
 
@@ -68,9 +66,7 @@ class SimpleEmailOTPService:
                 # حساب الوقت المتبقي
                 created_at_str = result[0]
                 try:
-                    created_at = datetime.strptime(
-                        created_at_str, "%Y-%m-%d %H:%M:%S"
-                    )
+                    created_at = datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S")
                 except Exception:
                     return True, None
 
@@ -120,14 +116,13 @@ class SimpleEmailOTPService:
                     """
                     INSERT INTO verification_codes (
                         email, otp_code, purpose, expires_at, created_at
-                    ) VALUES (%s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                 """,
                     (
                         email.lower(),
                         otp_code,
                         purpose,
                         expires_timestamp,
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     ),
                 )
 
@@ -198,7 +193,8 @@ class SimpleEmailOTPService:
 
                 if deleted_expired + deleted_verified + deleted_failed > 0:
                     print(
-                        f"🧹 OTP Cleanup: منتهية={deleted_expired}, مستخدمة={deleted_verified}, فاشلة={deleted_failed}")
+                        f"🧹 OTP Cleanup: منتهية={deleted_expired}, مستخدمة={deleted_verified}, فاشلة={deleted_failed}"
+                    )
 
                 return True
         except Exception as e:
@@ -311,9 +307,7 @@ class SimpleEmailOTPService:
             print(f"❌ خطأ في التحقق من OTP: {e}")
             return False, {"error": "خطأ في التحقق"}
 
-    def _send_email_async(
-        self, email: str, otp_code: str, purpose: str
-    ) -> None:
+    def _send_email_async(self, email: str, otp_code: str, purpose: str) -> None:
         try:
             self._send_email(email, otp_code, purpose)
         except Exception as e:

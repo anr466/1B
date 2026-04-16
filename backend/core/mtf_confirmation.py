@@ -2,7 +2,9 @@
 
 import logging
 import pandas as pd
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
+
+from backend.utils.indicator_calculator import add_all_indicators
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class MTFConfirmationEngine:
 
         reversal_15m = self._check_reversal_15m(df_15m, is_trend_strategy)
         momentum_5m = self._check_momentum_5m(df_5m, is_trend_strategy)
+        volume_confirm = self._check_volume_confirmation(df_15m, df_5m, signal_1h)
         trend_alignment = (
             self._check_trend_alignment(df_1h, df_15m, df_5m)
             if df_1h is not None
@@ -37,18 +40,22 @@ class MTFConfirmationEngine:
         reasons = []
 
         if reversal_15m["confirmed"]:
-            score += 40
+            score += 35
             reasons.append(reversal_15m["reason"])
         elif reversal_15m.get("acceptable"):
-            score += 30
+            score += 25
             reasons.append("15m Pullback acceptable")
 
         if momentum_5m["confirmed"]:
-            score += 35
+            score += 30
             reasons.append(momentum_5m["reason"])
         elif momentum_5m.get("acceptable"):
-            score += 25
+            score += 20
             reasons.append("5m Momentum acceptable")
+
+        if volume_confirm["confirmed"]:
+            score += 10
+            reasons.append(volume_confirm["reason"])
 
         if trend_alignment:
             score += 25
@@ -109,27 +116,7 @@ class MTFConfirmationEngine:
             return None
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        close = df["close"]
-        df["rsi"] = self._compute_rsi(close)
-        df["ema8"] = close.ewm(span=8, adjust=False).mean()
-        df["ema21"] = close.ewm(span=21, adjust=False).mean()
-
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
-        df["macd"] = ema12 - ema26
-        df["macd_signal"] = df["macd"].ewm(span=9, adjust=False).mean()
-        df["macd_hist"] = df["macd"] - df["macd_signal"]
-
-        return df
-
-    def _compute_rsi(self, close, period=14):
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0.0)
-        loss = (-delta).where(delta < 0, 0.0)
-        avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-        avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
-        rs = avg_gain / avg_loss.replace(0, float("inf"))
-        return 100 - (100 / (1 + rs))
+        return add_all_indicators(df)
 
     def _check_reversal_15m(self, df: pd.DataFrame, is_trend_strategy=False) -> Dict:
         rsi = df["rsi"].iloc[-1]
@@ -215,6 +202,39 @@ class MTFConfirmationEngine:
             return True
 
         return False
+
+    def _check_volume_confirmation(
+        self, df_15m: pd.DataFrame, df_5m: pd.DataFrame, signal: Dict
+    ) -> Dict:
+        """تأكيد الحجم — حجم متزايد يدعم الإشارة"""
+        vol_15m = df_15m["volume"]
+        vol_5m = df_5m["volume"]
+
+        vol_avg_15m = (
+            vol_15m.rolling(20).mean().iloc[-1]
+            if len(vol_15m) >= 20
+            else vol_15m.mean()
+        )
+        vol_curr_15m = vol_15m.iloc[-1]
+        vol_ratio_15m = vol_curr_15m / vol_avg_15m if vol_avg_15m > 0 else 1
+
+        vol_avg_5m = (
+            vol_5m.rolling(20).mean().iloc[-1] if len(vol_5m) >= 20 else vol_5m.mean()
+        )
+        vol_curr_5m = vol_5m.iloc[-1]
+        vol_ratio_5m = vol_curr_5m / vol_avg_5m if vol_avg_5m > 0 else 1
+
+        if vol_ratio_15m > 1.5 and vol_ratio_5m > 1.3:
+            return {
+                "confirmed": True,
+                "reason": f"Volume surge (15m:{vol_ratio_15m:.1f}x, 5m:{vol_ratio_5m:.1f}x)",
+            }
+        if vol_ratio_15m > 1.2:
+            return {
+                "confirmed": True,
+                "reason": f"Volume increasing (15m:{vol_ratio_15m:.1f}x)",
+            }
+        return {"confirmed": False, "reason": f"Volume flat (15m:{vol_ratio_15m:.1f}x)"}
 
     def _check_weakness_15m(self, df: pd.DataFrame) -> Dict:
         rsi = df["rsi"].iloc[-1]

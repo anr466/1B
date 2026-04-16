@@ -68,9 +68,7 @@ class StateManager:
                         raw_subsystem_status = row[8]
                         if raw_subsystem_status:
                             try:
-                                subsystem_data = json.loads(
-                                    raw_subsystem_status
-                                )
+                                subsystem_data = json.loads(raw_subsystem_status)
                                 if not isinstance(subsystem_data, dict):
                                     subsystem_data = {}
                             except Exception:
@@ -115,14 +113,10 @@ class StateManager:
             merged_state = dict(old_state)
 
             for key, value in (state_data or {}).items():
-                if key in {"activity", "heartbeat"} and isinstance(
-                    value, dict
-                ):
+                if key in {"activity", "heartbeat"} and isinstance(value, dict):
                     current_value = merged_state.get(key, {})
                     merged_value = (
-                        dict(current_value)
-                        if isinstance(current_value, dict)
-                        else {}
+                        dict(current_value) if isinstance(current_value, dict) else {}
                     )
                     for nested_key, nested_value in value.items():
                         if isinstance(nested_value, dict) and isinstance(
@@ -222,9 +216,7 @@ class StateManager:
             }
 
         state["heartbeat"]["last_beat"] = datetime.now().isoformat()
-        state["heartbeat"]["beats_count"] = (
-            state["heartbeat"].get("beats_count", 0) + 1
-        )
+        state["heartbeat"]["beats_count"] = state["heartbeat"].get("beats_count", 0) + 1
         state["heartbeat"]["missed_beats"] = 0  # Reset missed beats
 
         return self.write_state(state, user="heartbeat")
@@ -247,9 +239,7 @@ class StateManager:
             state["activity"][component] = {}
 
         # Update last_activity timestamp
-        state["activity"][component][
-            "last_activity"
-        ] = datetime.now().isoformat()
+        state["activity"][component]["last_activity"] = datetime.now().isoformat()
 
         # Update other fields
         state["activity"][component].update(kwargs)
@@ -391,9 +381,7 @@ class StateManager:
 
         return state
 
-    def _log_audit(
-        self, old_state: Dict, new_state: Dict, user: Optional[str] = None
-    ):
+    def _log_audit(self, old_state: Dict, new_state: Dict, user: Optional[str] = None):
         """
         تسجيل التغيير في audit trail (DB: activity_logs table)
 
@@ -494,19 +482,19 @@ def get_state_manager() -> StateManager:
 
 
 if __name__ == "__main__":
-    # اختبار سريع
-    print("🧪 اختبار StateManager...")
+    # اختبار سريع — يستخدم DB مباشرة
+    print("🧪 اختبار StateManager (DB-only)...")
 
-    sm = StateManager("tmp/test_state.json")
+    sm = StateManager()
 
     # Test write
     print("\n1️⃣ كتابة حالة جديدة...")
-    sm.write_state({"status": "running", "pid": 12345}, user="test_user")
+    sm.write_state({"status": "running", "message": "اختبار"}, user="test_user")
 
     # Test read
     print("2️⃣ قراءة الحالة...")
     state = sm.read_state()
-    print(f"   الحالة: {state}")
+    print(f"   الحالة: {state.get('status')}")
 
     # Test update
     print("3️⃣ تحديث الحالة...")
@@ -515,9 +503,6 @@ if __name__ == "__main__":
     # Test audit trail
     print("4️⃣ Audit trail:")
     for entry in sm.get_audit_trail(limit=5):
-        print(f"   {
-            entry['timestamp']}: {
-            entry['old_status']} → {
-            entry['new_status']}")
+        print(f"   {entry['timestamp']}: {entry['old_status']} → {entry['new_status']}")
 
     print("\n✅ الاختبار ناجح!")

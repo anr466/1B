@@ -1,37 +1,62 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Smart Portfolio Risk Manager — محرك النمو الذكي
+================================================
+يدير المخاطر وحجم الصفقات بذكاء بناءً على:
+1. حجم المحفظة (وضع الإطلاق، النمو، الحماية).
+2. الأداء الفعلي (تعلم ذاتي وتعديل Kelly).
+3. نوع العملة (MAJOR, MEME, VOLATILE).
+4. حرارة المحفظة (Portfolio Heat).
+"""
 
 import logging
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
-from datetime import datetime
+import json
+import os
+from typing import Dict, List, Optional
+from dataclasses import dataclass, asdict
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+# ملف حفظ التعلم الذاتي
+LEARNING_STATE_FILE = "data/risk_learning_state.json"
+
+
+# ==================== 1. أوضاع النمو الذكية ====================
+
+
+class GrowthMode(Enum):
+    LAUNCH = "🚀 Launch Mode"  # للمحافظ الصغيرة جداً (<$100)
+    GROWTH = "📈 Growth Mode"  # للمحافظ المتوسطة ($100 - $1k)
+    STANDARD = "⚖️ Standard Mode"  # للمحافظ الكبيرة ($1k - $10k)
+    PRO = "🛡️ Pro Mode"  # للمحافظ الضخمة (>$10k)
+
 
 @dataclass
-class PortfolioTier:
-    name: str
-    min_balance: float
-    max_balance: float
-    max_position_pct: float
-    max_heat_pct: float
-    max_daily_loss_pct: float
-    max_drawdown_pct: float
-    max_positions: int
-    max_same_direction: int
-    kelly_fraction: float
-    min_position_usd: float
+class RiskTier:
+    mode: GrowthMode
+    risk_pct: float  # نسبة المخاطرة لكل صفقة
+    max_positions: int  # الحد الأقصى للصفقات المفتوحة
+    max_heat_pct: float  # الحد الأقصى للحرارة الكلية
+    max_daily_loss_pct: float  # حد الخسارة اليومي
+    kelly_multiplier: float  # مضاعف Kelly (للتسريع أو التباطؤ)
 
 
+# تعريف المستويات
 TIERS = [
-    PortfolioTier("MICRO", 0, 100, 0.05, 0.03, 0.03, 0.10, 2, 1, 0.25, 5),
-    PortfolioTier("SMALL", 100, 500, 0.08, 0.04, 0.04, 0.15, 3, 2, 0.33, 8),
-    PortfolioTier("MEDIUM", 500, 2000, 0.10, 0.05, 0.05, 0.20, 4, 2, 0.50, 10),
-    PortfolioTier("LARGE", 2000, 10000, 0.12, 0.06, 0.06, 0.25, 5, 3, 0.50, 15),
-    PortfolioTier("XLARGE", 10000, 50000, 0.15, 0.08, 0.08, 0.30, 6, 3, 0.50, 20),
-    PortfolioTier("WHALE", 50000, float("inf"), 0.20, 0.10, 0.10, 0.35, 8, 4, 0.50, 50),
+    # وضع الإطلاق: مخاطرة عالية لكسر حاجز الـ $10
+    RiskTier(GrowthMode.LAUNCH, 0.20, 1, 0.20, 0.15, 1.5),
+    # وضع النمو: توازن بين السرعة والأمان
+    RiskTier(GrowthMode.GROWTH, 0.10, 2, 0.15, 0.10, 1.0),
+    # الوضع القياسي: حماية رأس المال
+    RiskTier(GrowthMode.STANDARD, 0.05, 4, 0.10, 0.05, 0.75),
+    # وضع المحترفين: نمو بطيء ومستقر جداً
+    RiskTier(GrowthMode.PRO, 0.02, 6, 0.08, 0.03, 0.5),
 ]
 
+
+# ==================== 2. ملف مخاطر العملات ====================
 
 COIN_RISK_PROFILE = {
     "MAJOR": {"max_pos_pct": 1.0, "sl_atr_mult": 3.5, "risk_weight": 1.0},
@@ -43,170 +68,237 @@ COIN_RISK_PROFILE = {
 
 class PortfolioRiskManager:
     def __init__(self):
-        self.tier: Optional[PortfolioTier] = None
-        self.balance = 0.0
+        self.logger = logger
+        # بيانات الأداء للتعلم الذاتي (يمكن ربطها بقاعدة البيانات لاحقاً)
+        self.performance = {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "avg_win_pct": 0.015,  # افتراضي
+            "avg_loss_pct": -0.010,  # افتراضي
+            "consecutive_losses": 0,
+            "last_10_results": [],
+        }
 
-    def classify_tier(self, balance: float) -> PortfolioTier:
-        for t in TIERS:
-            if t.min_balance <= balance < t.max_balance:
-                self.tier = t
-                self.balance = balance
-                return t
-        self.tier = TIERS[-1]
-        self.balance = balance
-        return self.tier
+    def get_tier(self, balance: float) -> RiskTier:
+        """تحديد وضع النمو بناءً على الرصيد"""
+        if balance < 100:
+            return TIERS[0]  # Launch
+        elif balance < 1000:
+            return TIERS[1]  # Growth
+        elif balance < 10000:
+            return TIERS[2]  # Standard
+        else:
+            return TIERS[3]  # Pro
 
-    def get_position_size(
-        self, balance: float, coin_type: str, signal_confidence: float, kelly_pct: float
-    ) -> Dict:
-        tier = self.classify_tier(balance)
-        coin = COIN_RISK_PROFILE.get(coin_type, COIN_RISK_PROFILE["MID_CAP"])
+    def classify_tier(self, balance: float) -> RiskTier:
+        """Alias for get_tier for backward compatibility"""
+        return self.get_tier(balance)
 
-        base_pct = tier.max_position_pct
-        coin_limit_pct = base_pct * coin["max_pos_pct"]
+    def update_performance(self, pnl_pct: float, is_win: bool):
+        """تحديث الأداء الذاتي (يتم استدعاؤه بعد إغلاق كل صفقة)"""
+        self.performance["total_trades"] += 1
+        if is_win:
+            self.performance["winning_trades"] += 1
+            self.performance["consecutive_losses"] = 0
+        else:
+            self.performance["consecutive_losses"] += 1
 
-        confidence_adj = 0.5 + (signal_confidence / 100.0) * 0.5
-        kelly_adj = min(kelly_pct, tier.max_position_pct * 0.5)
+        # تحديث المتوسطات المتحركة
+        # (بسيط هنا، يمكن استخدام EMA للدقة)
+        if self.performance["total_trades"] > 1:
+            w = 0.1  # وزن للصفقة الجديدة
+            self.performance["avg_win_pct"] = (
+                (
+                    self.performance["avg_win_pct"] * (1 - w)
+                    + (pnl_pct if is_win else 0) * w
+                )
+                if is_win
+                else self.performance["avg_win_pct"]
+            )
 
-        position_pct = min(
-            coin_limit_pct, max(kelly_adj, base_pct * 0.3 * confidence_adj)
+            self.performance["avg_loss_pct"] = (
+                (
+                    self.performance["avg_loss_pct"] * (1 - w)
+                    + (pnl_pct if not is_win else 0) * w
+                )
+                if not is_win
+                else self.performance["avg_loss_pct"]
+            )
+
+        self.performance["last_10_results"].append(is_win)
+        if len(self.performance["last_10_results"]) > 10:
+            self.performance["last_10_results"].pop(0)
+
+    def get_adaptive_kelly(self) -> float:
+        """حساب Kelly بناءً على الأداء الفعلي"""
+        p = self.performance["winning_trades"] / max(
+            self.performance["total_trades"], 1
+        )
+        b = (
+            abs(self.performance["avg_win_pct"] / self.performance["avg_loss_pct"])
+            if self.performance["avg_loss_pct"] != 0
+            else 1
         )
 
-        position_usd = balance * position_pct
-        position_usd = max(tier.min_position_usd, position_usd)
+        if b == 0:
+            return 0.0
 
-        max_usd = balance * coin_limit_pct
-        position_usd = min(position_usd, max_usd)
+        kelly = (p * b - (1 - p)) / b
 
-        if position_usd < tier.min_position_usd:
-            return {
-                "can_trade": False,
-                "reason": f"Below minimum ${tier.min_position_usd}",
-                "position_usd": 0,
-                "position_pct": 0,
-            }
+        # عقوبة الخسائر المتتالية
+        if self.performance["consecutive_losses"] >= 3:
+            kelly *= 0.5  # تقليل المخاطرة للنصف
+            self.logger.warning(f"⚠️ 3 consecutive losses: Kelly reduced by 50%")
+
+        return max(0.01, min(kelly, 0.25))  # حدود 1% - 25%
+
+    def get_position_size(
+        self, balance: float, coin_type: str, confidence: float, risk_per_trade: float
+    ) -> Dict:
+        """
+        حساب حجم الصفقة الذكي
+        """
+        tier = self.get_tier(balance)
+        coin_profile = COIN_RISK_PROFILE.get(coin_type, COIN_RISK_PROFILE["MID_CAP"])
+
+        # 1. حساب الحجم الأساسي بناءً على وضع النمو
+        base_size = balance * tier.risk_pct
+
+        # 2. تطبيق قيود نوع العملة
+        max_coin_size = balance * coin_profile["max_pos_pct"]
+        size = min(base_size, max_coin_size)
+
+        # 3. تعديل الثقة (Confidence)
+        # إذا كانت الثقة منخفضة، نقلل الحجم
+        if confidence < 60:
+            size *= 0.7
+        elif confidence > 85:
+            size *= 1.2
+
+        # 4. تطبيق Kelly الديناميكي (اختياري، يمكن تفعيله)
+        # kelly = self.get_adaptive_kelly()
+        # size = min(size, balance * kelly * tier.kelly_multiplier)
+
+        # 5. الحد الأدنى للصفقة (Binance Limit)
+        min_size = 10.0
+        can_trade = size >= min_size
+
+        if not can_trade:
+            self.logger.info(
+                f"🚫 Size too small: ${size:.2f} < ${min_size} (Tier: {tier.mode.value})"
+            )
 
         return {
-            "can_trade": True,
-            "position_usd": round(position_usd, 2),
-            "position_pct": round(position_usd / balance * 100, 2),
-            "tier": tier.name,
-            "coin_type": coin_type,
-            "coin_limit_pct": round(coin_limit_pct * 100, 2),
-            "kelly_used_pct": round(kelly_adj * 100, 2),
+            "position_usd": size,
+            "position_pct": size / balance if balance > 0 else 0,
+            "can_trade": can_trade,
+            "tier": tier.mode.value,
+            "max_positions": tier.max_positions,
+            "reason": f"{tier.mode.value} | Risk={tier.risk_pct * 100:.0f}%",
         }
 
     def check_heat(self, open_positions: List[Dict], balance: float) -> Dict:
-        tier = self.classify_tier(balance)
+        """فحص حرارة المحفظة مع مراعاة وضع النمو"""
+        tier = self.get_tier(balance)
         total_risk = 0
-        risks = []
 
         for pos in open_positions:
             entry = pos.get("entry_price", 0)
             sl = pos.get("stop_loss", 0)
             qty = pos.get("quantity", 0)
-            coin_type = pos.get("coin_type", "MID_CAP")
-            risk = abs(entry - sl) * qty if entry > 0 and sl > 0 else 0
-            risk_pct = (risk / balance * 100) if balance > 0 else 0
-            total_risk += risk
-            risks.append(
-                {
-                    "symbol": pos.get("symbol"),
-                    "risk_usd": round(risk, 2),
-                    "risk_pct": round(risk_pct, 3),
-                }
-            )
+            if entry > 0 and sl > 0 and qty > 0:
+                total_risk += abs(entry - sl) * qty
 
-        heat_pct = (total_risk / balance * 100) if balance > 0 else 0
-        available = max(0, tier.max_heat_pct * 100 - heat_pct)
+        heat_pct = (total_risk / balance) * 100 if balance > 0 else 0
+        max_heat_pct = tier.max_heat_pct * 100
 
         return {
-            "tier": tier.name,
-            "current_heat_pct": round(heat_pct, 2),
-            "max_heat_pct": round(tier.max_heat_pct * 100, 2),
-            "available_heat_pct": round(available, 2),
-            "can_open": heat_pct < tier.max_heat_pct * 100,
+            "current_heat_pct": heat_pct,
+            "max_heat_pct": max_heat_pct,
+            "available_heat_pct": max(0, max_heat_pct - heat_pct),
+            "can_open_new": heat_pct < max_heat_pct,
             "positions_count": len(open_positions),
             "max_positions": tier.max_positions,
-            "risks": risks,
+            "tier": tier.mode.value,
         }
 
-    def check_daily_limits(self, daily_state: Dict, balance: float) -> Tuple[bool, str]:
-        tier = self.classify_tier(balance)
-
-        if daily_state.get("trades_today", 0) >= tier.max_positions * 2:
-            return (
-                False,
-                f"Daily trade limit: {daily_state['trades_today']}/{tier.max_positions * 2}",
-            )
-
-        max_loss = balance * tier.max_daily_loss_pct
-        if daily_state.get("daily_pnl", 0) < -max_loss:
-            return (
-                False,
-                f"Daily loss limit: ${daily_state['daily_pnl']:.2f} (limit: -${max_loss:.2f})",
-            )
-
-        peak = daily_state.get("peak_balance", balance)
-        if peak > 0:
-            drawdown = (peak - balance) / peak
-            if drawdown >= tier.max_drawdown_pct:
-                return (
-                    False,
-                    f"Max drawdown: {drawdown * 100:.1f}% (limit: {tier.max_drawdown_pct * 100:.0f}%)",
-                )
-
-        cooldown = daily_state.get("cooldown_until")
-        if cooldown and datetime.now() < cooldown:
-            remaining = (cooldown - datetime.now()).total_seconds() / 60
-            return False, f"Cooldown: {remaining:.0f}min remaining"
-
-        return True, "OK"
-
-    def check_directional_stress(
-        self, open_positions: List[Dict], new_side: str
-    ) -> Tuple[bool, str]:
-        tier = self.classify_tier(self.balance)
-        same_count = sum(
-            1
-            for p in open_positions
-            if p.get("position_type", "long").upper() == new_side.upper()
-        )
-        if same_count >= tier.max_same_direction:
-            return (
-                False,
-                f"Directional stress: {same_count} {new_side} positions (max: {tier.max_same_direction})",
-            )
-        return True, "OK"
-
-    def check_concentration(
-        self, open_positions: List[Dict], new_symbol: str
-    ) -> Tuple[bool, str]:
-        existing = [p for p in open_positions if p.get("symbol") == new_symbol]
-        if existing:
-            return False, f"Already have position in {new_symbol}"
-        return True, "OK"
-
-    def get_summary(
-        self, balance: float, open_positions: List[Dict], daily_state: Dict
-    ) -> Dict:
-        tier = self.classify_tier(balance)
+    def can_open_new_positions(
+        self, open_positions: List[Dict], balance: float
+    ) -> tuple:
+        """هل يمكننا فتح صفقة جديدة؟"""
         heat = self.check_heat(open_positions, balance)
-        daily_ok, daily_reason = self.check_daily_limits(daily_state, balance)
 
-        return {
-            "tier": tier.name,
-            "balance": round(balance, 2),
-            "balance_range": f"${tier.min_balance:.0f} - ${tier.max_balance:.0f}"
-            if tier.max_balance != float("inf")
-            else f"${tier.min_balance:.0f}+",
-            "max_position_pct": f"{tier.max_position_pct * 100:.0f}%",
-            "max_heat_pct": f"{tier.max_heat_pct * 100:.0f}%",
-            "max_daily_loss_pct": f"{tier.max_daily_loss_pct * 100:.0f}%",
-            "max_drawdown_pct": f"{tier.max_drawdown_pct * 100:.0f}%",
-            "max_positions": tier.max_positions,
-            "current_positions": len(open_positions),
-            "heat": heat,
-            "daily_ok": daily_ok,
-            "daily_reason": daily_reason,
-        }
+        if not heat["can_open_new"]:
+            return (
+                False,
+                f"Heat limit reached ({heat['current_heat_pct']:.1f}%/{heat['max_heat_pct']:.1f}%)",
+            )
+
+        if heat["positions_count"] >= heat["max_positions"]:
+            return (
+                False,
+                f"Max positions reached for {heat['tier']} ({heat['positions_count']}/{heat['max_positions']})",
+            )
+
+        # فحص الخسائر المتتالية
+        if self.performance["consecutive_losses"] >= 5:
+            return False, f"Cooling down: 5 consecutive losses"
+
+        return True, "OK"
+
+    def save_state(self):
+        """حفظ حالة التعلم الذاتي"""
+        try:
+            os.makedirs(os.path.dirname(LEARNING_STATE_FILE), exist_ok=True)
+            with open(LEARNING_STATE_FILE, "w") as f:
+                json.dump(self.performance, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save risk learning state: {e}")
+
+    def update_growth_mode_in_db(
+        self, db_manager, user_id: int, is_demo: bool, balance: float
+    ):
+        """تحديث وضع النمو في قاعدة البيانات"""
+        try:
+            tier = self.get_tier(balance)
+            mode_name = tier.mode.name  # LAUNCH, GROWTH, STANDARD, PRO
+
+            with db_manager.get_write_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE portfolio 
+                    SET growth_mode = %s, updated_at = CURRENT_TIMESTAMP 
+                    WHERE user_id = %s AND is_demo = %s
+                    """,
+                    (mode_name, user_id, is_demo),
+                )
+                conn.commit()
+
+                if cursor.rowcount == 0:
+                    # لم يتم التحديث، ربما العمود غير موجود أو الصف غير موجود
+                    self.logger.debug(
+                        f"⚠️ growth_mode update skipped for user {user_id} (demo={is_demo})"
+                    )
+                else:
+                    self.logger.info(
+                        f"📊 Updated growth_mode to {mode_name} for user {user_id}"
+                    )
+        except Exception as e:
+            self.logger.debug(f"⚠️ Failed to update growth_mode in DB: {e}")
+
+    def load_state(self):
+        """تحميل حالة التعلم الذاتي"""
+        try:
+            if os.path.exists(LEARNING_STATE_FILE):
+                with open(LEARNING_STATE_FILE, "r") as f:
+                    data = json.load(f)
+                    self.performance.update(data)
+                    self.logger.info(
+                        f"🧠 Loaded learning state: {self.performance['total_trades']} trades, "
+                        f"WR={self.performance['winning_trades'] / max(self.performance['total_trades'], 1):.1%}"
+                    )
+            else:
+                self.logger.info("🧠 No previous learning state found. Starting fresh.")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load risk learning state: {e}")

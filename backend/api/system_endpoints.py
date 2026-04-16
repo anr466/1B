@@ -117,20 +117,7 @@ def reset_account_data():
             )
 
         with db.get_write_connection() as conn:
-            # 1. نقل الصفقات المغلقة للتاريخ قبل الحذف (للتدقيق)
-            conn.execute(
-                """
-                INSERT INTO trading_history (user_id, symbol, side, entry_price, exit_price,
-                    quantity, profit_loss, profit_pct, status, entry_time, exit_time)
-                SELECT user_id, symbol, position_type, entry_price, exit_price,
-                    quantity, profit_loss, profit_pct, 'closed', entry_date, closed_at
-                FROM active_positions
-                WHERE user_id = %s AND is_demo = TRUE AND is_active = FALSE
-                """,
-                (user_id,),
-            )
-
-            # 2. حذف جميع المراكز (المفتوحة + المغلقة)
+            # 1. حذف جميع المراكز (المفتوحة + المغلقة)
             conn.execute(
                 "DELETE FROM active_positions WHERE user_id = %s AND is_demo = TRUE",
                 (user_id,),

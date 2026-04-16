@@ -206,14 +206,24 @@ class DynamicCoinSelector:
         # Sort by score
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        # Return top coins
-        symbols = [c["symbol"] for c, s in scored[:max_coins]]
-
-        # Ensure at least some major coins for stability
+        # Ensure majors are always included (replace lowest-scored if needed)
         majors = {"BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"}
+        selected_symbols = {c["symbol"] for c, s in scored[:max_coins]}
+
         for major in majors:
-            if major not in symbols and len(symbols) < max_coins:
-                symbols.append(major)
+            if major not in selected_symbols:
+                # Find the lowest-scored non-major coin and replace it
+                for i in range(len(scored) - 1, -1, -1):
+                    coin, score = scored[i]
+                    if (
+                        coin["symbol"] not in majors
+                        and coin["symbol"] in selected_symbols
+                    ):
+                        selected_symbols.remove(coin["symbol"])
+                        selected_symbols.add(major)
+                        break
+
+        symbols = list(selected_symbols)
 
         logger.info(
             f"DynamicCoinSelector: selected {len(symbols)} coins "
@@ -228,7 +238,7 @@ class DynamicCoinSelector:
         regime: str,
         include_memes: bool,
     ) -> float:
-        """Score a coin for trading opportunity"""
+        """Score a coin for trading opportunity — regime-aware"""
         score = 0.0
 
         # Volume score (0-30 points)
@@ -244,25 +254,47 @@ class DynamicCoinSelector:
         else:
             score += 10
 
-        # Volatility score (0-40 points) — higher is better for scalping
+        # Volatility score — regime-dependent
         vol = coin["volatility_24h"]
-        if vol > 15:
-            score += 40  # Very volatile — great for scalping
-        elif vol > 10:
-            score += 35
-        elif vol > 7:
-            score += 30
-        elif vol > 5:
-            score += 25
-        elif vol > 3:
-            score += 20
-        else:
-            score += 10
+        if regime in ("STRONG_TREND", "WEAK_TREND"):
+            # In trends, moderate volatility is best (2-8%)
+            if 2.0 <= vol <= 8.0:
+                score += 40
+            elif vol > 8.0:
+                score += 30  # Too volatile for trend following
+            elif vol > 1.0:
+                score += 25
+            else:
+                score += 10
+        elif regime in ("WIDE_RANGE", "NARROW_RANGE"):
+            # In ranges, higher volatility is better for bounce trades
+            if vol > 10:
+                score += 40
+            elif vol > 7:
+                score += 35
+            elif vol > 5:
+                score += 30
+            elif vol > 3:
+                score += 25
+            else:
+                score += 15
+        else:  # CHOPPY
+            # In choppy markets, meme coins with high volatility are best
+            if vol > 15:
+                score += 40
+            elif vol > 10:
+                score += 35
+            elif vol > 7:
+                score += 30
+            elif vol > 5:
+                score += 25
+            else:
+                score += 10
 
         # Momentum score (0-20 points)
         change = abs(coin["price_change_24h"])
         if change > 20:
-            score += 20  # Huge move — potential continuation
+            score += 20
         elif change > 10:
             score += 18
         elif change > 5:
@@ -272,9 +304,14 @@ class DynamicCoinSelector:
         else:
             score += 5
 
-        # Meme coin bonus (0-10 points)
+        # Meme coin bonus — regime-dependent
         if coin["is_meme"] and include_memes:
-            score += 10  # Meme coins have high volatility = opportunity
+            if regime == "CHOPPY":
+                score += 10  # Meme coins excel in choppy markets
+            elif regime in ("WIDE_RANGE", "NARROW_RANGE"):
+                score += 8
+            else:
+                score += 5  # Less bonus in trending markets
 
         return score
 

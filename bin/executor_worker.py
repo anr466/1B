@@ -120,7 +120,7 @@ class ExecutorWorker:
         try:
             with get_db_connection() as conn:
                 positions = conn.execute("""
-                    SELECT id, user_id, symbol, position_type, entry_price, stop_loss, take_profit, trailing_sl_price, highest_price
+                    SELECT id, user_id, symbol, position_type, entry_price, stop_loss, take_profit, trailing_sl_price, highest_price, is_demo
                     FROM active_positions WHERE is_active = TRUE
                 """).fetchall()
 
@@ -136,9 +136,18 @@ class ExecutorWorker:
                 return
 
             for pos in positions:
-                pos_id, user_id, symbol, pos_type, entry, sl, tp, trail_sl, highest = (
-                    pos
-                )
+                (
+                    pos_id,
+                    user_id,
+                    symbol,
+                    pos_type,
+                    entry,
+                    sl,
+                    tp,
+                    trail_sl,
+                    highest,
+                    is_demo,
+                ) = pos
                 try:
                     current_price = price_map.get(symbol)
                     if not current_price:
@@ -163,31 +172,21 @@ class ExecutorWorker:
                             f"🚪 Exiting {symbol} for User {user_id} via {exit_reason} @ {exit_price}"
                         )
                         pnl = exit_price - entry
+                        pnl_pct = (pnl / entry * 100) if entry > 0 else 0
 
                         with get_db_write_connection() as conn:
+                            # تحديث الحالة في active_positions (المصدر الوحيد للبيانات)
                             conn.execute(
                                 """
-                                UPDATE active_positions SET is_active = FALSE, exit_price = %s, exit_reason = %s, profit_loss = %s, closed_at = NOW()
+                                UPDATE active_positions 
+                                SET is_active = FALSE, exit_price = %s, exit_reason = %s, 
+                                    profit_loss = %s, profit_pct = %s, closed_at = NOW()
                                 WHERE id = %s
                             """,
-                                (exit_price, exit_reason, pnl, pos_id),
+                                (exit_price, exit_reason, pnl, pnl_pct, pos_id),
                             )
 
-                            conn.execute(
-                                """
-                                INSERT INTO trading_history (user_id, symbol, entry_price, exit_price, profit_loss, exit_reason, created_at)
-                                VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                            """,
-                                (
-                                    user_id,
-                                    symbol,
-                                    entry,
-                                    exit_price,
-                                    pnl,
-                                    exit_reason,
-                                ),
-                            )
-
+                            # تحديث المحفظة
                             conn.execute(
                                 """
                                 UPDATE portfolio SET total_balance = total_balance + %s, available_balance = available_balance + %s

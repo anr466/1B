@@ -39,7 +39,6 @@ from backend.utils.trading_notification_service import (
 from backend.analysis.liquidity_cognitive_filter import (
     LiquidityCognitiveFilter,
 )
-from backend.core.unified_trading_engine import UnifiedTradingEngine
 from backend.core.dynamic_coin_selector import DynamicCoinSelector
 from backend.core.dual_mode_router import DualModeRouter
 from backend.core.demo_training_engine import DemoTrainingEngine
@@ -326,11 +325,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             except Exception:
                 pass
 
-        # ===== Unified Trading Engine (Regime-Aware, Spot+Margin) =====
-        self.unified_engine = UnifiedTradingEngine(self.user_id, self.is_demo_trading)
-        self.logger.info("🔗 Unified Trading Engine initialized")
-
-        # ===== Trading Orchestrator (5-system + ML architecture) =====
+        # ===== Trading Orchestrator (unified engine: 5-system + ML architecture) =====
         self.orchestrator = TradingOrchestrator(
             data_provider=self.data_provider,
             db=self.db,
