@@ -179,9 +179,9 @@ class ExecutorWorker:
                         """
                         INSERT INTO active_positions (
                             user_id, symbol, position_type, entry_price, stop_loss, take_profit,
-                            strategy, is_active, is_demo, entry_date, quantity, position_size,
+                            strategy, timeframe, is_active, is_demo, entry_date, quantity, position_size,
                             order_id, trailing_sl_price, highest_price
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, NOW(), %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, NOW(), %s, %s, %s, %s, %s)
                         """,
                         (
                             user_id,
@@ -191,6 +191,7 @@ class ExecutorWorker:
                             sl,
                             tp,
                             strategy,
+                            "1h",  # ScannerWorker uses 1h timeframe
                             is_demo,
                             quantity,
                             position_size,
