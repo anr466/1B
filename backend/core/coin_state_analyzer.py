@@ -15,6 +15,7 @@ from backend.utils.indicator_calculator import (
     compute_bollinger_bands,
     compute_obv,
 )
+from backend.core.fuzzy_regime_detector import FuzzyRegimeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ class CoinState:
     trend_confirmed_volume: bool
     volatility: str
     regime: str
+    regime_scores: Dict[str, float]  # NEW: Fuzzy scores for each regime
+    regime_confidence: float  # NEW: Confidence in dominant regime
     range_width_pct: float
     support_level: float
     resistance_level: float
@@ -52,12 +55,16 @@ class CoinState:
 class CoinStateAnalyzer:
     """
     محلل حالة العملة — محسّن بـ:
-    1. Dynamic thresholds حسب regime
+    1. Fuzzy Regime Detection (نقاط مرجحة بدلاً من عتبات حادة)
     2. Multi-factor confirmation (EMA + MACD + Volume + Price)
     3. Divergence detection (RSI/Price)
     4. Regime-aware confidence scoring
     5. Volume profile analysis
     """
+
+    def __init__(self):
+        # NEW: Fuzzy regime detector replaces hard threshold logic
+        self.regime_detector = FuzzyRegimeDetector()
 
     VOLATILITY_THRESHOLDS = {
         "MAJOR": {"very_high": 4.0, "high": 2.0, "medium": 1.0, "low": 0.5},
@@ -162,10 +169,11 @@ class CoinStateAnalyzer:
         # === 5. RANGE ===
         support, resistance, range_width_pct = self._analyze_range(high, low, cur)
 
-        # === 6. REGIME (dynamic thresholds) ===
-        regime = self._classify_regime(
-            adx_val, trend, range_width_pct, bb_width_pct, atr_pct
-        )
+        # === 6. REGIME (Fuzzy Detection — replaces hard thresholds) ===
+        regime_result = self.regime_detector.detect(df)
+        regime = regime_result["dominant_regime"]
+        regime_scores = regime_result["regime_scores"]
+        regime_confidence = regime_result["confidence"]
 
         # === 7. MOMENTUM (محسّن) ===
         momentum = self._analyze_momentum(
@@ -224,6 +232,8 @@ class CoinStateAnalyzer:
             trend_confirmed_volume=trend_confirmed_volume,
             volatility=volatility,
             regime=regime,
+            regime_scores=regime_scores,  # NEW: Fuzzy scores
+            regime_confidence=regime_confidence,  # NEW: Confidence in regime
             range_width_pct=round(range_width_pct, 2),
             support_level=round(support, 8),
             resistance_level=round(resistance, 8),
