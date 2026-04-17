@@ -191,7 +191,7 @@ class ExecutorWorker:
                             sl,
                             tp,
                             strategy,
-                            "1h",  # ScannerWorker uses 1h timeframe
+                            "1h",
                             is_demo,
                             quantity,
                             position_size,
@@ -200,6 +200,36 @@ class ExecutorWorker:
                             filled_price,
                         ),
                     )
+
+                    # FIX: Validate SL/TP at entry — reject if price already beyond SL
+                    if pos_type == "LONG" and filled_price <= sl:
+                        logger.warning(
+                            f"⚠️ Entry price {filled_price} already at/below SL {sl} for {symbol} — closing immediately"
+                        )
+                        conn.execute(
+                            """
+                            UPDATE active_positions
+                            SET is_active = FALSE, exit_price = %s, exit_reason = %s,
+                                profit_loss = 0, profit_pct = 0, closed_at = NOW()
+                            WHERE id = currval('active_positions_id_seq')
+                            """,
+                            (filled_price, "INVALID_SL_AT_ENTRY"),
+                        )
+                        continue
+                    elif pos_type == "SHORT" and filled_price >= sl:
+                        logger.warning(
+                            f"⚠️ Entry price {filled_price} already at/above SL {sl} for {symbol} — closing immediately"
+                        )
+                        conn.execute(
+                            """
+                            UPDATE active_positions
+                            SET is_active = FALSE, exit_price = %s, exit_reason = %s,
+                                profit_loss = 0, profit_pct = 0, closed_at = NOW()
+                            WHERE id = currval('active_positions_id_seq')
+                            """,
+                            (filled_price, "INVALID_SL_AT_ENTRY"),
+                        )
+                        continue
 
                     conn.execute(
                         "UPDATE signals_queue SET status = 'FILLED', processed_at = NOW(), trade_id = currval('active_positions_id_seq') WHERE id = %s",

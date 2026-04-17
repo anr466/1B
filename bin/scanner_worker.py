@@ -52,6 +52,10 @@ class ScannerWorker:
         self.market_cache = {}
         self.last_market_fetch = 0
 
+        # FIX: Signal cooldown — don't re-signal same coin within 10 minutes
+        self._signal_cooldown = {}
+        self._cooldown_seconds = 600  # 10 minutes
+
     async def fetch_market_data(self):
         now = time.time()
         if now - self.last_market_fetch < 60:
@@ -160,7 +164,13 @@ class ScannerWorker:
                     return
 
             signals_to_insert = []
+            now_ts = time.time()
             for symbol, df in market_data.items():
+                # FIX: Signal cooldown — skip if recently signaled
+                last_signaled = self._signal_cooldown.get(symbol, 0)
+                if now_ts - last_signaled < self._cooldown_seconds:
+                    continue
+
                 state = self.analyzer.analyze(symbol, df)
                 if not state or state.recommendation == "AVOID":
                     continue
@@ -192,7 +202,7 @@ class ScannerWorker:
                                 best_score = decision["score"]
                                 best_signal = {**signal, **decision}
 
-                if best_signal and best_score >= 50:
+                if best_signal and best_score >= 60:  # FIX: Raised from 50 to 60
                     signals_to_insert.append(
                         {
                             "user_id": user_id,
@@ -219,6 +229,8 @@ class ScannerWorker:
                         """,
                             sig,
                         )
+                        # FIX: Track cooldown for this symbol
+                        self._signal_cooldown[sig["symbol"]] = time.time()
                 logger.info(
                     f"📝 User {user_id}: Generated {len(signals_to_insert)} signals."
                 )
