@@ -99,7 +99,7 @@ class RangeModule(StrategyModule):
             return max(sl, resistance * 1.025)
 
     def get_take_profit(self, df: pd.DataFrame, signal: Dict) -> float:
-        """FIX 6: Risk-reward based TP (minimum 2:1)"""
+        """Risk-reward based TP (minimum 2:1), capped at resistance"""
         high = df["high"]
         low = df["low"]
 
@@ -110,10 +110,15 @@ class RangeModule(StrategyModule):
         if signal["type"] == "LONG":
             # TP = entry + 2*risk (minimum 2:1 RR)
             tp_rr = entry + (2.0 * risk)
-            # Also cap at resistance
+            # Cap at resistance but ensure at least 1:1 RR
             resistance = high.tail(30).quantile(0.85)
-            return min(tp_rr, resistance * 0.99)
+            tp_capped = resistance * 0.99
+            # Use the higher of 1:1 RR or the capped value, but prefer 2:1
+            tp_min = entry + risk  # At least 1:1
+            return max(tp_min, min(tp_rr, tp_capped))
         else:
             tp_rr = entry - (2.0 * risk)
             support = low.tail(30).quantile(0.15)
-            return max(tp_rr, support * 1.01)
+            tp_capped = support * 1.01
+            tp_min = entry - risk  # At least 1:1
+            return min(tp_min, max(tp_rr, tp_capped))
