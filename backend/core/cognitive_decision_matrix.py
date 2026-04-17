@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
 """
-Cognitive Decision Matrix — محسّنة
-====================================
+Cognitive Decision Matrix — محسّنة مع DynamicWeightMatrix
+==========================================================
 تقييم الإشارات بشكل سياقي بناءً على:
 1. نظام السوق (Regime-aware weights)
-2. نوع العملة
-3. ملف المخاطر
-4. التأكيدات المتعددة
+2. أداء الاستراتيجيات (Performance-based weights)
+3. نوع العملة
+4. ملف المخاطر
+5. التأكيدات المتعددة
 """
 
 import logging
 from typing import Dict, List, Optional
+from backend.core.dynamic_weight_matrix import DynamicWeightMatrix
 
 logger = logging.getLogger(__name__)
 
 
 class CognitiveDecisionMatrix:
     def __init__(self):
-        # أوزان افتراضية
+        # Dynamic Weight Matrix for adaptive scoring
+        self.weight_matrix = DynamicWeightMatrix()
+
+        # أوزان افتراضية (fallback)
         self.default_weights = {
             "trend_clarity": 0.20,
             "mtf_alignment": 0.20,
@@ -28,58 +33,12 @@ class CognitiveDecisionMatrix:
             "signal_quality": 0.05,
         }
 
-        # أوزان مخصصة حسب نظام السوق
-        self.regime_weights = {
-            "STRONG_TREND": {
-                "trend_clarity": 0.25,
-                "mtf_alignment": 0.20,
-                "volume_confirmation": 0.15,
-                "risk_reward_ratio": 0.15,
-                "volatility_fit": 0.10,
-                "coin_profile_fit": 0.10,
-                "signal_quality": 0.05,
-            },
-            "WEAK_TREND": {
-                "trend_clarity": 0.15,
-                "mtf_alignment": 0.25,
-                "volume_confirmation": 0.20,
-                "risk_reward_ratio": 0.15,
-                "volatility_fit": 0.10,
-                "coin_profile_fit": 0.10,
-                "signal_quality": 0.05,
-            },
-            "WIDE_RANGE": {
-                "trend_clarity": 0.10,
-                "mtf_alignment": 0.15,
-                "volume_confirmation": 0.15,
-                "risk_reward_ratio": 0.25,
-                "volatility_fit": 0.15,
-                "coin_profile_fit": 0.10,
-                "signal_quality": 0.10,
-            },
-            "NARROW_RANGE": {
-                "trend_clarity": 0.10,
-                "mtf_alignment": 0.15,
-                "volume_confirmation": 0.10,
-                "risk_reward_ratio": 0.30,
-                "volatility_fit": 0.15,
-                "coin_profile_fit": 0.10,
-                "signal_quality": 0.10,
-            },
-            "CHOPPY": {
-                "trend_clarity": 0.05,
-                "mtf_alignment": 0.10,
-                "volume_confirmation": 0.10,
-                "risk_reward_ratio": 0.35,
-                "volatility_fit": 0.20,
-                "coin_profile_fit": 0.10,
-                "signal_quality": 0.10,
-            },
-        }
-
     def evaluate(self, signal: Dict, context: Dict) -> Dict:
         regime = context.get("regime", "CHOPPY")
-        weights = self.regime_weights.get(regime, self.default_weights)
+        signal_strategy = signal.get("strategy", "")
+
+        # FIX: Get dynamic weights based on regime AND strategy performance
+        weights = self.weight_matrix.get_weights(regime, signal_strategy)
 
         scores = {}
         scores["trend_clarity"] = self._score_trend_clarity(signal, context)
@@ -108,9 +67,22 @@ class CognitiveDecisionMatrix:
         return {
             "score": round(final_score, 2),
             "scores": scores,
+            "weights": {k: round(v, 3) for k, v in weights.items()},
             "decision": decision,
             "reason": self._generate_reason(scores, decision),
         }
+
+    def update_strategy_performance(
+        self, strategy: str, win: bool, profit: float, loss: float
+    ):
+        """
+        تحديث أداء الاستراتيجية — يُستدعى من PerformanceTracker.
+        """
+        self.weight_matrix.update_strategy_performance(strategy, win, profit, loss)
+
+    def get_strategy_health(self) -> Dict:
+        """الحصول على تقرير صحة الاستراتيجيات"""
+        return self.weight_matrix.get_strategy_health_report()
 
     def _score_trend_clarity(self, signal: Dict, context: Dict) -> float:
         trend = context.get("trend", "NEUTRAL")
@@ -124,21 +96,18 @@ class CognitiveDecisionMatrix:
 
     def _score_mtf_alignment(self, signal: Dict, context: Dict) -> float:
         # FIX: Actually calculate MTF alignment instead of passthrough
-        # Check if 1h trend matches higher timeframe context
         trend = context.get("trend", "NEUTRAL")
         confirmed_4h = context.get("trend_confirmed_4h", False)
         confirmed_macd = context.get("trend_confirmed_macd", False)
 
         if trend == "NEUTRAL":
-            return 50  # Neutral score for ranging markets
+            return 50
 
-        # If 4H confirms the 1H trend, high alignment
         if confirmed_4h and confirmed_macd:
             return 90
         if confirmed_4h or confirmed_macd:
             return 70
 
-        # If no higher timeframe data, use EMA alignment as proxy
         ema_alignment = context.get("ema_alignment", "MIXED")
         if "FULL" in ema_alignment:
             return 80

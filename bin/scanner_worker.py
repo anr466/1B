@@ -19,6 +19,7 @@ from backend.infrastructure.db_access import (
 )
 from backend.core.coin_state_analyzer import CoinStateAnalyzer
 from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
+from backend.core.performance_tracker import PerformanceTracker
 from backend.core.modules.trend_module import TrendModule
 from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
@@ -42,6 +43,7 @@ class ScannerWorker:
 
         self.analyzer = CoinStateAnalyzer()
         self.decision_matrix = CognitiveDecisionMatrix()
+        self.performance_tracker = PerformanceTracker(self.decision_matrix)
         self.modules = [
             TrendModule(),
             RangeModule(),
@@ -189,7 +191,7 @@ class ScannerWorker:
                             candidate.stop_loss = module.get_stop_loss(df, candidate)
                             candidate.take_profit = module.get_take_profit(df, candidate)
 
-                            # Score via decision matrix
+                            # Score via decision matrix (now uses dynamic weights)
                             decision = self.decision_matrix.evaluate(candidate.to_dict(), context)
                             if decision["score"] > best_score:
                                 best_score = decision["score"]
@@ -197,6 +199,7 @@ class ScannerWorker:
                                 best_candidate.confidence = decision["score"]
                                 best_candidate.metadata["decision"] = decision["decision"]
                                 best_candidate.metadata["reason"] = decision["reason"]
+                                best_candidate.metadata["weights"] = decision["weights"]
 
                 if best_candidate and best_score >= 55:
                     signals_to_insert.append(
@@ -232,8 +235,53 @@ class ScannerWorker:
         except Exception as e:
             logger.error(f"❌ Error analyzing user {user_id}: {e}")
 
+    def load_closed_trades_for_learning(self):
+        """تحميل الصفقات المغلقة من قاعدة البيانات للتعلم"""
+        try:
+            with get_db_connection() as conn:
+                rows = conn.execute("""
+                    SELECT ap.symbol, ap.strategy, ap.position_type, ap.entry_price,
+                           ap.exit_price, ap.quantity, ap.profit_loss, ap.exit_reason,
+                           ap.closed_at
+                    FROM active_positions ap
+                    WHERE ap.is_active = FALSE
+                      AND ap.profit_loss IS NOT NULL
+                      AND ap.closed_at > NOW() - INTERVAL '30 days'
+                    ORDER BY ap.closed_at DESC
+                """).fetchall()
+
+                loaded = 0
+                for row in rows:
+                    trade_data = {
+                        "symbol": row[0],
+                        "strategy": row[1] or "Unknown",
+                        "type": row[2],
+                        "entry_price": float(row[3] or 0),
+                        "exit_price": float(row[4] or 0),
+                        "quantity": float(row[5] or 0),
+                        "pnl": float(row[6] or 0),
+                        "exit_reason": row[7] or "UNKNOWN",
+                        "closed_at": str(row[8]) if row[8] else "",
+                    }
+                    self.performance_tracker.record_trade(trade_data)
+                    loaded += 1
+
+                if loaded > 0:
+                    logger.info(f"📚 Loaded {loaded} closed trades for learning")
+                    summary = self.performance_tracker.get_performance_summary()
+                    logger.info(
+                        f"📊 Performance: {summary['total_trades']} trades, "
+                        f"WR={summary['win_rate']:.1%}, PnL=${summary['total_pnl']:.2f}"
+                    )
+        except Exception as e:
+            logger.error(f"❌ Failed to load closed trades: {e}")
+
     async def run(self):
         logger.info("🔍 Scanner Worker Started.")
+
+        # Load historical trades for learning
+        self.load_closed_trades_for_learning()
+
         while True:
             try:
                 market_data = await self.fetch_market_data()
@@ -249,6 +297,14 @@ class ScannerWorker:
                 if users:
                     tasks = [self.analyze_user(u[0], market_data) for u in users]
                     await asyncio.gather(*tasks)
+
+                # Log performance summary every 10 minutes
+                if self.performance_tracker.total_trades > 0 and self.performance_tracker.total_trades % 5 == 0:
+                    summary = self.performance_tracker.get_performance_summary()
+                    logger.info(
+                        f"📊 Live Performance: {summary['total_trades']} trades, "
+                        f"WR={summary['win_rate']:.1%}, PnL=${summary['total_pnl']:.2f}"
+                    )
 
                 await asyncio.sleep(30)
             except Exception as e:
