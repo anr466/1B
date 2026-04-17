@@ -288,8 +288,16 @@ class BinanceManager:
             self.logger.error(f"خطأ في جلب مفاتيح API: {e}")
             return None
 
+    # FIX: Working endpoints for BinanceManager (bypasses geo-block)
+    _BINANCE_ENDPOINTS = [
+        "https://www.binance.com",
+        "https://api1.binance.com",
+        "https://api3.binance.com",
+        "https://api.binance.com",
+    ]
+
     def _get_binance_client(self, user_id: int) -> Optional[Client]:
-        """إنشاء عميل Binance للمستخدم مع circuit breaker"""
+        """إنشاء عميل Binance للمستخدم مع endpoint failover + circuit breaker"""
         try:
             # FIX 4: Check circuit breaker
             if self._is_circuit_open(user_id):
@@ -312,23 +320,37 @@ class BinanceManager:
                 api_data["api_key"], api_data["api_secret"]
             )
 
-            # إنشاء العميل
-            client = Client(
-                api_key=api_key,
-                api_secret=api_secret,
-                testnet=api_data["is_testnet"],
-            )
+            # FIX: Try each endpoint until one works
+            client = None
+            for endpoint in self._BINANCE_ENDPOINTS:
+                try:
+                    client = Client(
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        testnet=api_data["is_testnet"],
+                        requests_params={"timeout": 10},
+                    )
+                    client.API_URL = f"{endpoint}/api"
+                    client.PRIVATE_API_URL = f"{endpoint}/api"
+                    client.ping()
+                    self.logger.info(
+                        f"✅ Binance client for User {user_id} using {endpoint}"
+                    )
+                    break
+                except Exception as endpoint_err:
+                    self.logger.debug(
+                        f"⚠️ Endpoint {endpoint} failed for User {user_id}: {endpoint_err}"
+                    )
+                    client = None
+                    continue
 
-            # FIX 4: Test connection before caching
-            try:
-                client.ping()
-                self._record_client_success(user_id)
-            except Exception as ping_err:
-                self.logger.warning(
-                    f"⚠️ Binance ping failed for User {user_id}: {ping_err}"
-                )
+            if client is None:
+                self.logger.error(f"❌ All Binance endpoints failed for User {user_id}")
                 self._record_client_failure(user_id)
                 return None
+
+            # FIX 4: Test connection before caching
+            self._record_client_success(user_id)
 
             # حفظ في التخزين المؤقت
             self._clients[user_id] = client

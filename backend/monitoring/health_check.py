@@ -97,29 +97,22 @@ class HealthCheckService:
             }
 
     def check_binance_api(self) -> Dict[str, Any]:
-        """فحص حالة Binance API"""
+        """فحص حالة Binance API — FIX: uses BinancePublicClient with failover"""
         try:
+            from backend.utils.binance_public_client import BinancePublicClient
+
             start_time = time.time()
-            response = requests.get(
-                "https://api.binance.com/api/v3/ping", timeout=5
-            )
+            client = BinancePublicClient()
+            client.ping()
             response_time = (time.time() - start_time) * 1000  # ms
 
-            if response.status_code == 200:
-                status = "healthy" if response_time < 500 else "degraded"
-                return {
-                    "status": status,
-                    "message": "Binance API reachable",
-                    "response_time_ms": round(response_time, 2),
-                }
-            else:
-                return {
-                    "status": "unhealthy",
-                    "message": f"Binance API returned {response.status_code}",
-                }
+            status = "healthy" if response_time < 500 else "degraded"
+            return {
+                "status": status,
+                "message": f"Binance API reachable via {client.base_url}",
+                "response_time_ms": round(response_time, 2),
+            }
 
-        except requests.exceptions.Timeout:
-            return {"status": "unhealthy", "message": "Binance API timeout"}
         except Exception as e:
             return {
                 "status": "unhealthy",
