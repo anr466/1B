@@ -110,15 +110,15 @@ class RangeModule(StrategyModule):
         if signal["type"] == "LONG":
             # TP = entry + 2*risk (minimum 2:1 RR)
             tp_rr = entry + (2.0 * risk)
-            # Cap at resistance but ensure at least 1:1 RR
+            # Cap at resistance but ensure at least 1.5:1 RR
             resistance = high.tail(30).quantile(0.85)
             tp_capped = resistance * 0.99
-            # Use the higher of 1:1 RR or the capped value, but prefer 2:1
-            tp_min = entry + risk  # At least 1:1
-            return max(tp_min, min(tp_rr, tp_capped))
+            # If resistance is too close, use 1.5:1 minimum instead of capping
+            tp_min = entry + (risk * 1.5)
+            return max(tp_min, tp_rr) if tp_capped < tp_min else min(tp_rr, tp_capped)
         else:
             tp_rr = entry - (2.0 * risk)
             support = low.tail(30).quantile(0.15)
             tp_capped = support * 1.01
-            tp_min = entry - risk  # At least 1:1
-            return min(tp_min, max(tp_rr, tp_capped))
+            tp_min = entry - (risk * 1.5)
+            return min(tp_min, tp_rr) if tp_capped > tp_min else max(tp_rr, tp_capped)

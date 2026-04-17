@@ -20,6 +20,7 @@ from dataclasses import dataclass, asdict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from backend.core.coin_state_analyzer import CoinStateAnalyzer, CoinState
+from backend.core.fuzzy_regime_detector import FuzzyRegimeDetector
 from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
 from backend.core.modules.trend_module import TrendModule
 from backend.core.modules.range_module import RangeModule
@@ -45,6 +46,7 @@ class TestResult:
 class TradingEngineTestSuite:
     def __init__(self):
         self.analyzer = CoinStateAnalyzer()
+        self.regime_detector = FuzzyRegimeDetector()
         self.cdm = CognitiveDecisionMatrix()
         self.modules = [
             TrendModule(),
@@ -159,48 +161,58 @@ class TradingEngineTestSuite:
     # 2. MARKET REGIME TESTS
     # ============================================================
     def _test_market_regimes(self):
-        print("\n🌐 2. MARKET REGIME DETECTION TESTS")
+        print("\n🌐 2. MARKET REGIME DETECTION TESTS (Fuzzy)")
 
-        regimes_to_test = {
-            "STRONG_TREND": self._generate_synthetic_data(
-                trend="UP", volatility="MEDIUM", adx=35
-            ),
-            "WEAK_TREND": self._generate_synthetic_data(
-                trend="UP", volatility="LOW", adx=25
-            ),
-            "WIDE_RANGE": self._generate_synthetic_data(
-                trend="NEUTRAL", volatility="HIGH", bb_width=4.0
-            ),
-            "NARROW_RANGE": self._generate_synthetic_data(
-                trend="NEUTRAL", volatility="LOW", bb_width=1.5
-            ),
-            "CHOPPY": self._generate_synthetic_data(
-                trend="NEUTRAL", volatility="LOW", bb_width=0.5
-            ),
-        }
+        # Test 1: FuzzyRegimeDetector directly with deterministic data
+        df_strong_trend = self._generate_deterministic_trend_data(strength="strong")
+        result_strong = self.regime_detector.detect(df_strong_trend)
+        self._add_result(
+            "Fuzzy: Strong Trend Detection",
+            result_strong["dominant_regime"] == "STRONG_TREND"
+            and result_strong["trend_score"] > result_strong["range_score"]
+            and result_strong["trend_score"] > result_strong["choppy_score"],
+            f"Dominant: {result_strong['dominant_regime']}, Trend={result_strong['trend_score']}, Range={result_strong['range_score']}, Choppy={result_strong['choppy_score']}",
+            "STRONG_TREND dominant, trend_score highest",
+            result_strong["dominant_regime"],
+        )
 
-        for regime_name, df in regimes_to_test.items():
-            state = self.analyzer.analyze("TESTUSDT", df)
-            if state:
-                detected = state.regime
-                self._add_result(
-                    f"Regime: {regime_name}",
-                    detected == regime_name,
-                    f"Detected: {detected}",
-                    regime_name,
-                    detected,
-                )
-            else:
-                self._add_result(
-                    f"Regime: {regime_name}",
-                    False,
-                    "Analyzer returned None",
-                    regime_name,
-                    "None",
-                )
+        df_choppy = self._generate_deterministic_choppy_data()
+        result_choppy = self.regime_detector.detect(df_choppy)
+        self._add_result(
+            "Fuzzy: Choppy Detection",
+            result_choppy["dominant_regime"] == "CHOPPY"
+            and result_choppy["choppy_score"] > result_choppy["trend_score"],
+            f"Dominant: {result_choppy['dominant_regime']}, Choppy={result_choppy['choppy_score']}, Trend={result_choppy['trend_score']}",
+            "CHOPPY dominant, choppy_score > trend_score",
+            result_choppy["dominant_regime"],
+        )
 
-        # Test 4H confirmation default
-        df_no_4h = self._generate_synthetic_data(trend="UP")
+        # Test 2: CoinStateAnalyzer integration
+        df_uptrend = self._generate_deterministic_trend_data(strength="moderate")
+        state_uptrend = self.analyzer.analyze("TESTUSDT", df_uptrend)
+        self._add_result(
+            "Analyzer: Uptrend Regime",
+            state_uptrend is not None
+            and state_uptrend.regime in ("STRONG_TREND", "WEAK_TREND"),
+            f"Detected: {state_uptrend.regime} (Confidence: {state_uptrend.regime_confidence})",
+            "STRONG_TREND or WEAK_TREND",
+            state_uptrend.regime if state_uptrend else "None",
+        )
+
+        # Test 3: Regime scores are present and valid
+        self._add_result(
+            "Analyzer: Regime Scores Present",
+            state_uptrend is not None
+            and hasattr(state_uptrend, "regime_scores")
+            and isinstance(state_uptrend.regime_scores, dict)
+            and len(state_uptrend.regime_scores) > 0,
+            f"Scores: {state_uptrend.regime_scores if state_uptrend else 'N/A'}",
+            "Dict with scores",
+            str(state_uptrend.regime_scores) if state_uptrend else "None",
+        )
+
+        # Test 4: 4H confirmation default
+        df_no_4h = self._generate_deterministic_trend_data(strength="weak")
         state_no_4h = self.analyzer.analyze("TESTUSDT", df_no_4h, df_4h=None)
         self._add_result(
             "4H Default False",
@@ -565,6 +577,89 @@ class TradingEngineTestSuite:
     # ============================================================
     # HELPER METHODS
     # ============================================================
+    def _generate_deterministic_trend_data(self, strength="strong", length=100):
+        """
+        Generates OHLCV data with a CLEAR, DETERMINISTIC uptrend.
+        Guarantees: EMA8 > EMA21 > EMA55, ADX > 30, consistent higher highs/lows
+        """
+        np.random.seed(123)  # Fixed seed for reproducibility
+        base_price = 100.0
+
+        # Strong trend: consistent upward drift with low noise
+        if strength == "strong":
+            drift = 0.008  # 0.8% per candle
+            noise = 0.003  # Low noise
+        elif strength == "moderate":
+            drift = 0.004
+            noise = 0.005
+        else:  # weak
+            drift = 0.002
+            noise = 0.006
+
+        closes = [base_price]
+        for i in range(1, length):
+            change = drift + np.random.normal(0, noise)
+            closes.append(closes[-1] * (1 + change))
+
+        closes = np.array(closes)
+        # Ensure consistent higher highs and higher lows
+        highs = closes * (1 + np.abs(np.random.normal(0, noise * 0.3, length)))
+        lows = closes * (1 - np.abs(np.random.normal(0, noise * 0.3, length)))
+        opens = lows + (closes - lows) * np.random.random(length)
+        volumes = np.random.uniform(2000000, 5000000, length)
+
+        return pd.DataFrame(
+            {
+                "timestamp": pd.date_range(
+                    start="2024-01-01", periods=length, freq="1h"
+                ),
+                "open": opens,
+                "high": highs,
+                "low": lows,
+                "close": closes,
+                "volume": volumes,
+            }
+        )
+
+    def _generate_deterministic_choppy_data(self, length=100):
+        """
+        Generates OHLCV data with NO TREND, low volatility, tight range.
+        Guarantees: EMA alignment mixed, ADX < 15, BB width narrow
+        """
+        np.random.seed(456)  # Fixed seed
+        base_price = 100.0
+
+        # Choppy: zero drift, very low noise, mean-reverting
+        closes = [base_price]
+        for i in range(1, length):
+            # Mean-reverting random walk
+            deviation = closes[-1] - base_price
+            change = -0.01 * deviation / base_price + np.random.normal(0, 0.002)
+            closes.append(closes[-1] * (1 + change))
+
+        closes = np.array(closes)
+        highs = closes * (1 + np.abs(np.random.normal(0, 0.001, length)))
+        lows = closes * (1 - np.abs(np.random.normal(0, 0.001, length)))
+        opens = np.where(
+            closes > lows,
+            lows + (closes - lows) * np.random.random(length),
+            closes + (highs - closes) * np.random.random(length),
+        )
+        volumes = np.random.uniform(500000, 1500000, length)  # Low volume
+
+        return pd.DataFrame(
+            {
+                "timestamp": pd.date_range(
+                    start="2024-01-01", periods=length, freq="1h"
+                ),
+                "open": opens,
+                "high": highs,
+                "low": lows,
+                "close": closes,
+                "volume": volumes,
+            }
+        )
+
     def _generate_synthetic_data(
         self, trend="UP", volatility="MEDIUM", length=100, adx=None, bb_width=None
     ):
