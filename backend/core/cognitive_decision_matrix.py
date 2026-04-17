@@ -212,16 +212,16 @@ class CognitiveDecisionMatrix:
     def _make_decision(self, score: float, context: Dict) -> str:
         regime = context.get("regime", "CHOPPY")
 
-        # ضبط العتبات حسب regime
+        # Balanced thresholds per regime
         if regime == "CHOPPY":
-            enter_threshold = 85
-            reduced_threshold = 70
+            enter_threshold = 75
+            reduced_threshold = 60
         elif regime in ("WIDE_RANGE", "NARROW_RANGE"):
-            enter_threshold = 75
-            reduced_threshold = 60
-        else:
-            enter_threshold = 75
-            reduced_threshold = 60
+            enter_threshold = 65
+            reduced_threshold = 50
+        else:  # STRONG_TREND, WEAK_TREND
+            enter_threshold = 65
+            reduced_threshold = 50
 
         if score >= enter_threshold:
             return "ENTER"

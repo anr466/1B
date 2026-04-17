@@ -140,6 +140,40 @@ class ExecutorWorker:
                     )
                     position_size = quantity * entry_price
 
+                    # FIX: Re-validate signal before execution
+                    # Check if price has moved >2% from signal entry (stale signal)
+                    try:
+                        current_price_data = self.data_provider._get_active_client()
+                        if current_price_data:
+                            live_ticker = current_price_data.get_symbol_ticker(
+                                symbol=symbol
+                            )
+                            if live_ticker:
+                                live_price = float(live_ticker["price"])
+                                price_move_pct = (
+                                    abs(live_price - entry_price) / entry_price
+                                )
+                                if price_move_pct > 0.02:  # 2% threshold
+                                    logger.warning(
+                                        f"⚠️ Signal stale for {symbol}: price moved {price_move_pct * 100:.1f}% "
+                                        f"(signal: {entry_price}, live: {live_price}) — rejecting"
+                                    )
+                                    conn.execute(
+                                        "UPDATE signals_queue SET status = 'REJECTED', rejection_reason = 'Price moved >2% from signal entry', processed_at = NOW() WHERE id = %s",
+                                        (sig_id,),
+                                    )
+                                    continue
+                                # Update entry_price to live price for better execution
+                                entry_price = live_price
+                                logger.info(
+                                    f"🔄 Re-validated {symbol}: using live price {live_price} (signal was {entry_price})"
+                                )
+                    except Exception as reval_err:
+                        logger.debug(
+                            f"⚠️ Re-validation failed for {symbol}: {reval_err}"
+                        )
+                        # Continue with signal price if re-validation fails
+
                     logger.info(
                         f"⚡ Executing {pos_type} for User {user_id}: {symbol} @ {entry_price} qty={quantity:.6f}"
                     )

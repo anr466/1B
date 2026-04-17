@@ -202,7 +202,7 @@ class ScannerWorker:
                                 best_score = decision["score"]
                                 best_signal = {**signal, **decision}
 
-                if best_signal and best_score >= 60:  # FIX: Raised from 50 to 60
+                if best_signal and best_score >= 55:  # Balanced threshold
                     signals_to_insert.append(
                         {
                             "user_id": user_id,

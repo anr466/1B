@@ -38,11 +38,11 @@ class ScalpingModule(StrategyModule):
         if range_w < 0.3:
             return None
 
-        # FIX: Add volume confirmation
+        # Volume confirmation — relaxed threshold
         vol_avg = volume.tail(20).mean()
         vol_ratio = volume.iloc[-1] / vol_avg if vol_avg > 0 else 1.0
-        if vol_ratio < 0.8:
-            return None  # Skip scalps with declining volume
+        if vol_ratio < 0.6:  # Relaxed from 0.8
+            return None
 
         dist_to_support = (
             (current_price - support) / support * 100 if support > 0 else 999
@@ -85,6 +85,7 @@ class ScalpingModule(StrategyModule):
         entry = self.get_entry_price(df, signal)
         sl = self.get_stop_loss(df, signal)
         risk = abs(entry - sl)
+        # FIX: Unify minimum RR to 2.0:1 across all modules (was 1.5:1)
         if signal["type"] == "LONG":
-            return entry + (risk * 1.5)
-        return entry - (risk * 1.5)
+            return entry + (risk * 2.0)
+        return entry - (risk * 2.0)

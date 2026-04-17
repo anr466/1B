@@ -29,17 +29,16 @@ class RangeModule(StrategyModule):
         if regime not in self.supported_regimes():
             return None
 
-        # FIX 1: Volatility filter — range strategies need LOW volatility
-        # Skip if 30-period range > 15% (too volatile for mean reversion)
+        # Volatility filter — allow moderate volatility for range trading
         range_30 = (high.tail(30).max() - low.tail(30).min()) / low.tail(30).min()
-        if range_30 > 0.15:
-            return None  # Too volatile for range trading
+        if range_30 > 0.25:  # Relaxed from 0.15 to allow more signals
+            return None
 
-        # FIX 2: Trend filter — don't LONG in strong downtrend
+        # Trend filter — allow slight downtrends but reject strong ones
         ema_21 = close.ewm(span=21, adjust=False).mean().iloc[-1]
         ema_55 = close.ewm(span=55, adjust=False).mean().iloc[-1]
-        if ema_21 < ema_55 * 0.98:
-            return None  # Strong downtrend — no range bounces
+        if ema_21 < ema_55 * 0.95:  # Relaxed from 0.98
+            return None
 
         support = low.tail(30).quantile(0.15)
         resistance = high.tail(30).quantile(0.85)
@@ -51,11 +50,9 @@ class RangeModule(StrategyModule):
         dist_to_support = (current_price - support) / support
         dist_to_resistance = (resistance - current_price) / current_price
 
-        if dist_to_support <= 0.02:
+        if dist_to_support <= 0.03:  # Relaxed from 0.02
             rsi = compute_rsi(df).iloc[-1]
-            # FIX 3: Require stronger oversignal for range bounce
-            if rsi < 40:  # Was 45 — now requires deeper oversold
-                # FIX 4: Higher confidence threshold
+            if rsi < 45:  # Relaxed from 40
                 confidence = 70 if range_width > 0.05 else 65
                 return {
                     "type": "LONG",
@@ -64,9 +61,9 @@ class RangeModule(StrategyModule):
                     "reason": f"Price near support ({dist_to_support * 100:.1f}%), RSI={rsi:.0f}, range={range_width * 100:.1f}%",
                 }
 
-        if dist_to_resistance <= 0.02:
+        if dist_to_resistance <= 0.03:  # Relaxed from 0.02
             rsi = compute_rsi(df).iloc[-1]
-            if rsi > 60:  # Was 55 — now requires stronger overbought
+            if rsi > 55:  # Relaxed from 60
                 confidence = 70 if range_width > 0.05 else 65
                 return {
                     "type": "SHORT",
