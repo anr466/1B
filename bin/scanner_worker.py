@@ -24,7 +24,7 @@ from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
 from backend.core.modules.scalping_module import ScalpingModule
 from backend.core.dynamic_coin_selector import DynamicCoinSelector
-from backend.utils.data_provider import DataProvider
+from backend.utils.binance_public_client import BinancePublicClient
 from backend.utils.trading_context import get_effective_is_demo
 
 logging.basicConfig(
@@ -36,11 +36,9 @@ logger = logging.getLogger("ScannerWorker")
 class ScannerWorker:
     def __init__(self):
         self.db = get_db_manager()
-        self.data_provider = DataProvider()
-        # FIX: Use _get_active_client() which falls back to system Binance client
-        self.coin_selector = DynamicCoinSelector(
-            self.data_provider._get_active_client()
-        )
+        # FIX: Use lightweight public client — bypasses python-binance geo-block
+        self.binance = BinancePublicClient()
+        self.coin_selector = DynamicCoinSelector(self.binance)
 
         self.analyzer = CoinStateAnalyzer()
         self.decision_matrix = CognitiveDecisionMatrix()
@@ -62,13 +60,8 @@ class ScannerWorker:
         logger.info("🌐 Fetching fresh market data for top coins...")
 
         try:
-            # FIX: Use _get_active_client() for system Binance fallback
-            client = self.data_provider._get_active_client()
-            if client is None:
-                logger.error("❌ No Binance client available (local or system)")
-                return self.market_cache
-
-            tickers = client.get_ticker()
+            # FIX: Use lightweight public client with working endpoints
+            tickers = self.binance.get_ticker()
             usdt_pairs = {
                 t["symbol"]: t for t in tickers if t["symbol"].endswith("USDT")
             }
@@ -81,8 +74,35 @@ class ScannerWorker:
                 if symbol not in usdt_pairs:
                     continue
                 try:
-                    df = self.data_provider.get_historical_data(symbol, "1h", limit=100)
-                    if df is not None and len(df) >= 60:
+                    klines = self.binance.get_klines(symbol, "1h", limit=100)
+                    if klines and len(klines) >= 60:
+                        # Convert to DataFrame format expected by analyzer
+                        import pandas as pd
+
+                        df = pd.DataFrame(
+                            klines,
+                            columns=[
+                                "timestamp",
+                                "open",
+                                "high",
+                                "low",
+                                "close",
+                                "volume",
+                                "close_time",
+                                "quote_volume",
+                                "trades",
+                                "taker_buy_base",
+                                "taker_buy_quote",
+                                "ignore",
+                            ],
+                        )
+                        df["open"] = df["open"].astype(float)
+                        df["high"] = df["high"].astype(float)
+                        df["low"] = df["low"].astype(float)
+                        df["close"] = df["close"].astype(float)
+                        df["volume"] = df["volume"].astype(float)
+                        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+                        df.set_index("timestamp", inplace=True)
                         new_cache[symbol] = df
                     if i % 10 == 9:
                         time.sleep(2)

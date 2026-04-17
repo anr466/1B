@@ -70,17 +70,18 @@ class DataProvider:
         self.api_secret = api_secret
         self.use_testnet = use_testnet
 
+        # FIX: Use working endpoints — api.binance.com is geo-blocked from some IPs
+        # Working endpoints (tested): api1.binance.com, api3.binance.com
+        # Blocked endpoints: api.binance.com, api2.binance.com, api4.binance.com
+        self._binance_endpoints = [
+            "https://api1.binance.com",  # Primary — works from most locations
+            "https://api3.binance.com",  # Fallback — also works
+            "https://api.binance.com",  # Last resort — may be geo-blocked
+        ]
+        self._current_endpoint_index = 0
+
         # إنشاء عميل Binance مباشرة
-        try:
-            self.client = Client(
-                api_key=self.api_key,
-                api_secret=self.api_secret,
-                testnet=self.use_testnet,
-                requests_params={"timeout": 30},  # زيادة timeout لتجنب الأخطاء
-            )
-        except Exception as e:
-            logger.debug(f"تأخير في إنشاء عميل Binance: {e}")
-            self.client = None
+        self.client = self._create_client_with_failover()
 
         # إعدادات الاتصال البديل
         self._connection_errors = []
@@ -145,11 +146,19 @@ class DataProvider:
 
     def _get_active_client(self):
         """
-        FIX: الحصول على عميل Binance نشط مع failover للنظام.
-        الترتيب: 1. self.client → 2. System Binance client → 3. None
+        FIX: الحصول على عميل Binance نشط مع failover متعدد الطبقات.
+        الترتيب: 1. self.client (مع endpoint failover) → 2. System Binance → 3. None
         """
         if self.client is not None:
-            return self.client
+            # اختبار العميل الحالي — إذا فشل، حاول تبديل endpoint
+            try:
+                self.client.ping()
+                return self.client
+            except Exception:
+                # العميل الحالي معطل — حاول تبديل endpoint
+                if self._try_next_endpoint():
+                    return self.client
+                # إذا فشل تبديل endpoint، تابع للنظام
 
         # Fallback to system Binance client
         if (
@@ -171,6 +180,60 @@ class DataProvider:
 
         self._system_client_failures += 1
         return None
+
+    def _create_client_with_failover(self):
+        """
+        FIX: إنشاء عميل Binance مع failover عبر endpoints متعددة.
+        يحاول كل endpoint حتى يجد واحد يعمل.
+        """
+        for i, base_url in enumerate(self._binance_endpoints):
+            try:
+                client = Client(
+                    api_key=self.api_key,
+                    api_secret=self.api_secret,
+                    testnet=self.use_testnet,
+                    requests_params={"timeout": 10},
+                )
+                client.API_URL = f"{base_url}/api"
+                client.PRIVATE_API_URL = f"{base_url}/api"
+
+                # اختبار الاتصال
+                client.ping()
+                self._current_endpoint_index = i
+                logger.info(f"✅ Binance client created with endpoint: {base_url}")
+                return client
+            except Exception as e:
+                logger.debug(f"⚠️ Failed to create client with {base_url}: {e}")
+                continue
+
+        logger.error("❌ Failed to create Binance client with any endpoint")
+        return None
+
+    def _try_next_endpoint(self) -> bool:
+        """
+        FIX: التبديل إلى endpoint التالي عند فشل الحالي.
+        """
+        self._current_endpoint_index += 1
+        if self._current_endpoint_index >= len(self._binance_endpoints):
+            self._current_endpoint_index = 0
+
+        new_url = self._binance_endpoints[self._current_endpoint_index]
+        try:
+            new_client = Client(
+                api_key=self.api_key,
+                api_secret=self.api_secret,
+                testnet=self.use_testnet,
+                requests_params={"timeout": 10},
+            )
+            new_client.API_URL = f"{new_url}/api"
+            new_client.PRIVATE_API_URL = f"{new_url}/api"
+            new_client.ping()
+            self.client = new_client
+            logger.info(f"🔄 Switched to endpoint: {new_url}")
+            return True
+        except Exception as e:
+            logger.warning(f"❌ Failed to switch to {new_url}: {e}")
+            return False
 
     def _get_cache_key(self, prefix: str, **kwargs) -> str:
         """
@@ -918,9 +981,7 @@ class DataProvider:
     def _attempt_auto_reconnect(self) -> bool:
         """
         محاولة إعادة الاتصال التلقائي مع Exponential Backoff
-
-        Returns:
-            bool: True إذا نجح الاتصال
+        FIX: Tries switching endpoints first, then system client fallback.
         """
         if not self._auto_reconnect_enabled:
             return False
@@ -929,9 +990,8 @@ class DataProvider:
             logger.warning(
                 f"⚠️ reached max reconnect attempts ({self._max_reconnect_attempts})"
             )
-            return False
+            return self._try_system_client_fallback()
 
-        # حساب التأخير مع Exponential Backoff
         delay = min(self._reconnect_delay * (2**self._reconnect_attempts), 60)
         self._reconnect_attempts += 1
 
@@ -940,6 +1000,7 @@ class DataProvider:
         )
         time.sleep(delay)
 
+        # FIX 1: Try current endpoint first
         try:
             if self.client:
                 self.client.ping()
@@ -948,8 +1009,27 @@ class DataProvider:
                 logger.info("✅ Auto-reconnect successful!")
                 return True
         except Exception as e:
-            logger.warning(f"❌ Auto-reconnect failed: {e}")
+            logger.warning(f"❌ Current endpoint failed: {e}")
 
+        # FIX 2: Try switching to next endpoint
+        if self._try_next_endpoint():
+            self._reconnect_attempts = 0
+            self._on_successful_connection()
+            return True
+
+        # FIX 3: Try system client fallback
+        return self._try_system_client_fallback()
+
+    def _try_system_client_fallback(self) -> bool:
+        """FIX: Try system Binance client when local client fails."""
+        try:
+            sys_client = self._get_active_client()
+            if sys_client is not None:
+                sys_client.ping()
+                logger.info("✅ System Binance client fallback successful!")
+                return True
+        except Exception as e:
+            logger.warning(f"❌ System client fallback failed: {e}")
         return False
 
     def handle_rate_limit(self, retry_after: int = None) -> None:
