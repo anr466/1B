@@ -75,43 +75,75 @@ class DynamicWeightMatrix:
 
         # أداء الاستراتيجيات (يتم تحديثه بواسطة PerformanceTracker)
         self.strategy_performance: Dict[str, Dict] = {
-            "Trend Pullback": {"win_rate": 0.50, "profit_factor": 1.0, "trades": 0},
-            "Trend Breakout": {"win_rate": 0.50, "profit_factor": 1.0, "trades": 0},
+            "Trend Pullback": {
+                "win_rate": 0.50,
+                "profit_factor": 1.0,
+                "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
+            },
+            "Trend Breakout": {
+                "win_rate": 0.50,
+                "profit_factor": 1.0,
+                "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
+            },
             "Trend Pullback Short": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
-            "Trend Breakdown": {"win_rate": 0.50, "profit_factor": 1.0, "trades": 0},
+            "Trend Breakdown": {
+                "win_rate": 0.50,
+                "profit_factor": 1.0,
+                "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
+            },
             "Range Support Bounce": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
             "Range Resistance Rejection": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
             "Volatility Breakout": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
             "Volatility Breakdown": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
             "Micro Scalp Support": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
             "Micro Scalp Resistance": {
                 "win_rate": 0.50,
                 "profit_factor": 1.0,
                 "trades": 0,
+                "total_profit": 0.0,
+                "total_loss": 0.0,
             },
         }
 
