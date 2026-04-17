@@ -141,8 +141,9 @@ class CoinStateAnalyzer:
         trend, ema_align = self._analyze_trend(e8, e21, e55, cur, close)
 
         # === 2. TREND CONFIRMATIONS (3 عوامل مستقلة) ===
+        # FIX: Default to False if 4H data unavailable (prevents false positives)
         trend_confirmed_4h = (
-            self._confirm_trend_4h(df_4h, trend) if df_4h is not None else True
+            self._confirm_trend_4h(df_4h, trend) if df_4h is not None else False
         )
         trend_confirmed_macd = self._confirm_trend_macd(
             macd_hist, macd["macd"].iloc[-1], macd["macd_signal"].iloc[-1], trend
@@ -419,9 +420,16 @@ class CoinStateAnalyzer:
         has_bullish_div,
         has_bearish_div,
     ):
-        """توصية محسّنة — multi-factor confirmation"""
-        # رفض الاتجاه الهابط
+        """توصية محسّنة — multi-factor confirmation + SHORT support"""
+        # FIX: Allow SHORT signals instead of auto-rejecting all downtrends
         if trend == "DOWN":
+            confirmations = sum([confirmed_4h, confirmed_macd, confirmed_volume])
+            if (
+                confirmations >= 2
+                and strength in ("STRONG", "MODERATE")
+                and momentum in ("ACCELERATING", "STEADY")
+            ):
+                return "SHORT_TREND"
             return "AVOID"
 
         # رفض التشويش الشديد

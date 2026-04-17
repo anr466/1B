@@ -57,7 +57,7 @@ def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """Average True Range"""
+    """Average True Range — Wilder's smoothing (industry standard)"""
     high = df["high"]
     low = df["low"]
     close = df["close"]
@@ -70,7 +70,8 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
         ],
         axis=1,
     ).max(axis=1)
-    return tr.rolling(period).mean()
+    # FIX: Use Wilder's smoothing instead of simple rolling mean
+    return tr.ewm(alpha=1 / period, min_periods=period).mean()
 
 
 def compute_ema(

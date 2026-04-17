@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
 from backend.core.strategy_interface import StrategyModule
+from backend.utils.indicator_calculator import compute_atr
 
 
 class VolatilityModule(StrategyModule):
@@ -29,7 +30,7 @@ class VolatilityModule(StrategyModule):
         if regime not in self.supported_regimes() and volatility != "HIGH":
             return None
 
-        atr = self._compute_atr(df)
+        atr = compute_atr(df).iloc[-1]
         atr_pct = (atr / current_price) * 100
 
         if atr_pct < 2.0:
@@ -62,7 +63,7 @@ class VolatilityModule(StrategyModule):
         return df["close"].iloc[-1]
 
     def get_stop_loss(self, df: pd.DataFrame, signal: Dict) -> float:
-        atr = self._compute_atr(df)
+        atr = compute_atr(df).iloc[-1]
         current_price = df["close"].iloc[-1]
         if signal["type"] == "LONG":
             return current_price - (atr * 4.0)
@@ -75,13 +76,3 @@ class VolatilityModule(StrategyModule):
         if signal["type"] == "LONG":
             return entry + (risk * 2.5)
         return entry - (risk * 2.5)
-
-    def _compute_atr(self, df: pd.DataFrame, period: int = 14) -> float:
-        high = df["high"]
-        low = df["low"]
-        close = df["close"]
-        tr = pd.concat(
-            [high - low, (high - close.shift(1)).abs(), (low - close.shift(1)).abs()],
-            axis=1,
-        ).max(axis=1)
-        return tr.rolling(period).mean().iloc[-1]

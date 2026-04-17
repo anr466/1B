@@ -895,6 +895,16 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             elif self.daily_state.get("peak_balance", 0) == 0:
                 self.daily_state["peak_balance"] = current_balance
 
+            # FIX: Enforce max drawdown limit (5% default)
+            peak = self.daily_state.get("peak_balance", current_balance)
+            max_dd_pct = self.daily_state.get("max_drawdown_pct", 0.05)
+            if peak > 0 and current_balance < peak * (1 - max_dd_pct):
+                self.logger.warning(
+                    f"⛔ Max drawdown reached: {((peak - current_balance) / peak * 100):.1f}% > {max_dd_pct * 100:.1f}%. Stopping trading."
+                )
+                self.can_trade = False
+                self.daily_state["drawdown_stopped"] = True
+
             # 2. إدارة الصفقات المفتوحة — استخدام نظام المراقبة الجديد
             open_positions = self._get_open_positions()
             result["positions_checked"] = len(open_positions)

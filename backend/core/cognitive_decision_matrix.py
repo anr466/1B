@@ -123,8 +123,28 @@ class CognitiveDecisionMatrix:
         return 20
 
     def _score_mtf_alignment(self, signal: Dict, context: Dict) -> float:
-        mtf_score = context.get("mtf_score", 50)
-        return mtf_score
+        # FIX: Actually calculate MTF alignment instead of passthrough
+        # Check if 1h trend matches higher timeframe context
+        trend = context.get("trend", "NEUTRAL")
+        confirmed_4h = context.get("trend_confirmed_4h", False)
+        confirmed_macd = context.get("trend_confirmed_macd", False)
+
+        if trend == "NEUTRAL":
+            return 50  # Neutral score for ranging markets
+
+        # If 4H confirms the 1H trend, high alignment
+        if confirmed_4h and confirmed_macd:
+            return 90
+        if confirmed_4h or confirmed_macd:
+            return 70
+
+        # If no higher timeframe data, use EMA alignment as proxy
+        ema_alignment = context.get("ema_alignment", "MIXED")
+        if "FULL" in ema_alignment:
+            return 80
+        if "PARTIAL" in ema_alignment:
+            return 60
+        return 50
 
     def _score_volume(self, signal: Dict, context: Dict) -> float:
         vol_ratio = context.get("volume_ratio", 1.0)
