@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Strategy Module Interface
+Strategy Module Interface — Updated for Continuous Signal Stream
+================================================================
 Defines the contract that all trading strategy modules must follow.
+Modules now return SignalCandidate (never None) for full visibility.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, List
 import pandas as pd
+from backend.core.signal_candidate import SignalCandidate
 
 
 class StrategyModule(ABC):
@@ -23,30 +26,29 @@ class StrategyModule(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, df: pd.DataFrame, context: Dict) -> Optional[Dict]:
+    def evaluate(self, df: pd.DataFrame, context: Dict) -> SignalCandidate:
         """
-        Evaluate market conditions and return a signal if valid.
+        Evaluate market conditions and return a SignalCandidate.
+        Always returns a candidate — never None.
+        Low confidence candidates indicate weak setups.
 
         Args:
             df: DataFrame with OHLCV and indicators
             context: Dict with market context (regime, volatility, etc.)
 
         Returns:
-            Dict with signal details or None if no signal
+            SignalCandidate with confidence 0-100
         """
         pass
 
-    @abstractmethod
-    def get_entry_price(self, df: pd.DataFrame, signal: Dict) -> float:
+    def get_entry_price(self, df: pd.DataFrame, signal: SignalCandidate) -> float:
         """Calculate precise entry price based on signal."""
-        pass
+        return df["close"].iloc[-1]
 
-    @abstractmethod
-    def get_stop_loss(self, df: pd.DataFrame, signal: Dict) -> float:
+    def get_stop_loss(self, df: pd.DataFrame, signal: SignalCandidate) -> float:
         """Calculate stop loss price based on signal."""
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
-    def get_take_profit(self, df: pd.DataFrame, signal: Dict) -> float:
+    def get_take_profit(self, df: pd.DataFrame, signal: SignalCandidate) -> float:
         """Calculate take profit price based on signal."""
-        pass
+        raise NotImplementedError

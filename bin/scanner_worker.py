@@ -24,6 +24,7 @@ from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
 from backend.core.modules.scalping_module import ScalpingModule
 from backend.core.dynamic_coin_selector import DynamicCoinSelector
+from backend.core.signal_candidate import SignalCandidate
 from backend.utils.binance_public_client import BinancePublicClient
 from backend.utils.trading_context import get_effective_is_demo
 
@@ -36,7 +37,6 @@ logger = logging.getLogger("ScannerWorker")
 class ScannerWorker:
     def __init__(self):
         self.db = get_db_manager()
-        # FIX: Use lightweight public client — bypasses python-binance geo-block
         self.binance = BinancePublicClient()
         self.coin_selector = DynamicCoinSelector(self.binance)
 
@@ -51,8 +51,6 @@ class ScannerWorker:
 
         self.market_cache = {}
         self.last_market_fetch = 0
-
-        # FIX: Signal cooldown — don't re-signal same coin within 10 minutes
         self._signal_cooldown = {}
         self._cooldown_seconds = 600  # 10 minutes
 
@@ -64,7 +62,6 @@ class ScannerWorker:
         logger.info("🌐 Fetching fresh market data for top coins...")
 
         try:
-            # FIX: Use lightweight public client with working endpoints
             tickers = self.binance.get_ticker()
             usdt_pairs = {
                 t["symbol"]: t for t in tickers if t["symbol"].endswith("USDT")
@@ -80,24 +77,13 @@ class ScannerWorker:
                 try:
                     klines = self.binance.get_klines(symbol, "1h", limit=100)
                     if klines and len(klines) >= 60:
-                        # Convert to DataFrame format expected by analyzer
                         import pandas as pd
-
                         df = pd.DataFrame(
                             klines,
                             columns=[
-                                "timestamp",
-                                "open",
-                                "high",
-                                "low",
-                                "close",
-                                "volume",
-                                "close_time",
-                                "quote_volume",
-                                "trades",
-                                "taker_buy_base",
-                                "taker_buy_quote",
-                                "ignore",
+                                "timestamp", "open", "high", "low", "close", "volume",
+                                "close_time", "quote_volume", "trades", "taker_buy_base",
+                                "taker_buy_quote", "ignore"
                             ],
                         )
                         df["open"] = df["open"].astype(float)
@@ -166,57 +152,67 @@ class ScannerWorker:
             signals_to_insert = []
             now_ts = time.time()
             for symbol, df in market_data.items():
-                # FIX: Signal cooldown — skip if recently signaled
+                # Cooldown check
                 last_signaled = self._signal_cooldown.get(symbol, 0)
                 if now_ts - last_signaled < self._cooldown_seconds:
                     continue
 
                 state = self.analyzer.analyze(symbol, df)
-                if not state or state.recommendation == "AVOID":
+                if not state:
                     continue
 
+                # Build context with regime scores for modules
                 context = {
+                    "symbol": symbol,
                     "trend": state.trend,
                     "regime": state.regime,
                     "volatility": state.volatility,
                     "coin_type": state.coin_type,
-                    "volume_ratio": 1.0,
+                    "volume_ratio": state.volume_ratio,
+                    "trend_confirmed_4h": state.trend_confirmed_4h,
+                    "trend_confirmed_macd": state.trend_confirmed_macd,
+                    "trend_confirmed_volume": state.trend_confirmed_volume,
+                    "ema_alignment": state.ema_alignment,
+                    "regime_scores": state.regime_scores,
                 }
 
-                best_signal = None
+                # Evaluate all modules — each returns SignalCandidate (never None)
+                best_candidate = None
                 best_score = -1
 
                 for module in self.modules:
                     if state.regime in module.supported_regimes():
-                        signal = module.evaluate(df, context)
-                        if signal:
-                            signal["entry_price"] = module.get_entry_price(df, signal)
-                            signal["stop_loss"] = module.get_stop_loss(df, signal)
-                            signal["take_profit"] = module.get_take_profit(df, signal)
+                        candidate = module.evaluate(df, context)
+                        if candidate.is_valid:
+                            # Set prices
+                            candidate.entry_price = module.get_entry_price(df, candidate)
+                            candidate.stop_loss = module.get_stop_loss(df, candidate)
+                            candidate.take_profit = module.get_take_profit(df, candidate)
 
-                            decision = self.decision_matrix.evaluate(signal, context)
-                            if (
-                                decision["decision"] in ["ENTER", "ENTER_REDUCED"]
-                                and decision["score"] > best_score
-                            ):
+                            # Score via decision matrix
+                            decision = self.decision_matrix.evaluate(candidate.to_dict(), context)
+                            if decision["score"] > best_score:
                                 best_score = decision["score"]
-                                best_signal = {**signal, **decision}
+                                best_candidate = candidate
+                                best_candidate.confidence = decision["score"]
+                                best_candidate.metadata["decision"] = decision["decision"]
+                                best_candidate.metadata["reason"] = decision["reason"]
 
-                if best_signal and best_score >= 55:  # Balanced threshold
+                if best_candidate and best_score >= 55:
                     signals_to_insert.append(
                         {
                             "user_id": user_id,
-                            "symbol": symbol,
-                            "type": best_signal.get("type", "LONG"),
-                            "entry_price": best_signal["entry_price"],
-                            "stop_loss": best_signal["stop_loss"],
-                            "take_profit": best_signal["take_profit"],
+                            "symbol": best_candidate.symbol,
+                            "type": best_candidate.signal_type,
+                            "entry_price": best_candidate.entry_price,
+                            "stop_loss": best_candidate.stop_loss,
+                            "take_profit": best_candidate.take_profit,
                             "score": best_score,
-                            "strategy_name": best_signal.get("strategy", "Unknown"),
-                            "expires_at": datetime.now(timezone.utc)
-                            + timedelta(seconds=30),
+                            "strategy_name": best_candidate.strategy,
+                            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=30),
                         }
                     )
+                    self._signal_cooldown[symbol] = now_ts
 
             if signals_to_insert:
                 with get_db_write_connection() as conn:
@@ -229,8 +225,6 @@ class ScannerWorker:
                         """,
                             sig,
                         )
-                        # FIX: Track cooldown for this symbol
-                        self._signal_cooldown[sig["symbol"]] = time.time()
                 logger.info(
                     f"📝 User {user_id}: Generated {len(signals_to_insert)} signals."
                 )
