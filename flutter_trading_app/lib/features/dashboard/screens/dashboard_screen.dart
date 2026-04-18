@@ -1,32 +1,25 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/models/trade_model.dart';
-import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/privacy_provider.dart';
-import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
-import 'package:trading_app/design/icons/brand_icons.dart';
-import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
-import 'package:trading_app/design/widgets/app_card.dart';
-import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
-import 'package:trading_app/design/widgets/money_text.dart';
-import 'package:trading_app/design/widgets/pnl_indicator.dart';
-import 'package:trading_app/design/widgets/app_icon_button.dart';
-import 'package:trading_app/design/widgets/status_badge.dart';
+import 'package:trading_app/design/widgets/metric_card.dart';
+import 'package:trading_app/design/widgets/status_ring.dart';
+import 'package:trading_app/design/widgets/chart_card.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
-/// Dashboard Screen — الشاشة الرئيسية
+/// Dashboard Screen — الشاشة الرئيسية بتصميم Soft Pastel
+/// Bento Grid layout + ألوان ناعمة + بدون حواف حادة
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
@@ -71,20 +64,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     _buildHeader(context, ref, auth),
                     const SizedBox(height: SpacingTokens.md),
 
-                    // ─── Balance Card (Hero) ─────────────────
-                    _buildBalanceCard(context, ref),
+                    // ─── Hero Balance Card ───────────────────
+                    _buildHeroBalanceCard(context, ref),
                     const SizedBox(height: SpacingTokens.md),
 
-                    if (!auth.isAdmin) ...[
-                      _buildAccountTradingStrip(context, ref),
-                      const SizedBox(height: SpacingTokens.md),
-                    ],
+                    // ─── Performance Ring + Quick Stats ──────
+                    _buildPerformanceSection(context, ref),
+                    const SizedBox(height: SpacingTokens.md),
 
-                    // ─── System Status Strip (admin only) ────
-                    if (auth.isAdmin) ...[
-                      _buildSystemStatusStrip(context, ref),
-                      const SizedBox(height: SpacingTokens.md),
-                    ],
+                    // ─── Chart ───────────────────────────────
+                    _buildChartSection(context, ref),
+                    const SizedBox(height: SpacingTokens.md),
+
+                    // ─── Stats Grid ──────────────────────────
+                    _buildStatsGrid(context, ref),
+                    const SizedBox(height: SpacingTokens.md),
 
                     // ─── Recent Trades ───────────────────────
                     _buildRecentTradesSection(context, ref),
@@ -147,21 +141,42 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
         ),
         const Spacer(),
-        AppIconButton(
-          icon: hideBalance
-              ? Icons.visibility_off_rounded
-              : Icons.visibility_rounded,
+        // Balance visibility toggle
+        GestureDetector(
           onTap: () => ref.read(balanceVisibilityProvider.notifier).toggle(),
-          color: cs.onSurface.withValues(alpha: 0.5),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: cs.onSurface.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              hideBalance
+                  ? Icons.visibility_off_rounded
+                  : Icons.visibility_rounded,
+              size: 20,
+              color: cs.onSurface.withValues(alpha: 0.5),
+            ),
+          ),
         ),
         const SizedBox(width: SpacingTokens.xs),
-        AppIconButton(
-          child: BrandIcon(
-            BrandIcons.bell,
-            size: 22,
-            color: cs.onSurface.withValues(alpha: 0.5),
-          ),
+        // Notifications
+        GestureDetector(
           onTap: () => context.push(RouteNames.notifications),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: cs.onSurface.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.notifications_outlined,
+              size: 20,
+              color: cs.onSurface.withValues(alpha: 0.5),
+            ),
+          ),
         ),
       ],
     );
@@ -170,9 +185,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   // ──────────────────────────────────────────────────────────────
   //  HERO BALANCE CARD
   // ──────────────────────────────────────────────────────────────
-  Widget _buildBalanceCard(BuildContext context, WidgetRef ref) {
+  Widget _buildHeroBalanceCard(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
     final portfolio = ref.watch(portfolioProvider);
     final auth = ref.watch(authProvider);
     final portfolioMode = auth.isAdmin
@@ -180,7 +194,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         : 'real';
 
     return portfolio.when(
-      loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 150),
+      loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 140),
       error: (e, _) => AppCard(
         child: Center(
           child: Padding(
@@ -194,80 +208,30 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       data: (p) {
         final modeLabel = portfolioMode == 'real' ? 'حقيقي' : 'تجريبي';
-        final isReal = portfolioMode == 'real';
+        final hideBalance = ref.watch(balanceVisibilityProvider);
+        final semantic = SemanticColors.of(context);
+        final isPositive = p.totalPnl >= 0;
 
-        return AppCard(
-          level: 2,
-          borderRadius: SpacingTokens.radiusXxl,
-          gradientColors: [cs.primary.withValues(alpha: 0.10), cs.surface],
-          padding: const EdgeInsets.all(SpacingTokens.lg),
-          child: Stack(
-            children: [
-              Positioned(
-                left: 8,
-                top: 8,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.11,
-                    child: BrandLogo.mono(size: 88, monoColor: cs.onSurface),
-                  ),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'الرصيد الحالي',
-                          style: TypographyTokens.caption(
-                            cs.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ),
-                      StatusBadge(
-                        text: 'وضع $modeLabel',
-                        type: isReal ? BadgeType.info : BadgeType.success,
-                        showDot: false,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: SpacingTokens.xs),
-                  MoneyText(
-                    amount: p.currentBalance,
-                    isHero: true,
-                    isSensitive: true,
-                  ),
-                  const SizedBox(height: SpacingTokens.lg),
-                  Divider(
-                    color: cs.outline.withValues(alpha: isDark ? 0.14 : 0.10),
-                    height: 1,
-                  ),
-                  const SizedBox(height: SpacingTokens.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _BalanceSummaryMetric(
-                          label: 'إجمالي الربح/الخسارة',
-                          amount: p.totalPnl,
-                          percentage: p.totalPnlPct,
-                        ),
-                      ),
-                      const SizedBox(width: SpacingTokens.sm),
-                      Expanded(
-                        child: _BalanceSummaryMetric(
-                          label: 'غير المحقق',
-                          amount: p.unrealizedPnl,
-                          percentage: p.unrealizedPnlPct,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+        return HeroMetricCard(
+          label: 'الرصيد الحالي',
+          value: hideBalance ? '••••••' : _formatCurrency(p.currentBalance),
+          subtitle: hideBalance
+              ? null
+              : '${isPositive ? '+' : ''}${p.totalPnl.toStringAsFixed(2)} (${isPositive ? '+' : ''}${p.totalPnlPct.toStringAsFixed(2)}%)',
+          badge: modeLabel,
+          accentColor: isPositive ? semantic.positive : semantic.negative,
+          trailing: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: cs.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.account_balance_wallet_outlined,
+              size: 18,
+              color: cs.primary,
+            ),
           ),
         );
       },
@@ -275,317 +239,283 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   // ──────────────────────────────────────────────────────────────
-  //  ACCOUNT TRADING STRIP (user quick toggle)
-  //  تفعيل/تعطيل التداول الشخصي - خاص بكل مستخدم
-  //  DISTINCT from system control (admin-only)
+  //  PERFORMANCE SECTION — Ring + Quick Stats
   // ──────────────────────────────────────────────────────────────
-  Widget _buildAccountTradingStrip(BuildContext context, WidgetRef ref) {
+  Widget _buildPerformanceSection(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final tradingState = ref.watch(accountTradingProvider);
-
-    if (tradingState.enabled == null && tradingState.isLoading) {
-      return const LoadingShimmer(itemCount: 1, itemHeight: 56);
-    }
-
-    final enabled = tradingState.enabled ?? false;
-    final canEnable = tradingState.systemRunning;
-    final statusTone = enabled ? cs.primary : cs.tertiary;
-    final badgeType = enabled ? BadgeType.success : BadgeType.warning;
-    // تسمية واضحة: تفعيل التداول الشخصي (user-level)
-    final label = enabled ? 'مفعّل' : 'معطّل';
-    final subtitle = !canEnable && !enabled
-        ? 'لا يمكن التفعيل - النظام متوقف'
-        : enabled
-        ? 'يفتح صفقات جديدة تلقائياً'
-        : 'لن يفتح صفقات جديدة';
     final isDark = cs.brightness == Brightness.dark;
+    final stats = ref.watch(statsProvider);
 
-    return IntrinsicHeight(
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: statusTone,
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(SpacingTokens.radiusMd),
-                  bottomRight: Radius.circular(SpacingTokens.radiusMd),
-                ),
-              ),
-            ),
-            const SizedBox(width: SpacingTokens.sm),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: SpacingTokens.md),
-              child: BrandIcon(BrandIcons.shield, size: 16, color: statusTone),
-            ),
-            const SizedBox(width: SpacingTokens.xs),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: SpacingTokens.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: SpacingTokens.xs,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          'تداول حسابي', // renamed from 'حالة التداول' for clarity
-                          style: TypographyTokens.bodySmall(
-                            cs.onSurface.withValues(alpha: 0.8),
-                          ).copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        StatusBadge(text: label, type: badgeType),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TypographyTokens.caption(
-                        cs.onSurface.withValues(alpha: 0.45),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: SpacingTokens.sm),
-              child: tradingState.isLoading
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: statusTone,
-                      ),
-                    )
-                  : Switch(
-                      value: enabled,
-                      onChanged: (!canEnable && !enabled)
-                          ? null
-                          : (value) =>
-                                _toggleAccountTrading(context, ref, value),
-                      activeThumbColor: cs.primary,
-                    ),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(SpacingTokens.md),
+      decoration: BoxDecoration(
+        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
+        border: Border.all(
+          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
+          width: 1,
         ),
       ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  //  SYSTEM STATUS STRIP (admin only) — compact, tappable
-  // ──────────────────────────────────────────────────────────────
-  Widget _buildSystemStatusStrip(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    final status = ref.watch(tradingCycleLiveProvider);
-
-    return status.when(
-      loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 56),
-      error: (e, _) => GestureDetector(
-        onTap: () => ref.invalidate(tradingCycleLiveProvider),
-        child: Container(
-          height: 56,
-          decoration: BoxDecoration(
-            color: cs.errorContainer.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-            border: Border.all(color: cs.error.withValues(alpha: 0.3)),
+      child: Row(
+        children: [
+          // Status Ring
+          stats.when(
+            loading: () => const SizedBox(
+              width: 100,
+              height: 100,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (s) {
+              final winRate = s.winRate / 100;
+              return StatusRing(
+                percentage: winRate.clamp(0.0, 1.0),
+                size: 100,
+                strokeWidth: 10,
+                centerText: '${s.winRate.toInt()}%',
+                label: 'نسبة الفوز',
+                color: winRate >= 0.5 ? cs.primary : cs.error,
+              );
+            },
           ),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+          const SizedBox(width: SpacingTokens.md),
+          // Quick Stats
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.sync_problem, color: cs.error, size: 18),
-                const SizedBox(width: SpacingTokens.sm),
                 Text(
-                  'فشل تحميل الحالة',
-                  style: TypographyTokens.bodySmall(cs.error),
+                  'إحصائيات سريعة'.toUpperCase(),
+                  style: TypographyTokens.overline(
+                    cs.onSurface.withValues(alpha: 0.5),
+                  ).copyWith(letterSpacing: 1.5, fontSize: 10),
                 ),
-                const SizedBox(width: SpacingTokens.sm),
-                Text(
-                  'اضغط لإعادة المحاولة',
-                  style: TypographyTokens.caption(
-                    cs.error.withValues(alpha: 0.7),
+                const SizedBox(height: SpacingTokens.sm),
+                stats.when(
+                  loading: () =>
+                      const LoadingShimmer(itemCount: 3, itemHeight: 24),
+                  error: (_, __) => const SizedBox.shrink(),
+                  data: (s) => Column(
+                    children: [
+                      _QuickStatRow(
+                        label: 'الصفقات',
+                        value: '${s.totalTrades}',
+                        subValue: '${s.activeTrades} نشطة',
+                      ),
+                      const SizedBox(height: SpacingTokens.xs),
+                      _QuickStatRow(
+                        label: 'الفائزة',
+                        value: '${s.winningTrades}',
+                        subValue: 'من ${s.closedTrades} مغلقة',
+                      ),
+                      const SizedBox(height: SpacingTokens.xs),
+                      _QuickStatRow(
+                        label: 'الخاسرة',
+                        value: '${s.losingTrades}',
+                        subValue: '',
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        ),
+        ],
       ),
-      data: (s) {
-        final badgeType = s.isEffectivelyRunning
-            ? BadgeType.success
-            : s.isRunning
-            ? BadgeType.warning
-            : s.isError
-            ? BadgeType.error
-            : BadgeType.warning;
-        final label = s.isEffectivelyRunning
-            ? 'يعمل'
-            : s.isRunning
-            ? 'جارٍ التفعيل...'
-            : s.isError
-            ? 'خطأ'
-            : 'متوقف';
-        final statusTone = switch (badgeType) {
-          BadgeType.success => cs.primary,
-          BadgeType.error => cs.error,
-          BadgeType.warning => cs.tertiary,
-          BadgeType.info => cs.secondary,
-        };
-        final isDark = cs.brightness == Brightness.dark;
-        final cycleColor = s.isCycleActive
-            ? cs.primary
-            : cs.onSurface.withValues(alpha: 0.3);
-        final modeBadgeType = s.tradingMode == 'real'
-            ? BadgeType.error
-            : BadgeType.warning;
-        final modeLabel = s.tradingMode == 'real' ? 'حقيقي' : 'تجريبي';
+    );
+  }
 
-        return GestureDetector(
-          onTap: () => context.push(RouteNames.tradingControl),
-          child: IntrinsicHeight(
-            child: Container(
-              decoration: BoxDecoration(
-                color: isDark
-                    ? cs.surfaceContainerHigh
-                    : cs.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-              ),
-              child: Row(
-                children: [
-                  // Colored start accent bar — fills full strip height
-                  Container(
-                    width: 4,
-                    decoration: BoxDecoration(
-                      color: statusTone,
-                      borderRadius: const BorderRadius.only(
-                        topRight: Radius.circular(SpacingTokens.radiusMd),
-                        bottomRight: Radius.circular(SpacingTokens.radiusMd),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: SpacingTokens.sm),
-                  // Icon
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: SpacingTokens.md,
-                    ),
-                    child: BrandIcon(
-                      BrandIcons.shield,
-                      size: 16,
-                      color: statusTone,
-                    ),
-                  ),
-                  const SizedBox(width: SpacingTokens.xs),
-                  // Texts
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: SpacingTokens.md,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            spacing: SpacingTokens.xs,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                'حالة النظام',
-                                style: TypographyTokens.bodySmall(
-                                  cs.onSurface.withValues(alpha: 0.8),
-                                ).copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              StatusBadge(text: label, type: badgeType),
-                              StatusBadge(
-                                text: 'وضع $modeLabel',
-                                type: modeBadgeType,
-                                showDot: false,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: cycleColor,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'دورة #${s.totalCycles} · ${s.lastCycleLabel}',
-                                  style: TypographyTokens.caption(
-                                    cs.onSurface.withValues(alpha: 0.45),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: SpacingTokens.sm,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'إدارة',
-                          style: TypographyTokens.caption(
-                            cs.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
-                          color: cs.onSurface.withValues(alpha: 0.45),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+  // ──────────────────────────────────────────────────────────────
+  //  CHART SECTION — بيانات حقيقية من صفقات المستخدم
+  // ──────────────────────────────────────────────────────────────
+  Widget _buildChartSection(BuildContext context, WidgetRef ref) {
+    final portfolio = ref.watch(portfolioProvider);
+    final trades = ref.watch(analyticsTradesProvider);
+    final semantic = SemanticColors.of(context);
+
+    return portfolio.when(
+      loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 200),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (p) {
+        final isPositive = p.dailyPnl >= 0;
+
+        // بناء منحنى الأسهم من الصفقات الحقيقية المغلقة
+        final chartData = trades.when(
+          loading: () => <double>[],
+          error: (_, __) => <double>[],
+          data: (tradeList) => _buildEquityCurve(tradeList, p.initialBalance),
+        );
+
+        // عرض الرسالة إذا لم توجد بيانات
+        if (chartData.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(SpacingTokens.lg),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withValues(
+                  alpha:
+                      Theme.of(context).colorScheme.brightness ==
+                          Brightness.dark
+                      ? 0.10
+                      : 0.08,
+                ),
+                width: 1,
               ),
             ),
-          ),
+            child: Center(
+              child: Text(
+                'لا توجد بيانات كافية للرسم البياني',
+                style: TypographyTokens.bodySmall(
+                  Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return ChartCard(
+          title: 'منحنى الأسهم',
+          data: chartData,
+          labels: _generateTimeLabels(chartData.length),
+          currentValue: _formatCurrency(p.currentBalance),
+          change:
+              '${isPositive ? '+' : ''}${p.dailyPnlPct.toStringAsFixed(2)}%',
+          isPositive: isPositive,
+          lineColor: isPositive ? semantic.positive : semantic.negative,
+          height: 160,
         );
       },
     );
   }
 
-  Future<void> _toggleAccountTrading(
-    BuildContext context,
-    WidgetRef ref,
-    bool enabled,
-  ) async {
-    await toggleTradingWithBiometric(
-      ref: ref,
-      enabled: enabled,
-      biometricAuth: (reason) =>
-          ref.read(biometricServiceProvider).authenticate(reason: reason),
-      showMessage: (message, type) =>
-          AppSnackbar.show(context, message: message, type: type),
+  /// بناء منحنى الأسهم التراكمي من الصفقات الحقيقية
+  List<double> _buildEquityCurve(
+    List<TradeModel> trades,
+    double initialBalance,
+  ) {
+    // تصفية الصفقات المغلقة فقط وترتيبها حسب وقت الخروج
+    final closedTrades =
+        trades.where((t) => t.isClosed && t.exitTime != null).toList()
+          ..sort((a, b) => (a.exitTime ?? '').compareTo(b.exitTime ?? ''));
+
+    if (closedTrades.isEmpty) return [];
+
+    // حساب الرصيد التراكمي بعد كل صفقة
+    final curve = <double>[initialBalance];
+    double runningBalance = initialBalance;
+
+    for (final trade in closedTrades) {
+      runningBalance += (trade.pnl ?? 0);
+      curve.add(runningBalance);
+    }
+
+    return curve;
+  }
+
+  /// توليد تسميات زمنية بناءً على عدد النقاط
+  List<String> _generateTimeLabels(int count) {
+    if (count <= 1) return ['البداية'];
+    if (count <= 4) return ['البداية', '', '', 'النهاية'];
+    if (count <= 7) {
+      return ['البداية', '', 'الوسط', '', '', '', 'النهاية'];
+    }
+    // لعدد أكبر، نوزع التسميات بشكل متساوٍ
+    final labels = <String>[];
+    for (int i = 0; i < count; i++) {
+      if (i == 0) {
+        labels.add('البداية');
+      } else if (i == count - 1) {
+        labels.add('النهاية');
+      } else if (i == count ~/ 2) {
+        labels.add('الوسط');
+      } else {
+        labels.add('');
+      }
+    }
+    return labels;
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  STATS GRID
+  // ──────────────────────────────────────────────────────────────
+  Widget _buildStatsGrid(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final portfolio = ref.watch(portfolioProvider);
+
+    return Column(
+      children: [
+        // الصف الأول: رصيد متاح + رصيد محجوز
+        Row(
+          children: [
+            Expanded(
+              child: portfolio.when(
+                loading: () =>
+                    const LoadingShimmer(itemCount: 1, itemHeight: 100),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (p) => MetricCard(
+                  label: 'متاح',
+                  value: _formatCurrency(p.availableBalance),
+                  icon: Icons.account_balance_outlined,
+                  accentColor: cs.primary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: portfolio.when(
+                loading: () =>
+                    const LoadingShimmer(itemCount: 1, itemHeight: 100),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (p) => MetricCard(
+                  label: 'محجوز',
+                  value: _formatCurrency(p.reservedBalance),
+                  icon: Icons.lock_outline,
+                  accentColor: cs.secondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // الصف الثاني: ربح محقق + ربح غير محقق
+        Row(
+          children: [
+            Expanded(
+              child: portfolio.when(
+                loading: () =>
+                    const LoadingShimmer(itemCount: 1, itemHeight: 100),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (p) => MetricCard(
+                  label: 'ربح محقق',
+                  value: _formatPnl(p.realizedPnl),
+                  change: '${p.realizedPnlPct.toStringAsFixed(2)}%',
+                  isPositive: p.realizedPnl >= 0,
+                  icon: Icons.trending_up_outlined,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: portfolio.when(
+                loading: () =>
+                    const LoadingShimmer(itemCount: 1, itemHeight: 100),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (p) => MetricCard(
+                  label: 'غير محقق',
+                  value: _formatPnl(p.unrealizedPnl),
+                  change: '${p.unrealizedPnlPct.toStringAsFixed(2)}%',
+                  isPositive: p.unrealizedPnl >= 0,
+                  icon: Icons.show_chart_outlined,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -593,14 +523,34 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   //  RECENT TRADES SECTION
   // ──────────────────────────────────────────────────────────────
   Widget _buildRecentTradesSection(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _DashTitle(
-          title: 'آخر الصفقات',
-          actionText: 'عرض الكل',
-          onAction: () => context.go(RouteNames.trades),
+        Padding(
+          padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'آخر الصفقات'.toUpperCase(),
+                style: TypographyTokens.overline(
+                  cs.onSurface.withValues(alpha: 0.5),
+                ).copyWith(letterSpacing: 1.5, fontSize: 10),
+              ),
+              GestureDetector(
+                onTap: () => context.go(RouteNames.trades),
+                child: Text(
+                  'عرض الكل',
+                  style: TypographyTokens.bodySmall(
+                    cs.primary,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: SpacingTokens.sm),
         _buildRecentTrades(context, ref),
       ],
     );
@@ -608,15 +558,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildRecentTrades(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     final activeTrades = ref.watch(activePositionsProvider);
     final recentTrades = ref.watch(recentTradesProvider);
 
-    // Only show loading when primary source (recentTrades) is loading
     if (recentTrades.isLoading) {
       return const LoadingShimmer(itemCount: 3, itemHeight: 60);
     }
 
-    // Show error only for primary source
     if (recentTrades.hasError) {
       return ErrorState(
         message: 'تعذر تحميل الصفقات',
@@ -627,12 +576,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
     }
 
-    // ✅ Single source of truth: recentTradesProvider
-    // RecentTrades is the primary source - contains ALL trades (open+closed)
-    // ActivePositions provides live PnL updates for open positions only
     final allTrades = recentTrades.valueOrNull ?? const <TradeModel>[];
-
-    // Only overlay live PnL if activePositions has data (not loading/error)
     final livePositions = activeTrades.valueOrNull;
     final hasLiveData =
         livePositions != null &&
@@ -641,14 +585,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     List<TradeModel> openList;
     if (hasLiveData) {
-      // Merge: use recentTrades for structure, activeTrades for live PnL
       final liveMap = {for (final t in livePositions) t.id: t};
       openList = allTrades
           .where((t) => t.isOpen)
           .map((t) => liveMap[t.id] ?? t)
           .toList();
     } else {
-      // Use recentTrades data as-is (no live PnL available)
       openList = allTrades.where((t) => t.isOpen).toList();
     }
 
@@ -656,50 +598,53 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final hybridItems = _buildHybridTradeItems(openList, closedList);
 
     if (hybridItems.isEmpty) {
-      return EmptyState(
-        message: 'لا توجد صفقات حديثة',
-        icon: Icons.receipt_long_outlined,
+      return Container(
+        padding: const EdgeInsets.all(SpacingTokens.lg),
+        decoration: BoxDecoration(
+          color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
+          border: Border.all(
+            color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
+            width: 1,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            'لا توجد صفقات حديثة',
+            style: TypographyTokens.bodySmall(
+              cs.onSurface.withValues(alpha: 0.4),
+            ),
+          ),
+        ),
       );
     }
 
-    final openCount = openList.length;
-    final closedCount = closedList.length;
-
-    return AppCard(
-      padding: const EdgeInsets.all(SpacingTokens.md),
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
+        border: Border.all(
+          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
+          width: 1,
+        ),
+      ),
       child: Column(
-        children: [
-          Row(
+        children: hybridItems.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          return Column(
             children: [
-              Expanded(
-                child: _HybridSummaryChip(
-                  label: 'مفتوحة الآن',
-                  value: '$openCount',
-                  tone: cs.primary,
+              _HybridTradeTile(trade: item),
+              if (index < hybridItems.length - 1)
+                Divider(
+                  color: cs.outline.withValues(alpha: isDark ? 0.08 : 0.06),
+                  height: 1,
+                  indent: SpacingTokens.md,
+                  endIndent: SpacingTokens.md,
                 ),
-              ),
-              const SizedBox(width: SpacingTokens.sm),
-              Expanded(
-                child: _HybridSummaryChip(
-                  label: 'أغلقت مؤخرًا',
-                  value: '$closedCount',
-                  tone: cs.secondary,
-                ),
-              ),
             ],
-          ),
-          const SizedBox(height: SpacingTokens.md),
-          ...hybridItems.asMap().entries.map((entry) {
-            final index = entry.key;
-            final item = entry.value;
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: index == hybridItems.length - 1 ? 0 : SpacingTokens.xs,
-              ),
-              child: _HybridTradeTile(trade: item),
-            );
-          }),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -709,8 +654,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     List<TradeModel> closedTrades,
   ) {
     const maxItems = 5;
-
-    // Sort all trades by time (newest first)
     final allTrades = [...openTrades, ...closedTrades];
     allTrades.sort((a, b) {
       final aTime = a.exitTime ?? a.entryTime;
@@ -720,8 +663,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       if (bTime == null) return -1;
       return bTime.compareTo(aTime);
     });
-
     return allTrades.take(maxItems).toList();
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  HELPERS
+  // ──────────────────────────────────────────────────────────────
+  String _formatCurrency(double amount) {
+    return '\$${amount.toStringAsFixed(2)}';
+  }
+
+  String _formatPnl(double amount) {
+    final sign = amount >= 0 ? '+' : '';
+    return '$sign\$${amount.abs().toStringAsFixed(2)}';
   }
 }
 
@@ -729,48 +683,49 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 //  PRIVATE WIDGETS
 // ──────────────────────────────────────────────────────────────
 
-class _HybridSummaryChip extends StatelessWidget {
+class _QuickStatRow extends StatelessWidget {
   final String label;
   final String value;
-  final Color tone;
+  final String subValue;
 
-  const _HybridSummaryChip({
+  const _QuickStatRow({
     required this.label,
     required this.value,
-    required this.tone,
+    required this.subValue,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: SpacingTokens.sm,
-        vertical: SpacingTokens.sm,
-      ),
-      decoration: BoxDecoration(
-        color: tone.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-        border: Border.all(color: tone.withValues(alpha: 0.14), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TypographyTokens.caption(
-              cs.onSurface.withValues(alpha: 0.55),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TypographyTokens.bodySmall(
+            cs.onSurface.withValues(alpha: 0.5),
+          ),
+        ),
+        Row(
+          children: [
+            Text(
+              value,
+              style: TypographyTokens.body(
+                cs.onSurface,
+              ).copyWith(fontWeight: FontWeight.w700),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TypographyTokens.body(
-              cs.onSurface,
-            ).copyWith(fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
+            if (subValue.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Text(
+                subValue,
+                style: TypographyTokens.caption(
+                  cs.onSurface.withValues(alpha: 0.35),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }
@@ -794,128 +749,100 @@ class _HybridTradeTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => context.push(RouteNames.tradeDetail, extra: trade),
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-        child: IntrinsicHeight(
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              vertical: SpacingTokens.sm,
-              horizontal: SpacingTokens.md,
-            ),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 3,
-                  decoration: BoxDecoration(
-                    color: accentColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            vertical: SpacingTokens.sm,
+            horizontal: SpacingTokens.md,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(width: SpacingTokens.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              trade.symbol,
-                              style: TypographyTokens.body(
-                                cs.onSurface,
-                              ).copyWith(fontWeight: FontWeight.w700),
-                            ),
+              ),
+              const SizedBox(width: SpacingTokens.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            trade.symbol,
+                            style: TypographyTokens.body(
+                              cs.onSurface,
+                            ).copyWith(fontWeight: FontWeight.w700),
                           ),
-                          Text(
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
                             isOpen ? 'مفتوحة' : 'مغلقة',
                             style: TypographyTokens.caption(
-                              isOpen
-                                  ? semantic.info
-                                  : cs.onSurface.withValues(alpha: 0.4),
-                            ).copyWith(fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              isOpen
-                                  ? trade.entryPrice.toStringAsFixed(2)
-                                  : (trade.exitPrice?.toStringAsFixed(2) ??
-                                        "-"),
-                              style: TypographyTokens.caption(
-                                cs.onSurface.withValues(alpha: 0.45),
-                              ),
-                            ),
-                          ),
-                          if (trade.strategy != null)
-                            Text(
-                              trade.strategy!,
-                              style: TypographyTokens.caption(
-                                cs.onSurface.withValues(alpha: 0.3),
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (!isOpen && trade.exitReason != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          _formatExitReason(trade.exitReason!),
-                          style: TypographyTokens.caption(
-                            cs.onSurface.withValues(alpha: 0.3),
+                              accentColor,
+                            ).copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: SpacingTokens.md),
-                SizedBox(
-                  width: 80,
-                  child: isOpen
-                      ? _OpenTradeLiveIndicator(trade: trade)
-                      : trade.pnl != null
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerEnd,
-                          child: PnlIndicator(
-                            amount: trade.pnl!,
-                            percentage: trade.pnlPct,
-                            priceChangePercentage: trade.priceChangePct,
-                            compact: true,
-                            fontSize: 12,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isOpen
+                                ? trade.entryPrice.toStringAsFixed(2)
+                                : (trade.exitPrice?.toStringAsFixed(2) ?? "-"),
+                            style: TypographyTokens.caption(
+                              cs.onSurface.withValues(alpha: 0.45),
+                            ),
                           ),
-                        )
-                      : const SizedBox.shrink(),
+                        ),
+                        if (trade.strategy != null)
+                          Text(
+                            trade.strategy!,
+                            style: TypographyTokens.caption(
+                              cs.onSurface.withValues(alpha: 0.3),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: SpacingTokens.md),
+              SizedBox(
+                width: 80,
+                child: isOpen
+                    ? _OpenTradeLiveIndicator(trade: trade)
+                    : trade.pnl != null
+                    ? FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _PnlCompact(
+                          amount: trade.pnl!,
+                          percentage: trade.pnlPct,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  String _formatExitReason(String reason) {
-    switch (reason.toUpperCase()) {
-      case 'STOP_LOSS':
-        return 'وقف خسارة';
-      case 'TAKE_PROFIT':
-        return 'جني أرباح';
-      case 'TRAILING_STOP':
-        return 'وقف متحرك';
-      case 'MANUAL':
-        return 'يدوي';
-      case 'SIGNAL':
-        return 'إشارة';
-      default:
-        return reason;
-    }
   }
 }
 
@@ -953,8 +880,8 @@ class _OpenTradeLiveIndicator extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
             decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
@@ -970,75 +897,59 @@ class _OpenTradeLiveIndicator extends StatelessWidget {
   }
 }
 
-class _BalanceSummaryMetric extends StatelessWidget {
-  final String label;
+class _PnlCompact extends StatelessWidget {
   final double amount;
   final double? percentage;
 
-  const _BalanceSummaryMetric({
-    required this.label,
-    required this.amount,
-    this.percentage,
-  });
+  const _PnlCompact({required this.amount, this.percentage});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final semantic = SemanticColors.of(context);
+    final isPositive = amount >= 0;
+    final tone = isPositive ? semantic.positive : semantic.negative;
+    final sign = isPositive ? '+' : '-';
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          label,
-          style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.55)),
+          '$sign\$${amount.abs().toStringAsFixed(2)}',
+          style: TypographyTokens.bodySmall(
+            tone,
+          ).copyWith(fontWeight: FontWeight.w700),
         ),
-        const SizedBox(height: SpacingTokens.xs),
-        PnlIndicator(amount: amount, percentage: percentage, compact: true),
+        if (percentage != null)
+          Text(
+            '$sign${percentage!.toStringAsFixed(2)}%',
+            style: TypographyTokens.caption(tone.withValues(alpha: 0.7)),
+          ),
       ],
     );
   }
 }
 
-/// Section title for dashboard — zero extra horizontal padding
-/// Aligns flush with card edges (unlike SectionHeader which adds 16px)
-class _DashTitle extends StatelessWidget {
-  final String title;
-  final String? actionText;
-  final VoidCallback? onAction;
+// AppCard placeholder for error state
+class AppCard extends StatelessWidget {
+  final Widget child;
 
-  const _DashTitle({required this.title, this.actionText, this.onAction});
+  const AppCard({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: SpacingTokens.xs),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: TypographyTokens.label(
-              cs.onSurface.withValues(alpha: 0.72),
-            ).copyWith(fontWeight: FontWeight.w600),
-          ),
-          if (actionText != null && onAction != null)
-            GestureDetector(
-              onTap: onAction,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: SpacingTokens.sm,
-                  vertical: SpacingTokens.sm,
-                ),
-                child: Text(
-                  actionText!,
-                  style: TypographyTokens.bodySmall(
-                    cs.primary,
-                  ).copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-        ],
+    final isDark = cs.brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
+        border: Border.all(
+          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
+          width: 1,
+        ),
       ),
+      child: child,
     );
   }
 }

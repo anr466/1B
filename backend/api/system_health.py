@@ -5,7 +5,7 @@ System Health Check API - مراقبة صحة النظام
 
 from backend.core.trading_state_machine import get_trading_state_machine
 from backend.infrastructure.db_access import get_db_manager
-from backend.api.auth_middleware import require_admin
+from backend.utils.admin_auth import require_admin
 from flask import Blueprint, jsonify
 import os
 import sys

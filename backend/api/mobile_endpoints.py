@@ -146,7 +146,11 @@ def verify_user_access(user_id):
     """
     التحقق من أن المستخدم يطلب بياناته فقط
     ✅ منع الوصول لبيانات مستخدمين آخرين
+    ✅ السماح للأدمن بالوصول لبيانات أي مستخدم
     """
+    user_type = getattr(g, "current_user_type", "user")
+    if user_type == "admin":
+        return True
     if g.current_user_id != user_id:
         logger.warning(
             f"⚠️ محاولة وصول غير مصرح: User {

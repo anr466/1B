@@ -157,12 +157,10 @@ def register_mobile_notifications_routes(bp, shared):
         """تحديد إشعار كمقروء — مع تحقق من ملكية المستخدم"""
         try:
             db = db_manager
-
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             with db.get_write_connection() as conn:
                 cursor = conn.cursor()
-                # ✅ SECURITY FIX: التحقق من أن الإشعار يخص المستخدم الحالي
                 cursor.execute(
                     "UPDATE notifications SET is_read = TRUE WHERE id = %s AND user_id = %s",
                     (notification_id, user_id),
@@ -235,7 +233,7 @@ def register_mobile_notifications_routes(bp, shared):
         جلب إعدادات الإشعارات للمستخدم الحالي
         """
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             # إعدادات افتراضية شاملة
             default_settings = {
@@ -303,7 +301,7 @@ def register_mobile_notifications_routes(bp, shared):
         تحديث إعدادات الإشعارات للمستخدم الحالي
         """
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
             body = request.get_json()
 
             if not body:
@@ -540,7 +538,7 @@ def register_mobile_notifications_routes(bp, shared):
     def get_cache_status():
         """جلب حالة الـ cache للمستخدم"""
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             cache_info = {
                 "user_id": user_id,
@@ -568,7 +566,7 @@ def register_mobile_notifications_routes(bp, shared):
     def clear_user_cache():
         """مسح cache المستخدم"""
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             cleared_keys = []
             try:
@@ -605,7 +603,7 @@ def register_mobile_notifications_routes(bp, shared):
     def get_integration_status():
         """جلب حالة التكامل مع النظام"""
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             integration_status = {
                 "user_authenticated": True,
@@ -668,7 +666,7 @@ def register_mobile_notifications_routes(bp, shared):
     def cleanup_notifications():
         """تنظيف الإشعارات القديمة بناءً على السياسة"""
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             # استدعاء خدمة التنظيف
             from backend.services.notification_cleanup_service import (
@@ -697,7 +695,7 @@ def register_mobile_notifications_routes(bp, shared):
     def get_cleanup_stats():
         """الحصول على إحصائيات التنظيف"""
         try:
-            g.user_id
+            g.current_user_id
 
             from backend.services.notification_cleanup_service import (
                 get_notification_cleanup_service,
@@ -734,8 +732,7 @@ def register_mobile_notifications_routes(bp, shared):
     def admin_cleanup_all_notifications():
         """تنظيف جميع الإشعارات (للأدمن فقط)"""
         try:
-            # التحقق من صلاحيات الأدمن
-            user_id = g.user_id
+            user_id = g.current_user_id
             user_data = db_manager.get_user_by_id(user_id)
 
             if not user_data or user_data.get("user_type") != "admin":
@@ -857,7 +854,7 @@ def register_mobile_notifications_routes(bp, shared):
     def get_user_notifications():
         """جلب إشعارات المستخدم مع pagination"""
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
 
             # معالجة pagination parameters
             page = int(request.args.get("page", 1))
@@ -940,7 +937,7 @@ def register_mobile_notifications_routes(bp, shared):
                 )
 
         except Exception as e:
-            logger.error(f"❌ خطأ في جلب الإشعارات للمستخدم {g.user_id}: {e}")
+            logger.error(f"❌ خطأ في جلب الإشعارات للمستخدم {g.current_user_id}: {e}")
             return (
                 jsonify({"success": False, "error": "خطأ في جلب الإشعارات"}),
                 500,

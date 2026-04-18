@@ -8,20 +8,25 @@ void main() {
 
       final encrypted = CredentialEncryption.encrypt(plainText);
       expect(encrypted.isNotEmpty, true);
-      expect(encrypted.startsWith('enc_v1:'), true);
+      expect(encrypted.startsWith('enc_v2:'), true);
       expect(encrypted, isNot(equals(plainText)));
 
       final decrypted = CredentialEncryption.decrypt(encrypted);
       expect(decrypted, equals(plainText));
     });
 
-    test('encrypt produces consistent output for same input', () {
+    test('encrypt produces different output for same input (random IV)', () {
       const plainText = 'test@example.com';
 
       final encrypted1 = CredentialEncryption.encrypt(plainText);
       final encrypted2 = CredentialEncryption.encrypt(plainText);
 
-      expect(encrypted1, equals(encrypted2));
+      // v2 uses random IV so each encryption produces different output
+      expect(encrypted1, isNot(equals(encrypted2)));
+
+      // But both decrypt to the same value
+      expect(CredentialEncryption.decrypt(encrypted1), equals(plainText));
+      expect(CredentialEncryption.decrypt(encrypted2), equals(plainText));
     });
 
     test('decrypt handles legacy encrypted format', () {
@@ -51,7 +56,7 @@ void main() {
 
     test('isEncrypted returns correct values', () {
       const plainText = 'test';
-      const encrypted = 'enc_v1:ABC123';
+      const encrypted = 'enc_v2:ABC123';
 
       expect(CredentialEncryption.isEncrypted(plainText), false);
       expect(CredentialEncryption.isEncrypted(encrypted), true);

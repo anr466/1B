@@ -6,7 +6,8 @@ Single source of truth for all authentication decorators.
 All API blueprints should import from here instead of defining their own.
 
 Usage:
-    from backend.api.auth_middleware import require_auth, require_admin
+    from backend.api.auth_middleware import require_auth, require_auth_atomic
+    from backend.utils.admin_auth import require_admin  # for admin-only endpoints
 """
 
 import jwt
@@ -200,25 +201,15 @@ def require_auth_atomic(f):
     return decorated_function
 
 
+# ⚠️ require_admin تم نقله إلى backend.utils.admin_auth
+# للحفاظ على مصدر واحد للتحقق من صلاحيات الأدمن
+# استخدم: from backend.utils.admin_auth import require_admin
+
+
 def require_admin(f):
     """
-    Decorator for admin-only endpoints.
-    FIX 4: Now includes JWT verification — no longer requires @require_auth first.
+    ⚠️ DEPRECATED: Use backend.utils.admin_auth.require_admin instead.
+    This is kept for backward compatibility only.
     """
-
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # FIX 4: Verify JWT and set g.current_user_type if not already set
-        if not hasattr(g, "current_user_type"):
-            error_response = _verify_jwt_and_set_g()
-            if error_response is not None:
-                return error_response
-
-        if not hasattr(g, "current_user_type") or g.current_user_type != "admin":
-            return (
-                jsonify({"success": False, "error": "Admin access required"}),
-                403,
-            )
-        return f(*args, **kwargs)
-
-    return decorated_function
+    from backend.utils.admin_auth import require_admin as _real_require_admin
+    return _real_require_admin(f)

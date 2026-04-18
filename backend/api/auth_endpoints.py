@@ -624,6 +624,26 @@ def send_verification_email():
 def login_user():
     """تسجيل دخول المستخدم"""
     try:
+        # ✅ Rate Limiting - منع brute force
+        try:
+            data_peek = request.get_json(silent=True) or {}
+            identifier = data_peek.get("email", "") or data_peek.get("username", "")
+            if identifier and security_audit and security_audit.is_rate_limited(
+                identifier, "LOGIN_ATTEMPT", max_attempts=10, minutes=15
+            ):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "تم تجاوز عدد محاولات تسجيل الدخول. يرجى الانتظار 15 دقيقة.",
+                            "code": "RATE_LIMITED",
+                        }
+                    ),
+                    429,
+                )
+        except Exception:
+            pass  # لا نمنع الدخول إذا فشل rate limiting
+
         # ✅ معالجة JSON errors
         try:
             data = request.get_json(silent=True)

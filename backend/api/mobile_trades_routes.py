@@ -46,7 +46,7 @@ def register_mobile_trades_routes(bp, shared):
         يستخدم للتنقل من الإشعارات إلى تفاصيل الصفقة
         """
         try:
-            user_id = g.user_id
+            user_id = g.current_user_id
             db = db_manager
 
             with db.get_connection() as conn:

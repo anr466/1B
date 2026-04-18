@@ -11,7 +11,7 @@ from backend.strategies.intelligent_exit_system import (
     get_intelligent_exit_system,
 )
 from backend.infrastructure.db_access import get_db_manager
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -23,8 +23,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "database"))
 
 
-# استيراد نظام التحقق من التوكن
-
 # إنشاء Blueprint
 smart_exit_bp = Blueprint("smart_exit", __name__, url_prefix="/smart-exit")
 
@@ -33,6 +31,19 @@ logger = get_logger(__name__)
 
 # إعداد قاعدة البيانات
 db = get_db_manager()
+
+
+def _verify_user_access(user_id):
+    """التحقق من أن المستخدم يطلب بياناته فقط (الأدمن مسموح)"""
+    user_type = getattr(g, "current_user_type", "user")
+    if user_type == "admin":
+        return True
+    if g.current_user_id != user_id:
+        logger.warning(
+            f"⚠️ محاولة وصول غير مصرح: User {g.current_user_id} tried User {user_id}"
+        )
+        return False
+    return True
 
 
 # ============================================================================
@@ -44,6 +55,8 @@ db = get_db_manager()
 @require_auth
 def get_smart_exit_settings(user_id):
     """جلب إعدادات النظام الذكي"""
+    if not _verify_user_access(user_id):
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
@@ -93,6 +106,8 @@ def get_smart_exit_settings(user_id):
 @require_auth
 def update_smart_exit_settings(user_id):
     """تحديث إعدادات النظام الذكي"""
+    if not _verify_user_access(user_id):
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
     try:
         data = request.get_json()
 
@@ -186,6 +201,8 @@ def update_smart_exit_settings(user_id):
 @require_auth
 def check_exit_conditions(user_id, symbol):
     """فحص شروط الإغلاق الذكية لصفقة معينة"""
+    if not _verify_user_access(user_id):
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
     try:
         data = request.get_json() or {}
 
@@ -288,6 +305,8 @@ def check_exit_conditions(user_id, symbol):
 @require_auth
 def get_exit_statistics(user_id):
     """جلب إحصائيات الإغلاق الذكي"""
+    if not _verify_user_access(user_id):
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
     try:
         smart_exit = get_intelligent_exit_system()
         if not smart_exit:
@@ -315,6 +334,8 @@ def get_exit_statistics(user_id):
 @require_auth
 def get_detailed_statistics(user_id):
     """جلب إحصائيات مفصلة للإغلاق الذكي"""
+    if not _verify_user_access(user_id):
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
@@ -386,6 +407,8 @@ def get_detailed_statistics(user_id):
 @require_auth
 def get_exit_errors(user_id):
     """جلب أخطاء النظام الذكي"""
+    if not _verify_user_access(user_id):
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
     try:
         limit = request.args.get("limit", 10, type=int)
 

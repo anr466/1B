@@ -8,6 +8,7 @@ import 'package:trading_app/design/skins/arctic_frost/arctic_frost_skin.dart';
 import 'package:trading_app/design/skins/rose_gold/rose_gold_skin.dart';
 import 'package:trading_app/design/skins/cyber_neon/cyber_neon_skin.dart';
 import 'package:trading_app/design/skins/obsidian_titanium/obsidian_titanium_skin.dart';
+import 'package:trading_app/design/skins/soft_pastel/soft_pastel_skin.dart';
 import 'package:trading_app/design/tokens/color_tokens.dart';
 
 /// Skin Manager — تسجيل واسترجاع الـ skins
@@ -17,6 +18,7 @@ class SkinManager {
 
   static final Map<String, SkinInterface> _skins = {
     'obsidian_titanium': const ObsidianTitaniumSkin(),
+    'soft_pastel': const SoftPastelSkin(),
     'violet_brand': const VioletBrandSkin(),
     'midnight_ocean': const MidnightOceanSkin(),
     'emerald_trading': const EmeraldTradingSkin(),

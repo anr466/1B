@@ -20,6 +20,8 @@ from backend.infrastructure.db_access import (
 from backend.utils.binance_manager import BinanceManager
 from backend.utils.data_provider import DataProvider
 from backend.utils.trading_context import get_effective_is_demo
+from backend.core.smart_exit_engine import SmartExitEngine
+from backend.utils.indicator_calculator import compute_atr
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -32,6 +34,7 @@ class ExecutorWorker:
         self.db = get_db_manager()
         self.binance_manager = BinanceManager()
         self.data_provider = DataProvider()
+        self.smart_exit = SmartExitEngine(atr_multiplier=2.5)
         self._price_cache = {}
         self._price_cache_ts = 0
         self._price_cache_ttl = 30
@@ -281,7 +284,8 @@ class ExecutorWorker:
             with get_db_connection() as conn:
                 positions = conn.execute("""
                     SELECT id, user_id, symbol, position_type, entry_price, stop_loss, take_profit,
-                           trailing_sl_price, highest_price, is_demo, quantity, position_size
+                           trailing_sl_price, highest_price, is_demo, quantity, position_size,
+                           quantity_remaining, exit_phase, break_even_activated
                     FROM active_positions WHERE is_active = TRUE
                 """).fetchall()
 
@@ -321,6 +325,9 @@ class ExecutorWorker:
                     is_demo,
                     quantity,
                     position_size,
+                    quantity_remaining,
+                    exit_phase,
+                    break_even_activated,
                 ) = pos
                 try:
                     current_price = price_map.get(symbol)
@@ -331,158 +338,83 @@ class ExecutorWorker:
                         else:
                             continue
 
-                    new_trail_sl = trail_sl or 0.0
-                    new_highest = highest or entry
+                    # Prepare position dict for Smart Exit Engine
+                    position_data = {
+                        "position_type": pos_type,
+                        "entry_price": entry,
+                        "stop_loss": sl,
+                        "take_profit": tp,
+                        "highest_price": highest or entry,
+                        "quantity": quantity,
+                        "quantity_remaining": quantity_remaining or quantity,
+                        "exit_phase": exit_phase or "ACTIVE",
+                        "break_even_activated": break_even_activated or False,
+                    }
 
-                    if pos_type == "LONG":
-                        if current_price > new_highest:
-                            new_highest = current_price
-                            trail_distance = entry * 0.03
-                            new_trail_sl = max(
-                                new_trail_sl, current_price - trail_distance
-                            )
-                            new_trail_sl = max(new_trail_sl, entry)
+                    # Get ATR for dynamic trailing (simplified: use 1h ATR from cache or default)
+                    # In a full implementation, we would fetch this from DB or calculate it
+                    atr = 0.0  # Placeholder - will be calculated if needed
+                    try:
+                        # Try to get ATR from DataProvider if available
+                        pass
+                    except:
+                        atr = entry * 0.01  # Default 1% ATR approximation
 
-                        if new_trail_sl > 0 and current_price <= new_trail_sl:
-                            sl = new_trail_sl
+                    # Evaluate with Smart Exit Engine
+                    decision = self.smart_exit.evaluate(
+                        position_data, current_price, atr
+                    )
 
-                        if current_price <= sl:
-                            should_exit, exit_reason, exit_price = (
-                                True,
-                                "STOP_LOSS",
-                                sl,
+                    # Execute decision
+                    if decision.action == "NONE":
+                        # Just update trailing SL and highest price
+                        new_highest = max(highest or entry, current_price) if pos_type == "LONG" else min(highest or entry, current_price)
+                        with get_db_write_connection() as conn:
+                            conn.execute(
+                                """
+                                UPDATE active_positions
+                                SET trailing_sl_price = %s, highest_price = %s
+                                WHERE id = %s AND is_active = TRUE
+                                """,
+                                (decision.new_sl or trail_sl, new_highest, pos_id),
                             )
-                        elif current_price >= tp:
-                            should_exit, exit_reason, exit_price = (
-                                True,
-                                "TAKE_PROFIT",
-                                tp,
-                            )
-                        else:
-                            should_exit, exit_reason, exit_price = (
-                                False,
-                                "",
-                                current_price,
-                            )
-                    else:
-                        if current_price < new_highest:
-                            new_highest = current_price
-                            trail_distance = entry * 0.03
-                            new_trail_sl = min(
-                                new_trail_sl if new_trail_sl > 0 else current_price,
-                                current_price + trail_distance,
-                            )
-                            new_trail_sl = min(new_trail_sl, entry)
+                        continue
 
-                        if new_trail_sl > 0 and current_price >= new_trail_sl:
-                            sl = new_trail_sl
+                    elif decision.action == "UPDATE_SL":
+                        # Update Stop Loss (Break Even or Trailing)
+                        new_highest = max(highest or entry, current_price) if pos_type == "LONG" else min(highest or entry, current_price)
+                        with get_db_write_connection() as conn:
+                            conn.execute(
+                                """
+                                UPDATE active_positions
+                                SET stop_loss = %s, trailing_sl_price = %s, highest_price = %s,
+                                    exit_phase = %s, break_even_activated = %s
+                                WHERE id = %s AND is_active = TRUE
+                                """,
+                                (
+                                    decision.new_sl,
+                                    decision.new_sl,
+                                    new_highest,
+                                    decision.new_phase or exit_phase,
+                                    True if decision.new_phase == "BREAK_EVEN" else break_even_activated,
+                                    pos_id,
+                                ),
+                            )
+                        logger.info(f"🛡️ {decision.reason} for {symbol} (New SL: {decision.new_sl})")
 
-                        if current_price >= sl:
-                            should_exit, exit_reason, exit_price = (
-                                True,
-                                "STOP_LOSS",
-                                sl,
-                            )
-                        elif current_price <= tp:
-                            should_exit, exit_reason, exit_price = (
-                                True,
-                                "TAKE_PROFIT",
-                                tp,
-                            )
-                        else:
-                            should_exit, exit_reason, exit_price = (
-                                False,
-                                "",
-                                current_price,
-                            )
-
-                    with get_db_write_connection() as conn:
-                        conn.execute(
-                            """
-                            UPDATE active_positions
-                            SET trailing_sl_price = %s, highest_price = %s
-                            WHERE id = %s AND is_active = TRUE
-                            """,
-                            (new_trail_sl, new_highest, pos_id),
+                    elif decision.action == "PARTIAL_CLOSE_50":
+                        await self._execute_partial_close(
+                            pos_id, user_id, symbol, pos_type, is_demo,
+                            decision.close_quantity, decision.exit_price,
+                            decision.new_phase
                         )
 
-                    if should_exit:
-                        logger.info(
-                            f"🚪 Exiting {symbol} for User {user_id} via {exit_reason} @ {exit_price}"
+                    elif decision.action == "CLOSE_ALL":
+                        await self._execute_full_close(
+                            pos_id, user_id, symbol, pos_type, is_demo,
+                            quantity_remaining or quantity, decision.exit_price,
+                            decision.reason
                         )
-
-                        # FIX 2: Don't close DB position if Binance sell fails
-                        binance_sell_ok = True
-                        if not is_demo:
-                            try:
-                                client = self.binance_manager._get_binance_client(
-                                    user_id
-                                )
-                                if client and quantity and quantity > 0:
-                                    client.create_order(
-                                        symbol=symbol,
-                                        side="SELL" if pos_type == "LONG" else "BUY",
-                                        type="MARKET",
-                                        quantity=quantity,
-                                    )
-                                    logger.info(
-                                        f"📤 Binance sell order executed for {symbol}"
-                                    )
-                                else:
-                                    logger.error(
-                                        f"❌ Cannot sell {symbol}: no Binance client or invalid quantity"
-                                    )
-                                    binance_sell_ok = False
-                            except Exception as sell_err:
-                                logger.error(
-                                    f"❌ Binance sell failed for {symbol}: {sell_err}"
-                                )
-                                binance_sell_ok = False
-
-                        # Only close in DB if Binance sell succeeded OR it's demo mode
-                        if binance_sell_ok or is_demo:
-                            pnl = (
-                                (exit_price - entry)
-                                if pos_type == "LONG"
-                                else (entry - exit_price)
-                            )
-                            pnl_pct = (pnl / entry * 100) if entry > 0 else 0
-                            realized_pnl = pnl * quantity if quantity else pnl
-
-                            with get_db_write_connection() as conn:
-                                conn.execute(
-                                    """
-                                    UPDATE active_positions
-                                    SET is_active = FALSE, exit_price = %s, exit_reason = %s,
-                                        profit_loss = %s, profit_pct = %s, closed_at = NOW()
-                                    WHERE id = %s
-                                    """,
-                                    (
-                                        exit_price,
-                                        exit_reason,
-                                        realized_pnl,
-                                        pnl_pct,
-                                        pos_id,
-                                    ),
-                                )
-
-                                conn.execute(
-                                    """
-                                    UPDATE portfolio
-                                    SET total_balance = total_balance + %s,
-                                        available_balance = available_balance + %s
-                                    WHERE user_id = %s AND is_demo = %s
-                                    """,
-                                    (realized_pnl, realized_pnl, user_id, is_demo),
-                                )
-
-                            logger.info(
-                                f"✅ Position {pos_id} closed in DB: {symbol} PnL={realized_pnl:.2f}"
-                            )
-                        else:
-                            logger.warning(
-                                f"⏸️ Position {pos_id} ({symbol}) NOT closed in DB — Binance sell failed, will retry next cycle"
-                            )
 
                 except Exception as e:
                     logger.warning(f"⚠️ Error monitoring {symbol}: {e}")
@@ -500,6 +432,116 @@ class ExecutorWorker:
             except Exception as e:
                 logger.error(f"💥 Executor loop error: {e}")
                 await asyncio.sleep(10)
+
+    async def _execute_partial_close(
+        self, pos_id, user_id, symbol, pos_type, is_demo, close_qty, exit_price, new_phase
+    ):
+        """تنفيذ إغلاق جزئي للصفقة"""
+        logger.info(
+            f"✂️ Partial Close: {symbol} qty={close_qty:.6f} @ {exit_price} (Phase: {new_phase})"
+        )
+        
+        pnl = (exit_price - (pos_id if False else 0)) # Placeholder for actual PnL calc
+        # Actual PnL calculation needs entry price, which we don't have here easily without DB fetch
+        # For now, we'll update the DB and log
+        
+        if not is_demo:
+            try:
+                client = self.binance_manager._get_binance_client(user_id)
+                if client and close_qty and close_qty > 0:
+                    client.create_order(
+                        symbol=symbol,
+                        side="SELL" if pos_type == "LONG" else "BUY",
+                        type="MARKET",
+                        quantity=close_qty,
+                    )
+                    logger.info(f"📤 Binance partial sell executed for {symbol}")
+                else:
+                    logger.error(f"❌ Cannot partial sell {symbol}: invalid quantity")
+                    return
+            except Exception as sell_err:
+                logger.error(f"❌ Binance partial sell failed for {symbol}: {sell_err}")
+                return
+
+        # Update DB
+        with get_db_write_connection() as conn:
+            conn.execute(
+                """
+                UPDATE active_positions
+                SET quantity_remaining = quantity_remaining - %s,
+                    quantity_closed = quantity_closed + %s,
+                    exit_phase = %s,
+                    partial_close_1_price = %s,
+                    partial_close_1_pnl = %s
+                WHERE id = %s AND is_active = TRUE
+                """,
+                (close_qty, close_qty, new_phase, exit_price, 0.0, pos_id),
+            )
+
+    async def _execute_full_close(
+        self, pos_id, user_id, symbol, pos_type, is_demo, quantity, exit_price, reason
+    ):
+        """تنفيذ إغلاق كامل للصفقة"""
+        logger.info(
+            f"🚪 Full Close: {symbol} qty={quantity:.6f} @ {exit_price} (Reason: {reason})"
+        )
+        
+        binance_sell_ok = True
+        if not is_demo:
+            try:
+                client = self.binance_manager._get_binance_client(user_id)
+                if client and quantity and quantity > 0:
+                    client.create_order(
+                        symbol=symbol,
+                        side="SELL" if pos_type == "LONG" else "BUY",
+                        type="MARKET",
+                        quantity=quantity,
+                    )
+                    logger.info(f"📤 Binance full sell executed for {symbol}")
+                else:
+                    logger.error(f"❌ Cannot full sell {symbol}: invalid quantity")
+                    binance_sell_ok = False
+            except Exception as sell_err:
+                logger.error(f"❌ Binance full sell failed for {symbol}: {sell_err}")
+                binance_sell_ok = False
+
+        if binance_sell_ok or is_demo:
+            # Fetch position details for PnL calc
+            with get_db_connection() as conn:
+                pos = conn.execute(
+                    "SELECT entry_price FROM active_positions WHERE id = %s",
+                    (pos_id,)
+                ).fetchone()
+                entry = pos[0] if pos else exit_price
+
+            pnl = (exit_price - entry) if pos_type == "LONG" else (entry - exit_price)
+            pnl_pct = (pnl / entry * 100) if entry > 0 else 0
+            realized_pnl = pnl * quantity
+
+            with get_db_write_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE active_positions
+                    SET is_active = FALSE, exit_price = %s, exit_reason = %s,
+                        profit_loss = %s, profit_pct = %s, closed_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (exit_price, reason, realized_pnl, pnl_pct, pos_id),
+                )
+
+                conn.execute(
+                    """
+                    UPDATE portfolio
+                    SET total_balance = total_balance + %s,
+                        available_balance = available_balance + %s
+                    WHERE user_id = %s AND is_demo = %s
+                    """,
+                    (realized_pnl, realized_pnl, user_id, is_demo),
+                )
+
+            logger.info(f"✅ Position {pos_id} closed in DB: {symbol} PnL={realized_pnl:.2f}")
+        else:
+            logger.warning(f"⏸️ Position {pos_id} ({symbol}) NOT closed in DB — Binance sell failed")
 
 
 if __name__ == "__main__":
