@@ -307,8 +307,8 @@ class ExecutorWorker:
                     logger.error("❌ No prices available — skipping monitoring")
                     return
 
-            # FIX 1: Calculate real ATR for each symbol
-            atr_map = self._calculate_atr_for_symbols(symbols)
+            # FIX 1: Calculate real ATR and Regime for each symbol
+            atr_map, regime_map = self._analyze_market_for_symbols(symbols)
 
             for pos in positions:
                 (
@@ -322,8 +322,8 @@ class ExecutorWorker:
                     if not current_price:
                         continue
 
-                    # FIX 3: Determine local regime for Cognitive Override
-                    regime, regime_conf = self._determine_local_regime(symbol, atr_map)
+                    # FIX 3: Use the dynamically determined regime
+                    regime, regime_conf = regime_map.get(symbol, ("UNKNOWN", 0.0))
 
                     # Prepare position dict for Smart Exit Engine
                     position_data = {
@@ -402,52 +402,63 @@ class ExecutorWorker:
         except Exception as e:
             logger.error(f"❌ Error in monitor loop: {e}")
 
-    def _calculate_atr_for_symbols(self, symbols: list) -> dict:
-        """حساب ATR حقيقي لكل العملات المفتوحة"""
+    def _analyze_market_for_symbols(self, symbols: list) -> tuple:
+        """حساب ATR وتحليل نظام السوق (Regime) لكل العملات المفتوحة"""
         atr_map = {}
+        regime_map = {}
+        
         for symbol in symbols:
             try:
-                # Fetch last 20 1h candles
-                klines = self.data_provider.client.get_klines(symbol=symbol, interval='1h', limit=20)
+                # Fetch last 50 1h candles for better analysis
+                klines = self.data_provider.client.get_klines(symbol=symbol, interval='1h', limit=50)
                 if klines:
-                    # Simple ATR calculation for the last candle
-                    # ATR ≈ (High - Low) average of last few candles for simplicity
-                    # Or just use the last candle's range as a proxy for immediate volatility
-                    last_k = klines[-1]
-                    high = float(last_k[2])
-                    low = float(last_k[3])
-                    prev_close = float(klines[-2][4]) if len(klines) > 1 else high
+                    closes = [float(k[4]) for k in klines]
+                    highs = [float(k[2]) for k in klines]
+                    lows = [float(k[3]) for k in klines]
                     
-                    tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-                    # Smooth it slightly with a simple average of last 3 ranges
-                    avg_range = sum(max(float(k[2])-float(k[3]), 0) for k in klines[-5:]) / 5
-                    atr_map[symbol] = max(tr, avg_range)
-            except Exception as e:
-                logger.debug(f"⚠️ Could not calculate ATR for {symbol}: {e}")
-        return atr_map
+                    # 1. Calculate ATR (Average True Range)
+                    trs = []
+                    for i in range(1, len(closes)):
+                        high = highs[i]
+                        low = lows[i]
+                        prev_close = closes[i-1]
+                        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+                        trs.append(tr)
+                    atr_map[symbol] = sum(trs[-14:]) / 14 if len(trs) >= 14 else sum(trs) / len(trs)
 
-    def _determine_local_regime(self, symbol: str, atr_map: dict) -> tuple:
-        """تحديد نظام السوق المحلي بناءً على البيانات المتاحة"""
-        # Default to UNKNOWN if we can't determine
-        regime = "UNKNOWN"
-        confidence = 0.0
-        
-        # If we have price data, check simple trend
-        price = self._price_cache.get(symbol, 0)
-        if price > 0:
-            # Simple heuristic: if price is significantly above/below a moving average
-            # Since we don't have full MA history here, we use the entry price as a baseline
-            # If we are in profit > 2%, assume Trend is favorable
-            # If we are in loss or flat, assume Choppy or Weak Trend
-            # This is a simplified proxy for the full FuzzyRegimeDetector
-            # In a full implementation, Executor would query the DB for the latest regime from Scanner
-            
-            # For now, we assume that if the position is open and in profit, the regime is likely favorable
-            # This prevents premature Cognitive Override exits unless we have explicit data
-            regime = "STRONG_TREND" # Default assumption for open profitable positions
-            confidence = 0.6
-            
-        return regime, confidence
+                    # 2. Determine Regime using EMA(20)
+                    # Simple EMA calculation
+                    ema_period = 20
+                    multiplier = 2 / (ema_period + 1)
+                    ema = closes[0]
+                    for price in closes[1:]:
+                        ema = (price - ema) * multiplier + ema
+                    
+                    current_price = closes[-1]
+                    prev_price = closes[-5] # Price 5 hours ago
+                    
+                    # Logic:
+                    # If Price > EMA and EMA is rising -> STRONG_TREND (Up)
+                    # If Price < EMA and EMA is falling -> STRONG_TREND (Down)
+                    # Otherwise -> CHOPPY / RANGE
+                    
+                    # For Exit Engine, we care if the trend is *favorable* for the position
+                    # But here we return the absolute market regime
+                    if current_price > ema * 1.005 and ema > prev_price:
+                        regime_map[symbol] = ("STRONG_TREND", 0.8)
+                    elif current_price < ema * 0.995 and ema < prev_price:
+                        regime_map[symbol] = ("STRONG_TREND", 0.8) # Strong trend, just down
+                    elif abs(current_price - ema) / ema < 0.01:
+                        regime_map[symbol] = ("CHOPPY", 0.7)
+                    else:
+                        regime_map[symbol] = ("NARROW_RANGE", 0.6)
+
+            except Exception as e:
+                logger.debug(f"⚠️ Could not analyze {symbol}: {e}")
+                atr_map[symbol] = 0.0
+                regime_map[symbol] = ("UNKNOWN", 0.0)
+                
+        return atr_map, regime_map
 
     async def run(self):
         logger.info("⚡ Executor Worker Started.")
