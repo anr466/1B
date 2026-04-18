@@ -19,7 +19,7 @@ from backend.infrastructure.db_access import (
 )
 from backend.core.coin_state_analyzer import CoinStateAnalyzer
 from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
-from backend.core.performance_tracker import PerformanceTracker
+from backend.core.performance_tracker import performance_tracker
 from backend.core.modules.trend_module import TrendModule
 from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
@@ -182,6 +182,9 @@ class ScannerWorker:
                 best_candidate = None
                 best_score = -1
 
+                # FIX: Get Learning Weights for current regime
+                strategy_weights = performance_tracker.get_strategy_weights(state.regime)
+
                 for module in self.modules:
                     if state.regime in module.supported_regimes():
                         candidate = module.evaluate(df, context)
@@ -191,15 +194,25 @@ class ScannerWorker:
                             candidate.stop_loss = module.get_stop_loss(df, candidate)
                             candidate.take_profit = module.get_take_profit(df, candidate)
 
-                            # Score via decision matrix (now uses dynamic weights)
+                            # Score via decision matrix
                             decision = self.decision_matrix.evaluate(candidate.to_dict(), context)
-                            if decision["score"] > best_score:
-                                best_score = decision["score"]
+                            
+                            # FIX: Apply Learning Weight (Intelligence Boost)
+                            # If the system learned this strategy works well NOW, boost its score
+                            strategy_name = candidate.strategy
+                            learning_weight = strategy_weights.get(strategy_name, 1.0)
+                            
+                            # Final Score = Decision Quality * Learning Experience
+                            final_score = decision["score"] * learning_weight
+
+                            if final_score > best_score:
+                                best_score = final_score
                                 best_candidate = candidate
-                                best_candidate.confidence = decision["score"]
+                                best_candidate.confidence = final_score
                                 best_candidate.metadata["decision"] = decision["decision"]
                                 best_candidate.metadata["reason"] = decision["reason"]
                                 best_candidate.metadata["weights"] = decision["weights"]
+                                best_candidate.metadata["learning_weight"] = learning_weight
 
                 if best_candidate and best_score >= 55:
                     signals_to_insert.append(

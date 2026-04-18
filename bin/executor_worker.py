@@ -22,6 +22,7 @@ from backend.utils.data_provider import DataProvider
 from backend.utils.trading_context import get_effective_is_demo
 from backend.core.smart_exit_engine import SmartExitEngine
 from backend.utils.indicator_calculator import compute_atr
+from backend.core.smart_performance_tracker import performance_tracker
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -285,7 +286,7 @@ class ExecutorWorker:
                 positions = conn.execute("""
                     SELECT id, user_id, symbol, position_type, entry_price, stop_loss, take_profit,
                            trailing_sl_price, highest_price, is_demo, quantity, position_size,
-                           quantity_remaining, exit_phase, break_even_activated
+                           quantity_remaining, exit_phase, break_even_activated, strategy
                     FROM active_positions WHERE is_active = TRUE
                 """).fetchall()
 
@@ -313,7 +314,7 @@ class ExecutorWorker:
                 (
                     pos_id, user_id, symbol, pos_type, entry, sl, tp,
                     trail_sl, highest, is_demo, quantity, position_size,
-                    quantity_remaining, exit_phase, break_even_activated,
+                    quantity_remaining, exit_phase, break_even_activated, strategy,
                 ) = pos
                 
                 try:
@@ -322,7 +323,6 @@ class ExecutorWorker:
                         continue
 
                     # FIX 3: Determine local regime for Cognitive Override
-                    # We use a simple EMA alignment check on the data we fetched for ATR
                     regime, regime_conf = self._determine_local_regime(symbol, atr_map)
 
                     # Prepare position dict for Smart Exit Engine
@@ -386,14 +386,14 @@ class ExecutorWorker:
                         await self._execute_partial_close(
                             pos_id, user_id, symbol, pos_type, is_demo,
                             decision.close_quantity, decision.exit_price,
-                            entry, decision.new_phase
+                            entry, decision.new_phase, strategy, regime
                         )
 
                     elif decision.action == "CLOSE_ALL":
                         await self._execute_full_close(
                             pos_id, user_id, symbol, pos_type, is_demo,
                             quantity_remaining or quantity, decision.exit_price,
-                            decision.reason
+                            decision.reason, entry, strategy, regime
                         )
 
                 except Exception as e:
@@ -461,17 +461,20 @@ class ExecutorWorker:
                 await asyncio.sleep(10)
 
     async def _execute_partial_close(
-        self, pos_id, user_id, symbol, pos_type, is_demo, close_qty, exit_price, new_phase
+        self, pos_id, user_id, symbol, pos_type, is_demo, close_qty, exit_price, 
+        entry_price, new_phase, strategy, regime
     ):
-        """تنفيذ إغلاق جزئي للصفقة"""
+        """تنفيذ إغلاق جزئي للصفقة مع التعلم الذكي"""
         logger.info(
             f"✂️ Partial Close: {symbol} qty={close_qty:.6f} @ {exit_price} (Phase: {new_phase})"
         )
         
-        pnl = (exit_price - (pos_id if False else 0)) # Placeholder for actual PnL calc
-        # Actual PnL calculation needs entry price, which we don't have here easily without DB fetch
-        # For now, we'll update the DB and log
-        
+        # FIX: حساب الربح الصافي بعد خصم الرسوم (0.1% للدخول + 0.1% للخروج)
+        FEE_RATE = 0.001
+        gross_pnl = (exit_price - entry_price) * close_qty if pos_type == "LONG" else (entry_price - exit_price) * close_qty
+        fees = (entry_price * close_qty * FEE_RATE) + (exit_price * close_qty * FEE_RATE)
+        net_pnl = gross_pnl - fees
+
         if not is_demo:
             try:
                 client = self.binance_manager._get_binance_client(user_id)
@@ -490,7 +493,7 @@ class ExecutorWorker:
                 logger.error(f"❌ Binance partial sell failed for {symbol}: {sell_err}")
                 return
 
-        # Update DB
+        # FIX: تحديث قاعدة البيانات بالربح الصافي
         with get_db_write_connection() as conn:
             conn.execute(
                 """
@@ -502,13 +505,28 @@ class ExecutorWorker:
                     partial_close_1_pnl = %s
                 WHERE id = %s AND is_active = TRUE
                 """,
-                (close_qty, close_qty, new_phase, exit_price, 0.0, pos_id),
+                (close_qty, close_qty, new_phase, exit_price, net_pnl, pos_id),
             )
 
+        # FIX: تسجيل التجربة للتعلم الذكي
+        performance_tracker.record_trade({
+            "symbol": symbol,
+            "strategy": strategy,
+            "type": pos_type,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "quantity": close_qty,
+            "pnl": net_pnl,
+            "exit_reason": f"PARTIAL_CLOSE_{new_phase}",
+            "is_demo": is_demo,
+            "regime": regime
+        })
+
     async def _execute_full_close(
-        self, pos_id, user_id, symbol, pos_type, is_demo, quantity, exit_price, reason
+        self, pos_id, user_id, symbol, pos_type, is_demo, quantity, exit_price, 
+        reason, entry_price, strategy, regime
     ):
-        """تنفيذ إغلاق كامل للصفقة"""
+        """تنفيذ إغلاق كامل للصفقة مع التعلم الذكي"""
         logger.info(
             f"🚪 Full Close: {symbol} qty={quantity:.6f} @ {exit_price} (Reason: {reason})"
         )
@@ -533,17 +551,12 @@ class ExecutorWorker:
                 binance_sell_ok = False
 
         if binance_sell_ok or is_demo:
-            # Fetch position details for PnL calc
-            with get_db_connection() as conn:
-                pos = conn.execute(
-                    "SELECT entry_price FROM active_positions WHERE id = %s",
-                    (pos_id,)
-                ).fetchone()
-                entry = pos[0] if pos else exit_price
-
-            pnl = (exit_price - entry) if pos_type == "LONG" else (entry - exit_price)
-            pnl_pct = (pnl / entry * 100) if entry > 0 else 0
-            realized_pnl = pnl * quantity
+            # FIX: حساب الربح الصافي بعد الرسوم
+            FEE_RATE = 0.001
+            gross_pnl = (exit_price - entry_price) * quantity if pos_type == "LONG" else (entry_price - exit_price) * quantity
+            fees = (entry_price * quantity * FEE_RATE) + (exit_price * quantity * FEE_RATE)
+            net_pnl = gross_pnl - fees
+            pnl_pct = (net_pnl / (entry_price * quantity) * 100) if entry_price > 0 else 0
 
             with get_db_write_connection() as conn:
                 conn.execute(
@@ -553,7 +566,7 @@ class ExecutorWorker:
                         profit_loss = %s, profit_pct = %s, closed_at = NOW()
                     WHERE id = %s
                     """,
-                    (exit_price, reason, realized_pnl, pnl_pct, pos_id),
+                    (exit_price, reason, net_pnl, pnl_pct, pos_id),
                 )
 
                 conn.execute(
@@ -563,10 +576,24 @@ class ExecutorWorker:
                         available_balance = available_balance + %s
                     WHERE user_id = %s AND is_demo = %s
                     """,
-                    (realized_pnl, realized_pnl, user_id, is_demo),
+                    (net_pnl, net_pnl, user_id, is_demo),
                 )
 
-            logger.info(f"✅ Position {pos_id} closed in DB: {symbol} PnL={realized_pnl:.2f}")
+            logger.info(f"✅ Position {pos_id} closed in DB: {symbol} PnL={net_pnl:.2f}")
+
+            # FIX: تسجيل التجربة للتعلم الذكي
+            performance_tracker.record_trade({
+                "symbol": symbol,
+                "strategy": strategy,
+                "type": pos_type,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "quantity": quantity,
+                "pnl": net_pnl,
+                "exit_reason": reason,
+                "is_demo": is_demo,
+                "regime": regime
+            })
         else:
             logger.warning(f"⏸️ Position {pos_id} ({symbol}) NOT closed in DB — Binance sell failed")
 
