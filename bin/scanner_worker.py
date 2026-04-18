@@ -19,7 +19,7 @@ from backend.infrastructure.db_access import (
 )
 from backend.core.coin_state_analyzer import CoinStateAnalyzer
 from backend.core.cognitive_decision_matrix import CognitiveDecisionMatrix
-from backend.core.performance_tracker import performance_tracker
+from backend.core.smart_performance_tracker import performance_tracker
 from backend.core.modules.trend_module import TrendModule
 from backend.core.modules.range_module import RangeModule
 from backend.core.modules.volatility_module import VolatilityModule
@@ -43,7 +43,6 @@ class ScannerWorker:
 
         self.analyzer = CoinStateAnalyzer()
         self.decision_matrix = CognitiveDecisionMatrix()
-        self.performance_tracker = PerformanceTracker(self.decision_matrix)
         self.modules = [
             TrendModule(),
             RangeModule(),
@@ -276,12 +275,12 @@ class ScannerWorker:
                         "exit_reason": row[7] or "UNKNOWN",
                         "closed_at": str(row[8]) if row[8] else "",
                     }
-                    self.performance_tracker.record_trade(trade_data)
+                    performance_tracker.record_trade(trade_data)
                     loaded += 1
 
                 if loaded > 0:
                     logger.info(f"📚 Loaded {loaded} closed trades for learning")
-                    summary = self.performance_tracker.get_performance_summary()
+                    summary = performance_tracker.get_performance_summary()
                     logger.info(
                         f"📊 Performance: {summary['total_trades']} trades, "
                         f"WR={summary['win_rate']:.1%}, PnL=${summary['total_pnl']:.2f}"
@@ -312,8 +311,8 @@ class ScannerWorker:
                     await asyncio.gather(*tasks)
 
                 # Log performance summary every 10 minutes
-                if self.performance_tracker.total_trades > 0 and self.performance_tracker.total_trades % 5 == 0:
-                    summary = self.performance_tracker.get_performance_summary()
+                if performance_tracker.core.total_trades > 0 and performance_tracker.core.total_trades % 5 == 0:
+                    summary = performance_tracker.get_performance_summary()
                     logger.info(
                         f"📊 Live Performance: {summary['total_trades']} trades, "
                         f"WR={summary['win_rate']:.1%}, PnL=${summary['total_pnl']:.2f}"

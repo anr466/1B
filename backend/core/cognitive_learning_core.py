@@ -151,6 +151,15 @@ class CognitiveLearningCore:
                 }
         return report
 
+    @property
+    def total_trades(self) -> int:
+        """إجمالي عدد الصفقات المسجلة في الذاكرة"""
+        total = 0
+        for strategy, regimes in self.memory.items():
+            for regime, data in regimes.items():
+                total += data['trades']
+        return total
+
 
 # Singleton Instance
 learning_core = CognitiveLearningCore()
