@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
@@ -101,16 +102,17 @@ class ErrorDetailsScreen extends ConsumerWidget {
     ColorScheme cs,
     Map<String, dynamic> error,
   ) {
+    final sem = SemanticColors.of(context);
     final severity = (error['severity'] ?? 'medium') as String;
     final status = (error['status'] ?? 'new') as String;
     final requiresAdmin =
         error['requires_admin'] == 1 || error['requires_admin'] == true;
 
     final severityColor = switch (severity) {
-      'critical' => Colors.red,
-      'high' => Colors.orange,
-      'medium' => Colors.amber,
-      _ => Colors.blue,
+      'critical' => cs.error,
+      'high' => sem.warning,
+      'medium' => cs.tertiary,
+      _ => sem.info,
     };
 
     final statusBadgeType = switch (status) {
@@ -469,6 +471,7 @@ class ErrorDetailsScreen extends ConsumerWidget {
     Map<String, dynamic> error,
     WidgetRef ref,
   ) {
+    final sem = SemanticColors.of(context);
     final status = error['status'] as String?;
     final autoAction = error['auto_action'] as String?;
     final isResolved = status == 'resolved' || status == 'auto_resolved';
@@ -501,17 +504,17 @@ class ErrorDetailsScreen extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(SpacingTokens.md),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.2),
+                color: sem.successContainer,
                 borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
-                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                border: Border.all(color: sem.success.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Colors.green),
+                  Icon(Icons.check_circle, color: sem.success),
                   const SizedBox(width: SpacingTokens.sm),
                   Text(
                     'تم حل هذا الخطأ',
-                    style: TypographyTokens.body(Colors.green),
+                    style: TypographyTokens.body(sem.success),
                   ),
                 ],
               ),
@@ -559,7 +562,9 @@ class ErrorDetailsScreen extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
-            backgroundColor: success ? Colors.green : null,
+            backgroundColor: success
+                ? SemanticColors.of(context).successContainer
+                : null,
           ),
         );
         ref.invalidate(_errorDetailsProvider(errorId));

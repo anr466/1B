@@ -187,7 +187,7 @@ class ChartCard extends StatelessWidget {
                   enabled: true,
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipColor: (touchedSpot) =>
-                        isDark ? const Color(0xFF2A2A2A) : Colors.white,
+                        isDark ? cs.surfaceContainerHighest : cs.surfaceContainerHighest,
                     tooltipPadding: const EdgeInsets.symmetric(
                       horizontal: 10,
                       vertical: 6,

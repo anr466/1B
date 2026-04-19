@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
@@ -159,15 +160,16 @@ class _ErrorCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
+    final sem = SemanticColors.of(context);
     final severity = (error['severity'] ?? 'medium').toString();
     final source = (error['source'] ?? '').toString();
     final message = (error['error_message'] ?? 'خطأ غير محدد').toString();
     final createdAt = (error['created_at'] ?? '').toString().split('.').first;
 
     final severityColor = switch (severity) {
-      'critical' => Colors.red,
-      'high' => Colors.orange,
-      _ => Colors.amber,
+      'critical' => cs.error,
+      'high' => sem.warning,
+      _ => cs.tertiary,
     };
 
     return Padding(
