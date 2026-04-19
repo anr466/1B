@@ -34,7 +34,7 @@ void main() {
 
         await storage.clearAll();
 
-        final (user, pass) = storage.rememberedCredentials;
+        final (user, pass) = await storage.getRememberedCredentials();
         expect(storage.rememberMeEnabled, isTrue);
         expect(user, 'user@example.com');
         expect(pass, 'Password123');

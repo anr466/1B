@@ -205,7 +205,7 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> restoreSession() async {
-    final accessToken = _storage.accessToken;
+    final accessToken = _storage.accessTokenSync;
     if (accessToken == null || accessToken.isEmpty) {
       return {'success': false, 'message': 'لا توجد جلسة محفوظة'};
     }
@@ -366,11 +366,14 @@ class AuthService {
   }
 
   /// Get saved credentials for explicit biometric sign-in.
-  (String?, String?) get biometricCredentials => _storage.biometricCredentials;
+  Future<(String?, String?)> get biometricCredentials async =>
+      await _storage.getBiometricCredentials();
 
   // ─── Session Check ──────────────────────────────
-  bool get hasToken =>
-      _storage.accessToken != null && _storage.accessToken!.isNotEmpty;
+  Future<bool> get hasToken async {
+    final token = await _storage.accessToken;
+    return token != null && token.isNotEmpty;
+  }
 
   int? get currentUserId => _storage.userId;
   String? get currentUserType => _storage.userType;

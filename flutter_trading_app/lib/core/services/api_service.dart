@@ -53,7 +53,8 @@ class ApiService {
 
   // ─── Request Interceptor ────────────────────────
   void _onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final token = _storage.accessToken;
+    // Use sync getter for token (cached after initial load)
+    final token = _storage.accessTokenSync;
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
     }
@@ -237,7 +238,7 @@ class ApiService {
 
   // ─── Token Refresh ──────────────────────────────
   Future<bool> _refreshToken() async {
-    final refresh = _storage.refreshToken;
+    final refresh = _storage.refreshTokenSync;
     if (refresh == null || refresh.isEmpty) return false;
 
     try {

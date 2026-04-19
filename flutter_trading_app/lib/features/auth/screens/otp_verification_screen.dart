@@ -161,13 +161,13 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
         );
         if (result['success'] == true) {
           final storage = ref.read(storageServiceProvider);
-          final (bioUser, _) = storage.biometricCredentials;
+          final (bioUser, _) = await storage.getBiometricCredentials();
           if (bioUser != null && bioUser.isNotEmpty) {
             await storage.saveBiometricCredentials(bioUser, newPassword);
           }
 
           if (storage.rememberMeEnabled) {
-            final (rememberedUser, _) = storage.rememberedCredentials;
+            final (rememberedUser, _) = await storage.getRememberedCredentials();
             if (rememberedUser != null && rememberedUser.isNotEmpty) {
               await storage.saveRememberedCredentials(
                 rememberedUser,
@@ -196,7 +196,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
             ref.read(authProvider.notifier).updateCurrentUser(updatedUser);
 
             final storage = ref.read(storageServiceProvider);
-            final (bioUser, bioPass) = storage.biometricCredentials;
+            final (bioUser, bioPass) = await storage.getBiometricCredentials();
             if (bioUser != null &&
                 bioPass != null &&
                 bioUser == currentUser.email) {
@@ -205,7 +205,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
 
             if (storage.rememberMeEnabled) {
               final (rememberedUser, rememberedPass) =
-                  storage.rememberedCredentials;
+                  await storage.getRememberedCredentials();
               if (rememberedUser != null &&
                   rememberedPass != null &&
                   rememberedUser == currentUser.email) {

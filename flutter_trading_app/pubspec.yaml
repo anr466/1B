@@ -23,6 +23,7 @@ dependencies:
 
   # Local Storage
   shared_preferences: ^2.3.4
+  flutter_secure_storage: ^9.2.2
 
   # UI
   flutter_screenutil: ^5.9.3

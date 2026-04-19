@@ -40,13 +40,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final storage = ref.read(storageServiceProvider);
-    _rememberMe = storage.rememberMeEnabled;
-    if (_rememberMe) {
-      final (savedUser, savedPass) = storage.rememberedCredentials;
-      if (savedUser != null) _emailCtrl.text = savedUser;
-      if (savedPass != null) _passwordCtrl.text = savedPass;
-    }
+    _loadSavedCredentials();
     // Auto-prompt biometric if credentials are saved (restored from previous session)
     _initializeBiometricLogin(allowAutoPrompt: true);
 
@@ -69,6 +63,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     });
   }
 
+  Future<void> _loadSavedCredentials() async {
+    final storage = ref.read(storageServiceProvider);
+    // Load cached tokens for sync access
+    await storage.loadCachedTokens();
+    _rememberMe = storage.rememberMeEnabled;
+    if (_rememberMe) {
+      final (savedUser, savedPass) = await storage.getRememberedCredentials();
+      if (savedUser != null) _emailCtrl.text = savedUser;
+      if (savedPass != null) _passwordCtrl.text = savedPass;
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -81,8 +87,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     final storage = ref.read(storageServiceProvider);
     final bio = ref.read(biometricServiceProvider);
 
-    // Get saved credentials
-    final (savedUser, savedPass) = storage.biometricCredentials;
+    // Get saved credentials (async)
+    final (savedUser, savedPass) = await storage.getBiometricCredentials();
 
     // Check if biometric is enabled in settings AND credentials are saved
     final isBiometricEnabled = storage.biometricEnabled;
@@ -176,7 +182,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (_isBiometricLoginInProgress || ref.read(authProvider).isLoading) return;
 
     final storage = ref.read(storageServiceProvider);
-    final (savedUser, savedPass) = storage.biometricCredentials;
+    final (savedUser, savedPass) = await storage.getBiometricCredentials();
     final isBiometricEnabled = storage.biometricEnabled;
 
     // Check if biometric is enabled in settings

@@ -268,7 +268,7 @@ class _SecuritySettingsScreenState
       return;
     }
 
-    final (savedUser, savedPass) = storage.biometricCredentials;
+    final (savedUser, savedPass) = await storage.getBiometricCredentials();
     if (value && (savedUser == null || savedPass == null)) {
       if (!mounted) return;
       AppSnackbar.show(

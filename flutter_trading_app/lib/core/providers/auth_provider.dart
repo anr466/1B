@@ -52,8 +52,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final authService = _ref.read(authServiceProvider);
 
-      // First check if token exists
-      if (!authService.hasToken) {
+      // First check if token exists (async)
+      if (!await authService.hasToken) {
         state = const AuthState(status: AuthStatus.unauthenticated);
         return;
       }
