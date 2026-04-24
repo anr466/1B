@@ -308,6 +308,18 @@ def verify_login_otp():
             return jsonify(response), 400
 
         # ✅ OTP صحيح - إنشاء JWT tokens
+        try:
+            settings_conn = db_manager.get_read_connection()
+            settings_cursor = settings_conn.cursor()
+            settings_cursor.execute(
+                "SELECT is_demo, trading_enabled FROM user_settings WHERE user_id = %s",
+                (user["id"],),
+            )
+            settings = settings_cursor.fetchone()
+            settings_conn.close()
+        except Exception:
+            settings = None
+
         if TOKEN_SYSTEM_AVAILABLE:
             tokens = generate_tokens(
                 user["id"], user["username"], user.get("user_type", "user")
@@ -323,7 +335,14 @@ def verify_login_otp():
                         "id": user["id"],
                         "username": user["username"],
                         "email": user["email"],
+                        "name": user.get("name", ""),
+                        "phoneNumber": user.get("phone_number", ""),
                         "userType": user.get("user_type", "user"),
+                        "emailVerified": bool(user.get("email_verified", False)),
+                        "isActive": bool(user.get("is_active", True)),
+                        "tradingMode": "demo" if (settings and settings.get("is_demo")) else "live",
+                        "tradingEnabled": bool(settings["trading_enabled"]) if settings else False,
+                        "hasBinanceKeys": False,
                     },
                     "message": "تم تسجيل الدخول بنجاح",
                 }

@@ -74,9 +74,11 @@ class UserModel {
           json['is_active'] != 0 &&
           json['isActive'] != 0,
       emailVerified:
-          json['email_verified'] == true || json['email_verified'] == 1,
+          json['email_verified'] == true || json['emailVerified'] == true ||
+          json['email_verified'] == 1 || json['emailVerified'] == 1,
       biometricEnabled:
-          json['biometric_enabled'] == true || json['biometric_enabled'] == 1,
+          json['biometric_enabled'] == true || json['biometricEnabled'] == true ||
+          json['biometric_enabled'] == 1 || json['biometricEnabled'] == 1,
       createdAt: json['created_at'] ?? json['createdAt'],
       lastLogin: json['last_login'] ?? json['lastLogin'],
     );

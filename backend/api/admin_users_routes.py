@@ -245,10 +245,7 @@ def register_admin_users_routes(bp, shared):
                         400,
                     )
 
-            # 'user' → 'regular' alias
-            if data["user_type"] == "user":
-                data["user_type"] = "regular"
-            if data["user_type"] not in ["admin", "regular"]:
+            if data["user_type"] not in ["admin", "user"]:
                 return (
                     jsonify({"success": False, "error": "نوع المستخدم غير صحيح"}),
                     400,

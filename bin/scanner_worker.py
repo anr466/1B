@@ -55,13 +55,8 @@ class ScannerWorker:
         self._signal_cooldown = {}
         self._cooldown_seconds = 600  # 10 minutes
 
-    async def fetch_market_data(self):
-        now = time.time()
-        if now - self.last_market_fetch < 60:
-            return self.market_cache
-
+    def _fetch_market_data_sync(self):
         logger.info("🌐 Fetching fresh market data for top coins...")
-
         try:
             tickers = self.binance.get_ticker()
             usdt_pairs = {
@@ -100,15 +95,24 @@ class ScannerWorker:
                 except Exception as e:
                     logger.debug(f"⚠️ Skip {symbol}: {e}")
 
-            self.market_cache = new_cache
-            self.last_market_fetch = now
             logger.info(f"✅ Market cache updated: {len(new_cache)} symbols ready.")
             return new_cache
         except Exception as e:
             logger.error(f"❌ Market fetch failed: {e}")
+            return None
+
+    async def fetch_market_data(self):
+        now = time.time()
+        if now - self.last_market_fetch < 60:
             return self.market_cache
 
-    async def analyze_user(self, user_id: int, market_data: dict):
+        result = await asyncio.to_thread(self._fetch_market_data_sync)
+        if result is not None:
+            self.market_cache = result
+            self.last_market_fetch = time.time()
+        return self.market_cache
+
+    def _analyze_user_sync(self, user_id: int, market_data: dict):
         try:
             is_demo = bool(get_effective_is_demo(self.db, user_id))
             settings = self.db.get_trading_settings(user_id, is_demo=is_demo)
@@ -158,7 +162,28 @@ class ScannerWorker:
                 if now_ts - last_signaled < self._cooldown_seconds:
                     continue
 
-                state = self.analyzer.analyze(symbol, df)
+                # Fetch 4H data for multi-timeframe confirmation
+                df_4h = None
+                try:
+                    klines_4h = self.binance.get_klines(symbol, "4h", limit=100)
+                    if klines_4h and len(klines_4h) >= 60:
+                        import pandas as pd
+                        df_4h = pd.DataFrame(
+                            klines_4h,
+                            columns=[
+                                "timestamp", "open", "high", "low", "close", "volume",
+                                "close_time", "quote_volume", "trades", "taker_buy_base",
+                                "taker_buy_quote", "ignore"
+                            ],
+                        )
+                        for col in ["open", "high", "low", "close", "volume"]:
+                            df_4h[col] = df_4h[col].astype(float)
+                        df_4h["timestamp"] = pd.to_datetime(df_4h["timestamp"], unit="ms")
+                        df_4h.set_index("timestamp", inplace=True)
+                except Exception as e:
+                    logger.debug(f"⚠️ Could not fetch 4H data for {symbol}: {e}")
+
+                state = self.analyzer.analyze(symbol, df, df_4h=df_4h)
                 if not state:
                     continue
 
@@ -247,6 +272,12 @@ class ScannerWorker:
         except Exception as e:
             logger.error(f"❌ Error analyzing user {user_id}: {e}")
 
+    async def analyze_user(self, user_id, market_data):
+        try:
+            await asyncio.to_thread(self._analyze_user_sync, user_id, market_data)
+        except Exception as e:
+            logger.error(f"❌ Error in async analyze_user wrapper for {user_id}: {e}")
+
     def load_closed_trades_for_learning(self):
         """تحميل الصفقات المغلقة من قاعدة البيانات للتعلم"""
         try:
@@ -301,10 +332,13 @@ class ScannerWorker:
                     await asyncio.sleep(5)
                     continue
 
-                with get_db_connection() as conn:
-                    users = conn.execute(
-                        "SELECT DISTINCT user_id FROM user_settings WHERE trading_enabled = TRUE"
-                    ).fetchall()
+                def _fetch_active_users():
+                    with get_db_connection() as conn:
+                        return conn.execute(
+                            "SELECT DISTINCT user_id FROM user_settings WHERE trading_enabled = TRUE"
+                        ).fetchall()
+
+                users = await asyncio.to_thread(_fetch_active_users)
 
                 if users:
                     tasks = [self.analyze_user(u[0], market_data) for u in users]

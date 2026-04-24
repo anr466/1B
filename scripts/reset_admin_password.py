@@ -45,8 +45,18 @@ def main() -> None:
                 """,
                 (ADMIN_USERNAME, password_hash, admin_id),
             )
+            conn.execute(
+                """
+                INSERT INTO user_settings (user_id, is_demo, trading_enabled)
+                VALUES (%s, TRUE, FALSE)
+                ON CONFLICT (user_id) DO NOTHING
+                """,
+                (admin_id,),
+            )
             row = conn.execute(
-                "SELECT id, username, email, user_type, is_active FROM users WHERE id = %s",
+                """
+                SELECT id, username, email, user_type, is_active FROM users WHERE id = %s
+                """,
                 (admin_id,),
             ).fetchone()
         else:

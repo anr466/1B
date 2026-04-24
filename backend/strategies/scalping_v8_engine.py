@@ -383,6 +383,8 @@ class ScalpingV8Engine:
         if cut1 is None and cut2 is None:
             return None
 
+        cuts = [c for c in [cut1, cut2] if c is not None]
+
         for i, cut in enumerate(cuts):
             if hold_hours >= cut["bars"] and pnl < cut["loss"]:
                 mom = self._momentum_score(df, idx, side)

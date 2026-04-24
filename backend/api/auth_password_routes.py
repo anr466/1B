@@ -662,9 +662,9 @@ def register_password_routes(bp, shared):
                         "iat": datetime.utcnow(),
                     }
 
-                    secret_key = os.getenv(
-                        "JWT_SECRET_KEY", "trading_ai_bot_secret_key_2026"
-                    )
+                    secret_key = os.getenv("JWT_SECRET_KEY")
+                    if not secret_key:
+                        return jsonify({"success": False, "error": "Server configuration error"}), 500
                     reset_token = jwt.encode(
                         reset_token_payload, secret_key, algorithm="HS256"
                     )
@@ -755,9 +755,9 @@ def register_password_routes(bp, shared):
             try:
                 import jwt
 
-                secret_key = os.getenv(
-                    "JWT_SECRET_KEY", "trading_ai_bot_secret_key_2026"
-                )
+                secret_key = os.getenv("JWT_SECRET_KEY")
+                if not secret_key:
+                    return jsonify({"success": False, "error": "Server configuration error"}), 500
 
                 payload = jwt.decode(reset_token, secret_key, algorithms=["HS256"])
 

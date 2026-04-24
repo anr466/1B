@@ -50,6 +50,8 @@ class MeanReversionStrategy(StrategyBase):
             "support_distance_pct": 1.5,  # قرب الدعم
             "volume_multiplier": 1.3,  # مضاعف الحجم
             "volume_confirm": True,  # تأكيد بالحجم
+            "stop_loss_atr": 2.5,  # وقف الخسارة بوحدات ATR
+            "take_profit_ratio": 1.0,  # نسبة هدف الربح
         }
 
         self.params = {**self.default_params, **params}
@@ -99,17 +101,18 @@ class MeanReversionStrategy(StrategyBase):
             )
 
             # 5. الانحراف عن المتوسط
-            df["price_deviation"] = (df["close"] - df["sma"]) / df["sma"] * 100
+            safe_sma = df["sma"].replace(0, np.nan)
+            df["price_deviation"] = (df["close"] - safe_sma) / safe_sma * 100
 
             # 6. متوسط الحجم
             if self.params["volume_confirm"]:
                 df["volume_ma"] = df["volume"].rolling(20).mean()
-                df["volume_ratio"] = df["volume"] / df["volume_ma"]
+                safe_vol_ma = df["volume_ma"].replace(0, np.nan)
+                df["volume_ratio"] = df["volume"] / safe_vol_ma
 
             # 7. مسافة من Bollinger Bands
-            df["bb_position"] = (df["close"] - df["bb_lower"]) / (
-                df["bb_upper"] - df["bb_lower"]
-            )
+            safe_bb_range = (df["bb_upper"] - df["bb_lower"]).replace(0, np.nan)
+            df["bb_position"] = (df["close"] - df["bb_lower"]) / safe_bb_range
 
             return df
 

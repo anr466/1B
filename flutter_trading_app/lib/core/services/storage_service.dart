@@ -49,6 +49,8 @@ class StorageService {
       key: AppConstants.keyRefreshToken,
       value: CredentialEncryption.encrypt(refreshToken),
     );
+    _cachedAccessToken = accessToken;
+    _cachedRefreshToken = refreshToken;
   }
 
   Future<String?> get accessToken async {
@@ -269,6 +271,9 @@ class StorageService {
     await _p.remove(AppConstants.keyUserId);
     await _p.remove(AppConstants.keyUserType);
     await _p.remove(AppConstants.keyUsername);
+
+    _cachedAccessToken = null;
+    _cachedRefreshToken = null;
 
     await saveSkin(skin);
     await saveThemeMode(theme);

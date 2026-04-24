@@ -54,9 +54,9 @@ class CognitiveDecisionMatrix:
         # عقوبة إذا كانت التأكيدات ضعيفة
         confirmations = sum(
             [
-                context.get("trend_confirmed_4h", True),
-                context.get("trend_confirmed_macd", True),
-                context.get("trend_confirmed_volume", True),
+                context.get("trend_confirmed_4h", False),
+                context.get("trend_confirmed_macd", False),
+                context.get("trend_confirmed_volume", False),
             ]
         )
         if confirmations < 2 and regime in ("STRONG_TREND", "WEAK_TREND"):
@@ -86,9 +86,10 @@ class CognitiveDecisionMatrix:
 
     def _score_trend_clarity(self, signal: Dict, context: Dict) -> float:
         trend = context.get("trend", "NEUTRAL")
-        if signal["type"] == "LONG" and trend == "UP":
+        sig_type = signal.get("type", "")
+        if sig_type == "LONG" and trend == "UP":
             return 90
-        if signal["type"] == "SHORT" and trend == "DOWN":
+        if sig_type == "SHORT" and trend == "DOWN":
             return 90
         if trend == "NEUTRAL":
             return 40

@@ -110,6 +110,17 @@ def _save_pending_verification(
 ):
     """حفظ طلب تحقق معلق في قاعدة البيانات"""
     db = db_manager
+    
+    # FIX 9: Encrypt old_password before storing
+    encrypted_password = None
+    if old_password:
+        try:
+            from config.security.encryption_service import encrypt_password
+            encrypted_password = encrypt_password(old_password)
+        except Exception as e:
+            logger.error(f"🔴 Failed to encrypt old_password: {e}")
+            raise RuntimeError(f"Password encryption failed: {e}") from e
+    
     with db.get_write_connection() as conn:
         conn.execute(
             """
@@ -131,7 +142,7 @@ def _save_pending_verification(
                 expires_at.isoformat(),
                 method,
                 new_value,
-                old_password,
+                encrypted_password if encrypted_password else old_password,
             ),
         )
 
@@ -932,9 +943,10 @@ def execute_secure_action(
                     api_key = encrypted["api_key"]
                     secret_key = encrypted["secret_key"]
                 except Exception as e:
-                    logger.warning(
-                        f"⚠️ Encryption failed, using raw keys: {e}"
+                    logger.error(
+                        f"🔴 Encryption failed: {e}"
                     )
+                    raise RuntimeError(f"Encryption service unavailable: {e}") from e
 
                 # حفظ أو تحديث المفاتيح
                 cursor.execute(

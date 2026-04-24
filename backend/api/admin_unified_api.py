@@ -949,7 +949,7 @@ def get_all_users():
                 (SELECT COUNT(*) FROM active_positions WHERE user_id = users.id) as total_trades,
                 (SELECT COUNT(*) FROM active_positions WHERE user_id = users.id AND is_active = FALSE AND profit_loss > 0) as winning_trades,
                 COALESCE((SELECT trading_enabled FROM user_settings WHERE user_id = users.id LIMIT 1), FALSE) as trading_enabled,
-                COALESCE((SELECT trading_mode FROM user_settings WHERE user_id = users.id LIMIT 1), 'demo') as trading_mode
+                CASE WHEN COALESCE((SELECT is_demo FROM user_settings WHERE user_id = users.id LIMIT 1), TRUE) THEN 'demo' ELSE 'live' END as trading_mode
             FROM users
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s

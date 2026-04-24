@@ -117,6 +117,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _checkAuth() async {
     if (_navigated) return;
 
+    // Ensure in-memory cache is populated from secure storage before auth check
+    await ref.read(storageServiceProvider).loadCachedTokens();
+
     // Validate stored token with server - restore session if valid
     await ref.read(authProvider.notifier).checkAuth();
     if (!mounted || _navigated) return;

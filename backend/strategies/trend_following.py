@@ -527,24 +527,7 @@ class TrendFollowingStrategy(StrategyBase):
             logger.error(f"خطأ أثناء حساب المؤشرات الفنية: {
                 str(e)}\n{
                 traceback.format_exc()}")
-            # إعادة DataFrame الأصلي في حالة الخطأ
             return dataframe
-
-        # تحديد الأطر الزمنية الأعلى بناءً على الإطار الزمني الأساسي
-        if timeframe in mtf_relationships:
-            # إزالة القيم الفارغة من القائمة
-            higher_tfs = [
-                tf for tf in mtf_relationships[timeframe] if tf is not None
-            ]
-            logger.info(
-                f"تم تحديد الأطر الزمنية الأعلى تلقائياً: {higher_tfs} للإطار الأساسي {timeframe}")
-            return higher_tfs
-        else:
-            # إطار زمني غير معروف، استخدام قيم افتراضية آمنة
-            default_higher_tfs = ["4h", "1d"]
-            logger.warning(
-                f"إطار زمني غير معروف: {timeframe}، استخدام أطر زمنية افتراضية: {default_higher_tfs}")
-            return default_higher_tfs
 
     def _adapt_parameters(
         self, timeframe: str, avg_adx: float, volatility_ratio: float
@@ -1430,7 +1413,7 @@ class TrendFollowingStrategy(StrategyBase):
 
         except Exception as e:
             logger.error(f"خطأ أثناء حساب نقاط الخروج: {str(e)}")
-            return dataframe
+            return (np.nan, np.nan)
 
     def generate_signals(
         self,

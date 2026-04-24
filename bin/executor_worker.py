@@ -68,34 +68,31 @@ class ExecutorWorker:
         try:
             with get_db_connection() as conn:
                 users = conn.execute("SELECT DISTINCT user_id FROM user_settings WHERE trading_enabled = TRUE").fetchall()
-            
-            for (user_id,) in users:
-                is_demo = bool(get_effective_is_demo(self.db, user_id))
-                if is_demo:
-                    continue 
 
-                client = self.binance_manager._get_binance_client(user_id)
-                if not client:
-                    continue
+                for (user_id,) in users:
+                    is_demo = bool(get_effective_is_demo(self.db, user_id))
+                    if is_demo:
+                        continue
 
-                try:
-                    # Get Open Orders (OCO appear as two orders, but we check existence)
-                    open_orders = client.get_open_orders() 
-                    db_positions = conn.execute(
-                        "SELECT id, symbol, quantity_remaining, take_profit, stop_loss FROM active_positions WHERE user_id = %s AND is_active = TRUE AND is_demo = FALSE",
-                        (user_id,)
-                    ).fetchall()
+                    client = self.binance_manager._get_binance_client(user_id)
+                    if not client:
+                        continue
 
-                    for pos_id, symbol, qty, tp, sl in db_positions:
-                        # Check if OCO exists (simplified check: look for open orders for this symbol)
-                        symbol_orders = [o for o in open_orders if o['symbol'] == symbol]
-                        if not symbol_orders:
-                            logger.warning(f"⚠️ Missing OCO for Position {pos_id} ({symbol}). Attempting to place.")
-                            # We need to be careful: if we place OCO, we might conflict with existing hidden orders.
-                            # For safety, we just log it. A full reconciliation requires complex state matching.
-                            pass 
-                except Exception as e:
-                    logger.error(f"❌ Reconciliation error for User {user_id}: {e}")
+                    try:
+                        # Wrap blocking Binance API call in asyncio.to_thread
+                        open_orders = await asyncio.to_thread(client.get_open_orders)
+                        db_positions = conn.execute(
+                            "SELECT id, symbol, quantity_remaining, take_profit, stop_loss FROM active_positions WHERE user_id = %s AND is_active = TRUE AND is_demo = FALSE",
+                            (user_id,)
+                        ).fetchall()
+
+                        for pos_id, symbol, qty, tp, sl in db_positions:
+                            symbol_orders = [o for o in open_orders if o['symbol'] == symbol]
+                            if not symbol_orders:
+                                logger.warning(f"⚠️ Missing OCO for Position {pos_id} ({symbol}). Attempting to place.")
+                                pass
+                    except Exception as e:
+                        logger.error(f"❌ Reconciliation error for User {user_id}: {e}")
 
         except Exception as e:
             logger.error(f"❌ Global Reconciliation error: {e}")
@@ -164,7 +161,9 @@ class ExecutorWorker:
                     try:
                         if not is_demo:
                             client = self.binance_manager._get_binance_client(user_id)
-                            order = client.create_order(
+                            # Wrap blocking Binance API call in asyncio.to_thread
+                            order = await asyncio.to_thread(
+                                client.create_order,
                                 symbol=symbol,
                                 side="BUY" if pos_type == "LONG" else "SELL",
                                 type="MARKET",
@@ -198,15 +197,16 @@ class ExecutorWorker:
                             order_id, filled_price, filled_price,
                         ),
                     )
-                    
+
                     pos_id = conn.execute("SELECT currval('active_positions_id_seq')").fetchone()[0]
 
                     # FIX 2: Place OCO Order for Safety Net
                     if not is_demo:
                         client = self.binance_manager._get_binance_client(user_id)
                         oco_side = "SELL" if pos_type == "LONG" else "BUY"
-                        oco_order = place_oco_order(client, symbol, oco_side, quantity, tp, sl)
-                        
+                        # Wrap blocking Binance API call in asyncio.to_thread
+                        oco_order = await asyncio.to_thread(place_oco_order, client, symbol, oco_side, quantity, tp, sl)
+                         
                         if oco_order:
                             order_list_id = oco_order.get("orderListId")
                             conn.execute(
@@ -252,7 +252,7 @@ class ExecutorWorker:
                     trail_sl, highest, is_demo, quantity, quantity_remaining,
                     exit_phase, break_even_activated, strategy, order_list_id,
                 ) = pos
-                
+                 
                 try:
                     current_price = price_map.get(symbol)
                     if not current_price:
@@ -283,16 +283,16 @@ class ExecutorWorker:
                     if decision.action == "NONE":
                         # Just update highest price and maybe trail SL in DB
                         new_highest = max(highest or entry, current_price) if pos_type == "LONG" else min(highest or entry, current_price)
-                        
+                         
                         # If trailing SL changed, we MUST update OCO on Binance
                         if decision.new_sl and decision.new_sl != trail_sl:
                             if not is_demo and order_list_id:
                                 client = self.binance_manager._get_binance_client(user_id)
-                                # Cancel old OCO
-                                cancel_oco_order(client, symbol, order_list_id)
+                                # Wrap blocking Binance API calls in asyncio.to_thread
+                                await asyncio.to_thread(cancel_oco_order, client, symbol, order_list_id)
                                 # Place new OCO
                                 oco_side = "SELL" if pos_type == "LONG" else "BUY"
-                                new_oco = place_oco_order(client, symbol, oco_side, quantity_remaining, tp, decision.new_sl)
+                                new_oco = await asyncio.to_thread(place_oco_order, client, symbol, oco_side, quantity_remaining, tp, decision.new_sl)
                                 if new_oco:
                                     with get_db_write_connection() as conn:
                                         conn.execute(
@@ -319,12 +319,13 @@ class ExecutorWorker:
                     elif decision.action == "UPDATE_SL":
                         # Similar to NONE but explicit SL update
                         new_highest = max(highest or entry, current_price) if pos_type == "LONG" else min(highest or entry, current_price)
-                        
+                         
                         if not is_demo and order_list_id:
                              client = self.binance_manager._get_binance_client(user_id)
-                             cancel_oco_order(client, symbol, order_list_id)
+                             # Wrap blocking Binance API calls in asyncio.to_thread
+                             await asyncio.to_thread(cancel_oco_order, client, symbol, order_list_id)
                              oco_side = "SELL" if pos_type == "LONG" else "BUY"
-                             new_oco = place_oco_order(client, symbol, oco_side, quantity_remaining, tp, decision.new_sl)
+                             new_oco = await asyncio.to_thread(place_oco_order, client, symbol, oco_side, quantity_remaining, tp, decision.new_sl)
                              if new_oco:
                                  with get_db_write_connection() as conn:
                                      conn.execute(
@@ -408,7 +409,7 @@ class ExecutorWorker:
         trade_amount = settings.get("trade_amount", 100.0)
         position_size_pct = settings.get("position_size_percentage", 10.0) / 100.0
         budget = trade_amount * position_size_pct
-        if budget <= 0 or entry_price <= 0: return 0.001
+        if budget <= 0 or entry_price <= 0: return 0.0
         raw_qty = budget / entry_price
         
         # Apply Filters
@@ -421,8 +422,8 @@ class ExecutorWorker:
                 step_size = lot_size.get('stepSize', '0.00000001')
                 raw_qty = max(raw_qty, min_qty)
                 raw_qty = round(raw_qty - (raw_qty % float(step_size)), 8)
-        except: pass
-        return max(raw_qty, 0.001)
+        except Exception: pass
+        return raw_qty if raw_qty > 0 else 0.0
 
     def _refresh_price_cache(self, symbols: list) -> dict:
         try:
@@ -439,21 +440,24 @@ class ExecutorWorker:
         entry_price, new_phase, strategy, regime, order_list_id
     ):
         logger.info(f"✂️ Partial Close: {symbol} qty={close_qty:.6f} @ {exit_price}")
-        
+         
         FEE_RATE = 0.001
         gross_pnl = (exit_price - entry_price) * close_qty if pos_type == "LONG" else (entry_price - exit_price) * close_qty
         fees = (entry_price * close_qty * FEE_RATE) + (exit_price * close_qty * FEE_RATE)
         net_pnl = gross_pnl - fees
 
+        binance_success = True
         if not is_demo:
             try:
                 client = self.binance_manager._get_binance_client(user_id)
                 if client and close_qty > 0:
                     # Cancel old OCO first
                     if order_list_id:
-                        cancel_oco_order(client, symbol, order_list_id)
-                    
-                    client.create_order(
+                        await asyncio.to_thread(cancel_oco_order, client, symbol, order_list_id)
+                     
+                    # Wrap blocking Binance API call in asyncio.to_thread
+                    await asyncio.to_thread(
+                        client.create_order,
                         symbol=symbol,
                         side="SELL" if pos_type == "LONG" else "BUY",
                         type="MARKET",
@@ -461,32 +465,59 @@ class ExecutorWorker:
                     )
             except Exception as e:
                 logger.error(f"❌ Partial sell failed: {e}")
-                return
+                binance_success = False
 
-        with get_db_write_connection() as conn:
-            remaining_qty = conn.execute("SELECT quantity_remaining FROM active_positions WHERE id = %s", (pos_id,)).fetchone()[0]
-            new_remaining = remaining_qty - close_qty
-            
-            conn.execute(
-                """UPDATE active_positions
-                   SET quantity_remaining = %s, quantity_closed = quantity_closed + %s,
-                       exit_phase = %s, partial_close_1_price = %s, partial_close_1_pnl = %s
-                   WHERE id = %s""",
-                (new_remaining, close_qty, new_phase, exit_price, net_pnl, pos_id)
-            )
+        if binance_success or is_demo:
+            with get_db_write_connection() as conn:
+                remaining_qty = conn.execute("SELECT quantity_remaining FROM active_positions WHERE id = %s", (pos_id,)).fetchone()[0]
+                new_remaining = remaining_qty - close_qty
+                 
+                conn.execute(
+                    """UPDATE active_positions
+                       SET quantity_remaining = %s, quantity_closed = quantity_closed + %s,
+                           exit_phase = %s, partial_close_1_price = %s, partial_close_1_pnl = %s
+                       WHERE id = %s""",
+                    (new_remaining, close_qty, new_phase, exit_price, net_pnl, pos_id)
+                )
 
-        performance_tracker.record_trade({
-            "symbol": symbol, "strategy": strategy, "type": pos_type,
-            "entry_price": entry_price, "exit_price": exit_price,
-            "quantity": close_qty, "pnl": net_pnl, "exit_reason": f"PARTIAL_CLOSE_{new_phase}",
-            "is_demo": is_demo, "regime": regime
-        })
+                # Place new OCO for the remaining quantity
+                if not is_demo and order_list_id and new_remaining > 0:
+                    try:
+                        client = self.binance_manager._get_binance_client(user_id)
+                        if client:
+                            # Get current SL and TP from DB
+                            pos_row = conn.execute(
+                                "SELECT stop_loss, take_profit FROM active_positions WHERE id = %s",
+                                (pos_id,)
+                            ).fetchone()
+                            if pos_row:
+                                sl, tp = pos_row
+                                oco_side = "SELL" if pos_type == "LONG" else "BUY"
+                                # Wrap blocking Binance API call in asyncio.to_thread
+                                new_oco = await asyncio.to_thread(place_oco_order, client, symbol, oco_side, new_remaining, tp, sl)
+                                if new_oco:
+                                    conn.execute(
+                                        "UPDATE active_positions SET order_list_id = %s WHERE id = %s",
+                                        (new_oco.get("orderListId"), pos_id)
+                                    )
+                                    logger.info(f"🛡️ New OCO placed for remaining {new_remaining:.6f} of {symbol}: ListID {new_oco.get('orderListId')}")
+                                else:
+                                    logger.error(f"❌ Failed to place OCO for remaining {symbol}")
+                    except Exception as e:
+                        logger.error(f"❌ Error placing OCO for remaining {symbol}: {e}")
+
+            performance_tracker.record_trade({
+                "symbol": symbol, "strategy": strategy, "type": pos_type,
+                "entry_price": entry_price, "exit_price": exit_price,
+                "quantity": close_qty, "pnl": net_pnl, "exit_reason": f"PARTIAL_CLOSE_{new_phase}",
+                "is_demo": is_demo, "regime": regime
+            })
 
     async def _execute_full_close(self, pos_id, user_id, symbol, pos_type, is_demo, quantity, exit_price, 
         reason, entry_price, strategy, regime, order_list_id
     ):
         logger.info(f"🚪 Full Close: {symbol} qty={quantity:.6f} @ {exit_price} (Reason: {reason})")
-        
+         
         binance_sell_ok = True
         if not is_demo:
             try:
@@ -494,9 +525,11 @@ class ExecutorWorker:
                 if client and quantity > 0:
                     # Cancel OCO
                     if order_list_id:
-                        cancel_oco_order(client, symbol, order_list_id)
-                    
-                    client.create_order(
+                        await asyncio.to_thread(cancel_oco_order, client, symbol, order_list_id)
+                     
+                    # Wrap blocking Binance API call in asyncio.to_thread
+                    await asyncio.to_thread(
+                        client.create_order,
                         symbol=symbol,
                         side="SELL" if pos_type == "LONG" else "BUY",
                         type="MARKET",
@@ -528,7 +561,7 @@ class ExecutorWorker:
                     (net_pnl, net_pnl, user_id, is_demo),
                 )
             logger.info(f"✅ Position {pos_id} closed in DB: {symbol} PnL={net_pnl:.2f}")
-            
+             
             performance_tracker.record_trade({
                 "symbol": symbol, "strategy": strategy, "type": pos_type,
                 "entry_price": entry_price, "exit_price": exit_price,

@@ -71,12 +71,15 @@ class SmartExitEngine:
 
         # حساب المخاطرة والربح
         risk = abs(entry - sl) if sl > 0 else 0
-        reward = abs(current_price - entry)
+        if pos_type == "LONG":
+            reward = current_price - entry
+        else:
+            reward = entry - current_price
         rr = reward / risk if risk > 0 else 0
 
         # 4. التقييم المعرفي (Cognitive Override) - الأولوية القصوى
         # إذا تغير النظام بشكل جذري، نخرج فوراً
-        if self._should_cognitive_exit(regime, regime_confidence, pos_type):
+        if self._should_cognitive_exit(regime, regime_confidence, pos_type, entry, current_price):
             return ExitDecision(
                 action="CLOSE_ALL",
                 reason=f"Cognitive Override: Regime changed to {regime} (Confidence: {regime_confidence:.2f})",
@@ -129,16 +132,16 @@ class SmartExitEngine:
 
         return ExitDecision(action="NONE", reason="Holding")
 
-    def _should_cognitive_exit(self, regime: str, confidence: float, pos_type: str) -> bool:
+    def _should_cognitive_exit(self, regime: str, confidence: float, pos_type: str, entry_price: float = 0, current_price: float = 0) -> bool:
         """هل يجب الخروج بناءً على تغير النظام؟"""
-        # إذا كان النظام عشوائياً (CHOPPY) بثقة عالية
         if regime == "CHOPPY" and confidence > 0.6:
             return True
-        # إذا كان النظام معاكساً للاتجاه
-        if pos_type == "LONG" and regime in ("STRONG_TREND", "WEAK_TREND") and confidence > 0.7:
-            # TODO: نحتاج لتحديد إذا كان الاتجاه هابطاً
-            # حالياً نفترض أن الاتجاه صاعد إذا كان LONG
-            pass
+        if pos_type == "LONG" and regime == "STRONG_TREND" and confidence > 0.7:
+            if entry_price > 0 and current_price < entry_price:
+                return True
+        if pos_type == "SHORT" and regime == "STRONG_TREND" and confidence > 0.7:
+            if entry_price > 0 and current_price > entry_price:
+                return True
         return False
 
     def _dynamic_trail(
@@ -161,6 +164,9 @@ class SmartExitEngine:
                     reason=f"Dynamic Trailing Stop Hit at {final_sl:.4f}",
                     exit_price=final_sl,
                 )
+            # فقط نحدث إذا كان هناك تغيير ملحوظ (> 0.1%)
+            if current_sl > 0 and abs(final_sl - current_sl) / current_sl < 0.001:
+                return None
             return ExitDecision(
                 action="UPDATE_SL",
                 reason=f"Dynamic Trail updated to {final_sl:.4f}",
@@ -176,6 +182,9 @@ class SmartExitEngine:
                     reason=f"Dynamic Trailing Stop Hit at {final_sl:.4f}",
                     exit_price=final_sl,
                 )
+            # فقط نحدث إذا كان هناك تغيير ملحوظ (> 0.1%)
+            if current_sl > 0 and abs(final_sl - current_sl) / current_sl < 0.001:
+                return None
             return ExitDecision(
                 action="UPDATE_SL",
                 reason=f"Dynamic Trail updated to {final_sl:.4f}",

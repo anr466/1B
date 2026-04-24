@@ -1036,33 +1036,46 @@ def validate_session():
             )
 
         with db_manager.get_connection() as conn:
-            user = conn.execute(
+            row = conn.execute(
                 """
-                SELECT id, username, email, user_type
-                FROM users
-                WHERE id = %s
+                SELECT u.id, u.username, u.email, u.name, u.user_type,
+                       u.phone_number, u.email_verified, u.is_active,
+                       u.created_at, u.last_login_at,
+                       us.is_demo, us.trading_enabled
+                FROM users u
+                LEFT JOIN user_settings us ON us.user_id = u.id
+                WHERE u.id = %s
             """,
                 (user_id,),
             ).fetchone()
 
-            if not user:
+            if not row:
                 return (
                     jsonify({"success": False, "message": "المستخدم غير موجود"}),
                     401,
                 )
 
-        return jsonify(
-            {
-                "success": True,
-                "message": "الجلسة صالحة",
-                "user": {
-                    "id": user[0],
-                    "username": user[1],
-                    "email": user[2],
-                    "user_type": user[3],
-                },
-            }
-        )
+            trading_mode = "demo" if row[10] else "real"
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": "الجلسة صالحة",
+                    "user": {
+                        "id": row[0],
+                        "username": row[1],
+                        "email": row[2],
+                        "name": row[3] or "",
+                        "userType": row[4] or "user",
+                        "phoneNumber": row[5] or "",
+                        "emailVerified": bool(row[6]),
+                        "isActive": bool(row[7]),
+                        "tradingMode": trading_mode,
+                        "tradingEnabled": bool(row[11]) if row[11] is not None else False,
+                        "hasBinanceKeys": False,
+                    },
+                }
+            )
 
     except Exception as e:
         log_error(f"خطأ في التحقق من الجلسة: {str(e)}")
@@ -1256,7 +1269,7 @@ def delete_account():
                 )
 
             # 7. منع حذف حساب الأدمن الرئيسي
-            if user["username"] == "admin_user" or user["email"] == "admin@test.com":
+            if user["user_type"] == "admin" if "user_type" in user else False:
                 return (
                     jsonify(
                         {

@@ -294,49 +294,6 @@ class StrategyBase(ABC):
 
         return df
 
-        # تأكد من وجود جميع أعمدة الإشارات الأساسية، وإنشائها إن لم تكن موجودة
-        essential_signal_columns = [
-            "buy_signal",
-            "sell_signal",
-            "stop_loss_signal",
-            "take_profit_signal",
-            "partial_exit_signal",
-        ]
-        for col in essential_signal_columns:
-            if col not in df.columns:
-                df[col] = 0
-
-        # تطبيق التخطيط على الأعمدة الموجودة
-        for old_col, new_col in signal_map.items():
-            if old_col in df.columns:
-                if new_col not in df.columns:
-                    df[new_col] = df[old_col]
-                else:
-                    # دمج الإشارات في حال وجود كلا العمودين
-                    # تصحيح مشكلة العمليات المنطقية بين float و int
-                    # نستخدم عملية + بدلاً من | ونحول النتيجة لقيمة منطقية بحيث
-                    # إذا كان العمود الأول أو الثاني يحتوي على 1 تكون النتيجة 1
-                    df[new_col] = (
-                        (df[new_col] > 0) | (df[old_col] > 0)
-                    ).astype(int)
-
-        # التأكد من وجود أعمدة الإشارات الرئيسية
-        for col in ["buy", "sell"]:
-            if col not in df.columns:
-                df[col] = 0
-
-        # التأكد من وجود إشارات إدارة المخاطر
-        risk_columns = [
-            "stop_loss_signal",
-            "take_profit_signal",
-            "partial_exit_signal",
-        ]
-        for col in risk_columns:
-            if col not in df.columns:
-                df[col] = 0
-
-        return df
-
     def backtest(
         self,
         dataframe: pd.DataFrame,
