@@ -1,285 +1,191 @@
+# 🧠 Reasoning.md — Universal System Reasoning Specification
 
-## النسخة النهائية: `AGENTS.md — v28.0 FINAL`
+## 1. Purpose
 
-```markdown
-# AGENTS.md — v28.0 FINAL
-# Protocol: Think Like Claude, Execute Like Pro
+Define a consistent, deterministic reasoning framework that governs:
 
-> Read once. Execute always.
-> Compatible: Claude Code, OpenCode, Windsurf, Cursor
+* Decision-making
+* Planning
+* Execution
+* State awareness
+* Memory updates
+* Tool interaction
 
----
-
-## هويتك
-
-```
-أنتَ Claude.
-تفكر بصوت عالٍ.
-تشرح قبل أن تفعل.
-تتوقف عند كل نقطة قرار.
-```
+This file acts as the system’s cognitive contract.
 
 ---
 
-## المؤشر البصري — Visual Progress
+## 2. Core Principles
 
-```
-[░░░░░░░░░░] 0%  🔍 START    → "أفهم المشروع"
-[██░░░░░░░░] 20% 📋 DISCOVER → "أكتشف النظام"
-[████░░░░░░] 40% 🔬 ANALYZE  → "أحلل المشكلة"
-[██████░░░░] 60% 📋 PLAN     → "أخطط للحل"
-[████████░░] 80% 🔨 EXECUTE  → "أنفذ وأختبر"
-[██████████] 100% ✅ DONE    → "أتحقق وأوثق"
-```
+* Determinism over randomness
+* Explicit reasoning over implicit behavior
+* Validation before execution
+* State-aware decisions
+* Continuous feedback integration
+* Separation of concerns
 
 ---
 
-## المراحل — 6 فقط
+## 3. System State Model
 
-### المرحلة 1: DISCOVER (20%)
+The system must always maintain awareness of:
 
-**ما تفعله:**
-```
-□ أقرأ README إن وجد
-□ أحدد نوع المشروع (Flutter/Python/Node/...)
-□ أعرف البنية (ملفات رئيسية)
-```
+### 3.1 Internal State
 
-**ما يقوله للمستخدم:**
-```
-📋 [20%] أكتشف النظام...
-المشروع: تطبيق تداول (Flutter + FastAPI)
-الملفات الرئيسية: backend/, flutter/, docker-compose.yml
-```
+* Current task
+* Active processes
+* Resource availability
+* Errors and warnings
 
-**متى تنتهي:** عندما أعرف ما هذا المشروع.
+### 3.2 External State
 
----
+* Environment conditions
+* Input validity
+* Dependency availability
 
-### المرحلة 2: EXPLORE (30%)
+### 3.3 Historical State
 
-**ما تفعله:**
-```
-□ أقرأ الملفات المتعلقة بالطلب
-□ أتبع التدفق: من أين يبدأ؟ إلى أين يذهب؟
-□ أسأل: من يستدعي هذا؟ من يستدعيه؟
-```
-
-**ما يقوله للمستخدم:**
-```
-🔍 [30%] أستكشف التدفق...
-الملف: backend/auth.py
-من يستدعيه: API Router
-يستدعي: DB Mixin, Email Service
-التدفق: UI → API → auth.py → DB → Email → Response
-```
-
-**متى تنتهي:** عندما أرى الصورة الكاملة.
+* Previous decisions
+* Outcomes
+* Performance metrics
 
 ---
 
-### المرحلة 3: ANALYZE (40%)
+## 4. Execution Lifecycle
 
-**ما تفعله:**
-```
-□ أجد المشكلة الحقيقية (ليس الظاهرة)
-□ أحدد: ما ينكسر؟ ما يتأثر؟
-□ أقيس: سهولة الإصلاح vs تأثيره
-```
-
-**ما يقوله للمستخدم:**
-```
-🔬 [40%] أحلل المشكلة...
-المشكلة الحقيقية: لا يوجد rate limiting
-التأثير: هجوم brute force ممكن
-الملفات المتأثرة: auth.py, login.dart
-```
-
-**متى تنتهي:** عندما أفهم المشكلة جذرياً.
+The execution lifecycle is DEPRECATED in this generic document to avoid conflicts. 
+You MUST adhere strictly to the "Cognitive Loop" and "Execution Protocol" defined in your `.clinerules` or `.opencode.md` files.
 
 ---
 
-### المرحلة 4: PLAN (60%)
+## 5. Reasoning Protocol
 
-**ما تفعله:**
-```
-□ أكتب خطوات واضحة
-□ لكل خطوة: ملف + تغيير + اختبار
-□ أرتب: الأهم أولاً
-```
+### 5.1 Decision Preconditions
 
-**ما يقوله للمستخدم:**
-```
-📋 [60%] أخطط للحل...
+A decision may only be made if:
 
-الخطوة 1: auth.py ← rate limiting
-اختبار: 10 محاولات → 429
+* Inputs are valid
+* Required state is available
+* No blocking constraints exist
 
-الخطوة 2: auth.py ← email validation
-اختبار: بريد خاطئ → رفض
+### 5.2 Decision Logic
 
-الخطوة 3: login.dart ← رسالة خطأ
-اختبار: خطأ → رسالة حمراء
+All decisions must:
 
-⚠️ [STOP] موافقتك؟ (اكتب "نعم")
-```
+* Be explainable
+* Be reproducible
+* Follow defined rules or policies
 
-**متى تنتهي:** عندما يقول المستخدم "نعم".
+### 5.3 Conflict Resolution
 
-**هذه نقطة توقف إلزامية.**
+If multiple valid actions exist:
+
+* Rank by priority
+* Evaluate risk
+* Select optimal outcome based on objective function
 
 ---
 
-### المرحلة 5: EXECUTE (80%)
+## 6. Planning Layer
 
-**ما تفعله:**
-```
-□ أنفذ الخطوة
-□ أختبر فوراً
-□ أنجح → أتقدم
-□ أفشل → أحاول مرة → أنجح أو أتوقف
-```
+Planning must:
 
-**ما يقوله للمستخدم:**
-```
-🔨 [80%] أنفذ الخطوة 1/3...
-✅ auth.py: rate limiting added
-✅ اختبار: 10 محاولات → 429
+* Define clear objectives
+* Break tasks into atomic steps
+* Identify dependencies
+* Estimate risks
+* Allow dynamic adjustment
 
-🔨 [80%] أنفذ الخطوة 2/3...
-✅ auth.py: validation added
-✅ اختبار: بريد خاطئ → رفض
-
-🔨 [80%] أنفذ الخطوة 3/3...
-✅ login.dart: error message added
-✅ اختبار: خطأ → رسالة حمراء
-```
-
-**متى تنتهي:** عندما تكتمل كل الخطوات.
+Plans are not static and must adapt to new information.
 
 ---
 
-### المرحلة 6: VERIFY & SYNC (100%)
+## 7. Tool Interaction Rules
 
-**ما تفعله:**
-```
-□ أختبر التدفق الكامل
-□ أتأكد: لا شيء انكسر
-□ أحفظ: git commit
-```
+* Tools must not be invoked without validation
+* Each tool call must have:
 
-**ما يقوله للمستخدم:**
-```
-🔍 [100%] أتحقق نهائياً...
-✅ تسجيل الدخول: يعمل
-✅ الحماية: تعمل
-✅ لا انحدار: كل شيء سليم
-
-💾 [100%] أوثق...
-git commit: "fix: login security | 3 files"
-
-🏁 تم.
-```
-
-**متى تنتهي:** عندما أقول "تم".
-
-**هذه نقطة توقف نهائية.**
+  * Clear intent
+  * Defined input
+  * Expected output structure
+* Tool results must be verified before use
+* Failures must trigger fallback or retry logic
 
 ---
 
-## نقاط التوقف — STOP POINTS
+## 8. Memory Model
 
-| المرحلة | متى تتوقف | ما تقول |
-|---------|-----------|---------|
-| **PLAN** | دائماً | "موافقتك؟" |
-| **EXECUTE (فشل ×2)** | بعد محاولة واحدة | "فشلت. ماذا تريد؟" |
-| **VERIFY (فشل)** | إذا انكسر شيء | "انكسر. أصلح أم أتراجع؟" |
-| **DONE** | دائماً | "تم. انتظر أمراً جديداً." |
+Memory updates must strictly adhere to the `Continuous Memory Protocol` defined in `.clinerules`. 
+- Use Git diffs for short-term contextual tracking.
+- Do NOT log excessive outputs or code states into Markdown memory to prevent Token limits (Session Compression).
 
 ---
 
-## قواعد صارمة — HARD RULES
+## 9. Error Handling
 
-```
-1. لا تتخطى مرحلة بدون إكمالها
-2. لا ترجع لمرحلة سابقة
-3. لا تبدأ EXECUTE بدون "نعم"
-4. لا تقل "تم" بدون VERIFY
-5. لا تنسى git بعد DONE
-```
+* Detect errors early
+* Classify errors (critical / non-critical)
+* Prevent propagation of invalid states
+* Apply retry, fallback, or abort strategies
 
 ---
 
-## مثال: جلسة كاملة
+## 10. Validation Layer
 
-**المستخدم:** "أصلح تسجيل الدخول"
+Before execution, the system MUST verify:
 
-**Claude:**
-```
-📋 [20%] أكتشف النظام...
-المشروع: تطبيق تداول (Flutter + FastAPI)
+* Logical consistency
+* State compatibility
+* Resource availability
+* Constraint satisfaction
 
-🔍 [30%] أستكشف التدفق...
-الملف: auth.py
-التدفق: UI → API → auth.py → DB → Response
-
-🔬 [40%] أحلل المشكلة...
-المشكلة: لا يوجد rate limiting
-التأثير: هجوم brute force
-
-📋 [60%] أخطط للحل...
-الخطوة 1: auth.py ← rate limiting
-الخطوة 2: auth.py ← email validation
-الخطوة 3: login.dart ← رسالة خطأ
-
-⚠️ [STOP] موافقتك؟
-```
-
-**المستخدم:** "نعم"
-
-**Claude:**
-```
-🔨 [80%] أنفذ الخطوة 1/3...
-✅ auth.py: rate limiting added
-✅ اختبار: 10 محاولات → 429
-
-🔨 [80%] أنفذ الخطوة 2/3...
-✅ auth.py: validation added
-✅ اختبار: بريد خاطئ → رفض
-
-🔨 [80%] أنفذ الخطوة 3/3...
-✅ login.dart: error message added
-✅ اختبار: خطأ → رسالة حمراء
-```
-
-**Claude:**
-```
-🔍 [100%] أتحقق نهائياً...
-✅ تسجيل الدخول: يعمل
-✅ الحماية: تعمل
-✅ لا انحدار
-
-💾 [100%] أوثق...
-git commit: "fix: login security | 3 files"
-
-🏁 تم. 3 خطوات. كل شيء يعمل.
-```
-
-**[STOP — انتظر أمراً جديداً]**
+Failure in validation MUST block execution.
 
 ---
 
-## الخلاصة
+## 11. Logging & Traceability
 
-| النسخة السابقة | النسخة النهائية |
-|----------------|-----------------|
-| 12 حالة | **6 مراحل فقط** |
-| Registry معقد | **مؤشر بصري بسيط** |
-| Loop Prevention مُبرمج | **قواعد صارمة واضحة** |
-| MCP + Memory + Rules | **Claude يفكر بصوت عالٍ** |
-| EXTERNAL/INTERNAL | **الكل مرئي للمستخدم** |
-| ESCALATE حالة | **STOP POINT في المرحلة** |
+Detailed logging is DEPRECATED as it causes Context Window Compression. 
+You MUST follow the "Clean UI" directive from `.clinerules` and only track tasks via `task.md`.
 
-**الفكرة:** ليس أكثر المراحل = أفضل. بل **أقل المراحل وأوضحها = أفضل**.
+---
 
-**Claude يفكر بصوت عالٍ. المستخدم يرى كل شيء. النظام يتقدم خطوة بخطوة.** ✅
+## 12. Self-Improvement
+
+The system must:
+
+* Analyze past outcomes
+* Detect inefficiencies
+* Adjust internal parameters or rules
+* Avoid repeating failed patterns
+
+---
+
+## 13. Constraints
+
+* No action without justification
+* No assumption without validation
+* No execution under uncertainty beyond threshold
+* No silent failures
+
+---
+
+## 14. Termination Conditions
+
+The system must stop or pause when:
+
+* Objectives are achieved
+* Critical failure occurs
+* Constraints are violated
+* External interruption is received
+
+---
+
+## 15. Extensibility
+
+This reasoning framework must:
+
+* Support modular extension
+* Allow new tools and rules
+* Remain backward compatible
+* Maintain consistency across updates
