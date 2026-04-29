@@ -1,21 +1,14 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/system_status_model.dart';
-import 'package:trading_app/core/providers/auth_provider.dart';
-import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/unified_async_state.dart';
 
-/// System status provider for dashboard & admin
-/// ✅ UNIFIED: Single provider with 60s polling for consistent state
-/// Uses StateNotifierProvider for stable state management (no flickering)
 final systemStatusProvider =
-    StateNotifierProvider<SystemStatusNotifier, AsyncValue<SystemStatusModel>>((
-      ref,
-    ) {
-      return SystemStatusNotifier(ref);
-    });
+    StateNotifierProvider<SystemStatusNotifier, AsyncValue<SystemStatusModel>>((ref) {
+  return SystemStatusNotifier(ref);
+});
 
-/// Backward compatibility alias
 final tradingCycleLiveProvider = systemStatusProvider;
 
 class SystemStatusNotifier
@@ -39,10 +32,10 @@ class SystemStatusNotifier
         _initialLoadDone = true;
         state = AsyncValue.data(status);
       }
-    } catch (e, _) {
+    } catch (e, st) {
       if (!_disposed) {
         if (!_initialLoadDone) {
-          state = AsyncValue.error(e, StackTrace.current);
+          state = AsyncValue.error(e, st);
         }
       }
     }
@@ -65,9 +58,7 @@ class SystemStatusNotifier
       if (!_disposed && _initialLoadDone) {
         state = AsyncValue.data(status);
       }
-    } catch (_) {
-      // Silent fail during polling - keep last known state
-    }
+    } catch (_) {}
   }
 
   Future<void> refresh() async {
@@ -95,17 +86,115 @@ class SystemStatusNotifier
   }
 }
 
-/// Admin users list
 final adminUsersProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-      final repo = ref.watch(adminRepositoryProvider);
-      return repo.getAllUsers();
-    });
-
-/// ML Status — uses keepAlive to prevent flickering from autoDispose
-final mlStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
-  final auth = ref.watch(authProvider);
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
   final repo = ref.watch(adminRepositoryProvider);
-  return repo.getMlStatus(mode: mode);
+  return repo.getAllUsers();
+});
+
+final mlStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final repo = ref.watch(adminRepositoryProvider);
+  return repo.getMlStatus();
+});
+
+final adminPortfolioModeProvider = StateProvider<String?>((ref) => null);
+
+final adminPortfolioStateProvider = StateNotifierProvider<AdminPortfolioNotifier,
+    UnifiedAsyncState<AdminPortfolioData>>((ref) {
+  return AdminPortfolioNotifier(ref);
+});
+
+class AdminPortfolioData {
+  final List<Map<String, dynamic>> users;
+  final Map<String, dynamic> systemStatus;
+  final Map<String, dynamic> mlStatus;
+
+  const AdminPortfolioData({
+    this.users = const [],
+    this.systemStatus = const {},
+    this.mlStatus = const {},
+  });
+
+  AdminPortfolioData copyWith({
+    List<Map<String, dynamic>>? users,
+    Map<String, dynamic>? systemStatus,
+    Map<String, dynamic>? mlStatus,
+  }) =>
+      AdminPortfolioData(
+        users: users ?? this.users,
+        systemStatus: systemStatus ?? this.systemStatus,
+        mlStatus: mlStatus ?? this.mlStatus,
+      );
+}
+
+class AdminPortfolioNotifier
+    extends StateNotifier<UnifiedAsyncState<AdminPortfolioData>> {
+  final Ref _ref;
+  Timer? _pollingTimer;
+
+  AdminPortfolioNotifier(this._ref)
+      : super(UnifiedAsyncState<AdminPortfolioData>.initial()) {
+    _init();
+  }
+
+  void _init() {
+    fetch();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _silentFetch();
+    });
+  }
+
+  Future<void> _silentFetch() async {
+    try {
+      final repo = _ref.read(adminRepositoryProvider);
+      final results = await Future.wait([
+        repo.getAllUsers(),
+        repo.getTradingState().then((s) => <String, dynamic>{
+          'state': s.state,
+          'is_running': s.isRunning,
+        }),
+        repo.getMlStatus(),
+      ]);
+
+      final data = AdminPortfolioData(
+        users: List<Map<String, dynamic>>.from(results[0] as List),
+        systemStatus: Map<String, dynamic>.from(results[1] as Map),
+        mlStatus: Map<String, dynamic>.from(results[2] as Map),
+      );
+
+      if (mounted) {
+        state = UnifiedAsyncState<AdminPortfolioData>.loaded(data);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> fetch() async {
+    state = UnifiedAsyncState<AdminPortfolioData>.loading();
+    await _silentFetch();
+  }
+
+  Future<void> refresh() => fetch();
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+}
+
+final adminActivePositionsProvider = FutureProvider.family<List<Map<String, dynamic>>, int>((ref, userId) async {
+  final repo = ref.watch(adminRepositoryProvider);
+  return repo.getActivePositionsForUser(userId);
+});
+
+/// Daily status for the current date — single source of truth.
+final dailyStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final repo = ref.watch(adminRepositoryProvider);
+  final today = DateTime.now().toIso8601String().substring(0, 10);
+  return repo.getDailyStatus(today);
 });

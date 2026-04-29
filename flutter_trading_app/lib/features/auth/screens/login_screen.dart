@@ -11,7 +11,6 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_input.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
-import 'package:trading_app/main.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Login Screen — email_or_username + password + biometric

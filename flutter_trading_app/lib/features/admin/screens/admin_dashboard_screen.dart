@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
+import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';

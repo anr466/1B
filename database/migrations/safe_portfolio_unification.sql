@@ -5,10 +5,8 @@
 -- الهدف: توحيد آمن لجداول المحفظة مع تنظيف البيانات المعطلة
 -- ============================================================================
 
--- تعطيل foreign keys مؤقتاً للmigration
-PRAGMA foreign_keys = OFF;
-
-BEGIN TRANSACTION;
+-- PostgreSQL: no PRAGMA needed, use standard transaction
+BEGIN;
 
 -- ============================================================================
 -- 1. تنظيف البيانات المعطلة من user_portfolio

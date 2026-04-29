@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/notification_settings_model.dart';
-import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/repositories/admin_repository.dart';
 import 'package:trading_app/core/repositories/notifications_repository.dart';
 import 'package:trading_app/core/repositories/portfolio_repository.dart';
@@ -12,10 +11,8 @@ import 'package:trading_app/core/services/biometric_service.dart';
 import 'package:trading_app/core/services/push_notification_service.dart';
 import 'package:trading_app/main.dart';
 
-/// Service & Repository Providers — مركزية لجميع الخدمات
-/// يعتمد على storageServiceProvider المُعرَّف في main.dart
+export 'package:trading_app/main.dart' show storageServiceProvider;
 
-// ─── Services ─────────────────────────────────────
 final apiServiceProvider = Provider<ApiService>((ref) {
   final storage = ref.watch(storageServiceProvider);
   return ApiService(storage);
@@ -31,9 +28,7 @@ final biometricServiceProvider = Provider<BiometricService>((ref) {
   return BiometricService();
 });
 
-final pushNotificationServiceProvider = Provider<PushNotificationService>((
-  ref,
-) {
+final pushNotificationServiceProvider = Provider<PushNotificationService>((ref) {
   final api = ref.watch(apiServiceProvider);
   final storage = ref.watch(storageServiceProvider);
   final service = PushNotificationService(api, storage);
@@ -41,7 +36,6 @@ final pushNotificationServiceProvider = Provider<PushNotificationService>((
   return service;
 });
 
-// ─── Repositories ─────────────────────────────────
 final portfolioRepositoryProvider = Provider<PortfolioRepository>((ref) {
   return PortfolioRepository(ref.watch(apiServiceProvider));
 });
@@ -54,9 +48,7 @@ final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   return SettingsRepository(ref.watch(apiServiceProvider));
 });
 
-final notificationsRepositoryProvider = Provider<NotificationsRepository>((
-  ref,
-) {
+final notificationsRepositoryProvider = Provider<NotificationsRepository>((ref) {
   return NotificationsRepository(ref.watch(apiServiceProvider));
 });
 
@@ -64,39 +56,26 @@ final adminRepositoryProvider = Provider<AdminRepository>((ref) {
   return AdminRepository(ref.watch(apiServiceProvider));
 });
 
-const _biometricTrustDuration = Duration(minutes: 5);
-
 final biometricTrustProvider =
     StateNotifierProvider<BiometricTrustNotifier, DateTime?>((ref) {
-      return BiometricTrustNotifier();
-    });
+  return BiometricTrustNotifier();
+});
 
 class BiometricTrustNotifier extends StateNotifier<DateTime?> {
+  static const _trustDuration = Duration(minutes: 5);
   BiometricTrustNotifier() : super(null);
 
   bool get isTrusted {
     if (state == null) return false;
-    return DateTime.now().difference(state!) < _biometricTrustDuration;
+    return DateTime.now().difference(state!) < _trustDuration;
   }
 
-  void markTrusted() {
-    state = DateTime.now();
-  }
-
-  void clear() {
-    state = null;
-  }
+  void markTrusted() => state = DateTime.now();
+  void clear() => state = null;
 }
 
-/// Notification settings provider - caches user notification preferences
-/// ✅ NOT autoDispose to ensure settings persist and sync with push service
-final notificationSettingsProvider = FutureProvider<NotificationSettingsModel>((
-  ref,
-) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) {
-    throw Exception('غير مصادق');
-  }
-  final repo = ref.watch(notificationsRepositoryProvider);
-  return repo.getNotificationSettings();
+final notificationSettingsProvider =
+    FutureProvider<NotificationSettingsModel>((ref) async {
+  final notificationsRepo = ref.watch(notificationsRepositoryProvider);
+  return notificationsRepo.getNotificationSettings();
 });

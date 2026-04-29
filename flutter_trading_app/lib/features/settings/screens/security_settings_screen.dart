@@ -12,9 +12,8 @@ import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
-import 'package:trading_app/design/widgets/flow_stepper.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
-import 'package:trading_app/main.dart';
+import 'package:trading_app/design/widgets/flow_stepper.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Security Settings Screen — الأمان (تغيير كلمة المرور + البصمة)

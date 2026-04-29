@@ -338,4 +338,27 @@ class AdminRepository {
     }
     throw Exception(data['message'] ?? data['error'] ?? 'فشل تنظيف السجلات');
   }
+
+  Future<List<Map<String, dynamic>>> getActivePositionsForUser(int userId) async {
+    final response = await _api.get(ApiEndpoints.activePositions(userId));
+    final data = response.data;
+    if (_isSuccessfulResponse(data)) {
+      final payload = _unwrapPayload(data);
+      final positions = payload['positions'] ?? payload['data'] ?? [];
+      if (positions is List) {
+        return positions.map((p) => ParsingService.asMap(p)).toList();
+      }
+      return [];
+    }
+    throw Exception(data['message'] ?? data['error'] ?? 'فشل تحميل المراكز');
+  }
+
+  Future<Map<String, dynamic>> getDailyStatus(String date) async {
+    final response = await _api.get(ApiEndpoints.dailyStatus(0, mode: date));
+    final data = response.data;
+    if (_isSuccessfulResponse(data)) {
+      return _unwrapPayload(data);
+    }
+    throw Exception(data['message'] ?? data['error'] ?? 'فشل تحميل الحالة اليومية');
+  }
 }

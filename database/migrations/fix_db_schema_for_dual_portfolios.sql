@@ -15,18 +15,18 @@ BEGIN TRANSACTION;
 
 -- أ) إنشاء جدول جديد بالـ Schema الصحيح
 CREATE TABLE user_portfolios_new (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    is_demo INTEGER NOT NULL DEFAULT 0,  -- 0=Real, 1=Demo
-    balance REAL DEFAULT 1000.0,
-    available_balance REAL DEFAULT 1000.0,
-    locked_balance REAL DEFAULT 0.0,
-    total_profit_loss REAL DEFAULT 0.0,
-    daily_profit_loss REAL DEFAULT 0.0,
+    is_demo INTEGER NOT NULL DEFAULT 0,
+    balance NUMERIC(18,8) DEFAULT 1000.0,
+    available_balance NUMERIC(18,8) DEFAULT 1000.0,
+    locked_balance NUMERIC(18,8) DEFAULT 0.0,
+    total_profit_loss NUMERIC(18,8) DEFAULT 0.0,
+    daily_profit_loss NUMERIC(18,8) DEFAULT 0.0,
     total_trades INTEGER DEFAULT 0,
     winning_trades INTEGER DEFAULT 0,
     losing_trades INTEGER DEFAULT 0,
-    win_rate REAL DEFAULT 0.0,
+    win_rate NUMERIC(5,2) DEFAULT 0.0,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -186,7 +186,8 @@ COMMIT;
 
 -- عرض النتائج
 SELECT '=== user_portfolios Schema ===' as info;
-SELECT sql FROM sqlite_master WHERE type='table' AND name='user_portfolios';
+-- PostgreSQL: check table columns instead of sqlite_master
+SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'portfolio';
 
 SELECT '=== المستخدمون والمحافظ ===' as info;
 SELECT 

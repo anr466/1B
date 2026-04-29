@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/privacy_provider.dart';
@@ -44,10 +45,8 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: cs.surface,
-        body: SafeArea(
-          child: RefreshIndicator(
+      child: SafeArea(
+        child: RefreshIndicator(
             color: cs.primary,
             onRefresh: () async {
               ref.invalidate(portfolioProvider);
@@ -278,7 +277,6 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 

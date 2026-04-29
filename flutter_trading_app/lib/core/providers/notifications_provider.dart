@@ -1,10 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/models/notification_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 
-/// Unread count for badge
 final unreadCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final auth = ref.watch(authProvider);
   if (!auth.isAuthenticated || auth.user == null) return 0;
@@ -12,7 +10,6 @@ final unreadCountProvider = FutureProvider.autoDispose<int>((ref) async {
   return repo.getUnreadCount(auth.user!.id);
 });
 
-/// Notifications list state
 class NotificationsListState {
   final List<NotificationModel> notifications;
   final int currentPage;
@@ -37,40 +34,37 @@ class NotificationsListState {
     bool? hasMore,
     String? error,
     bool? isMarkingAllRead,
-  }) => NotificationsListState(
-    notifications: notifications ?? this.notifications,
-    currentPage: currentPage ?? this.currentPage,
-    isLoading: isLoading ?? this.isLoading,
-    hasMore: hasMore ?? this.hasMore,
-    error: error,
-    isMarkingAllRead: isMarkingAllRead ?? this.isMarkingAllRead,
-  );
+  }) =>
+      NotificationsListState(
+        notifications: notifications ?? this.notifications,
+        currentPage: currentPage ?? this.currentPage,
+        isLoading: isLoading ?? this.isLoading,
+        hasMore: hasMore ?? this.hasMore,
+        error: error,
+        isMarkingAllRead: isMarkingAllRead ?? this.isMarkingAllRead,
+      );
 }
 
-class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
+class NotificationsListNotifier
+    extends StateNotifier<NotificationsListState> {
   final Ref _ref;
-  bool _busy = false;
 
-  NotificationsListNotifier(this._ref) : super(const NotificationsListState());
+  NotificationsListNotifier(this._ref)
+      : super(const NotificationsListState());
 
   Future<void> loadFirstPage() async {
-    if (_busy) return;
-    _busy = true;
     state = const NotificationsListState(isLoading: true);
     await _loadPage(1);
-    _busy = false;
   }
 
   Future<void> loadNextPage() async {
-    if (_busy || state.isLoading || !state.hasMore) return;
-    _busy = true;
+    if (state.isLoading || !state.hasMore) return;
     state = state.copyWith(isLoading: true);
     await _loadPage(state.currentPage + 1);
-    _busy = false;
   }
 
   Future<void> markAllRead() async {
-    if (_busy) return;
+    if (state.isMarkingAllRead) return;
     state = state.copyWith(isMarkingAllRead: true);
 
     try {
@@ -86,7 +80,6 @@ class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
   }
 
   Future<void> markAsRead(int notificationId) async {
-    if (_busy) return;
     final auth = _ref.read(authProvider);
     if (!auth.isAuthenticated || auth.user == null) return;
     final repo = _ref.read(notificationsRepositoryProvider);
@@ -98,10 +91,17 @@ class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
   Future<void> _loadPage(int page) async {
     try {
       final auth = _ref.read(authProvider);
-      if (!auth.isAuthenticated || auth.user == null) return;
+      if (!auth.isAuthenticated || auth.user == null) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'غير مصادق',
+        );
+        return;
+      }
 
       final repo = _ref.read(notificationsRepositoryProvider);
-      final result = await repo.getNotifications(auth.user!.id, page: page);
+      final result =
+          await repo.getNotifications(auth.user!.id, page: page);
 
       final all = page == 1
           ? result.notifications
@@ -111,19 +111,18 @@ class NotificationsListNotifier extends StateNotifier<NotificationsListState> {
         notifications: all,
         currentPage: page,
         isLoading: false,
-        hasMore:
-            result.notifications.length >= AppConstants.notificationsPerPage,
+        hasMore: result.notifications.length >= 20,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
     }
   }
 }
 
-final notificationsListProvider =
-    StateNotifierProvider.autoDispose<
-      NotificationsListNotifier,
-      NotificationsListState
-    >((ref) {
-      return NotificationsListNotifier(ref);
-    });
+final notificationsListProvider = StateNotifierProvider.autoDispose<
+    NotificationsListNotifier, NotificationsListState>((ref) {
+  return NotificationsListNotifier(ref);
+});

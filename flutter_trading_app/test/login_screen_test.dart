@@ -6,7 +6,6 @@ import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/services/biometric_service.dart';
 import 'package:trading_app/core/services/storage_service.dart';
 import 'package:trading_app/features/auth/screens/login_screen.dart';
-import 'package:trading_app/main.dart';
 
 class _FakeBiometricService extends BiometricService {
   _FakeBiometricService(this._available);

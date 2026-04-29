@@ -5,6 +5,7 @@ import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/services/trading_toggle_service.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -164,10 +165,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: cs.surface,
-        body: SafeArea(
-          child: Center(
+      child: SafeArea(
+        child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxWidth),
               child: ListView(
@@ -258,9 +257,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   TradingStatusStrip(
                     enabled: tradingState.enabled,
                     isLoading: tradingState.isLoading,
-                    onChanged: tradingState.enabled == null
-                        ? null
-                        : _toggleTrading,
+                    onChanged: tradingState.isLoading ? null : _toggleTrading,
                   ),
 
                   const SizedBox(height: SpacingTokens.lg),
@@ -376,7 +373,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 

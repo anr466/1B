@@ -42,10 +42,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: cs.surface,
-        body: SafeArea(
-          child: RefreshIndicator(
+      child: SafeArea(
+        child: RefreshIndicator(
             color: cs.primary,
             onRefresh: () async {
               _refresh();
@@ -251,7 +249,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 

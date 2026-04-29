@@ -2,331 +2,119 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
-import 'package:trading_app/core/models/system_status_model.dart';
 import 'package:trading_app/core/models/trade_model.dart';
-import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
-import 'package:trading_app/core/providers/notifications_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/core/providers/trades_provider.dart';
-import 'package:trading_app/core/services/debounce_service.dart';
-import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/core/providers/unified_async_state.dart';
+
+const _portfolioPollingInterval = Duration(seconds: 15);
+
+/// Unified single source of truth for portfolio + stats + active positions.
+/// All derived providers read from this to avoid duplicate API calls.
+final accountTradingProvider = StateNotifierProvider<AccountTradingNotifier,
+    LoadingState<AccountTradingState>>((ref) {
+  return AccountTradingNotifier(ref);
+});
 
 class AccountTradingState {
-  final bool? enabled;
-  final bool isLoading;
-  final bool systemRunning;
-  final String systemState;
+  final PortfolioModel? portfolio;
+  final StatsModel? stats;
+  final List<TradeModel> activePositions;
 
   const AccountTradingState({
-    this.enabled,
-    this.isLoading = false,
-    this.systemRunning = false,
-    this.systemState = 'STOPPED',
+    this.portfolio,
+    this.stats,
+    this.activePositions = const [],
   });
-
-  bool get enabledSafe => enabled ?? false;
-
-  AccountTradingState copyWith({
-    bool? enabled,
-    bool? isLoading,
-    bool? systemRunning,
-    String? systemState,
-  }) {
-    return AccountTradingState(
-      enabled: enabled ?? this.enabled,
-      isLoading: isLoading ?? this.isLoading,
-      systemRunning: systemRunning ?? this.systemRunning,
-      systemState: systemState ?? this.systemState,
-    );
-  }
 }
 
-class AccountTradingNotifier extends StateNotifier<AccountTradingState> {
-  final Ref _ref;
-  bool _disposed = false;
-  bool _busy = false;
-  // NOTE: _pollingTimer removed — polling now handled by PortfolioRefreshCoordinator
-  final Debouncer _debouncer = Debouncer(
-    duration: const Duration(milliseconds: 500),
-  );
-
-  AccountTradingNotifier(this._ref)
-    : super(
-        AccountTradingState(
-          enabled: _ref.read(authProvider).user?.tradingEnabled ?? false,
-        ),
-      ) {
-    load();
-    // NOTE: Polling is now handled by PortfolioRefreshCoordinator (15s unified).
-    // We no longer start a separate 10s timer here to avoid duplicate API calls.
-    // Listen to auth state changes to reload trading state when user changes
-    _ref.listen<AuthState>(authProvider, (previous, next) {
-      if (previous?.user?.id != next.user?.id) {
-        // User changed - reload trading state
-        load();
-      }
-    });
-    // Listen to system status changes to sync systemRunning/systemState
-    _ref.listen<AsyncValue<SystemStatusModel>>(systemStatusProvider, (
-      previous,
-      next,
-    ) {
-      if (!next.hasValue) return;
-      final systemStatus = next.value!;
-      if (!_disposed) {
-        _setStateSafely(
-          state.copyWith(
-            systemRunning: systemStatus.isEffectivelyRunning,
-            systemState: systemStatus.state.toUpperCase(),
-          ),
-        );
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _disposed = true;
-    _debouncer.dispose();
-    super.dispose();
-  }
-
-  void _setStateSafely(AccountTradingState nextState) {
-    if (_disposed) return;
-    state = nextState;
-  }
-
-  Future<void> load() async {
-    final auth = _ref.read(authProvider);
-    final user = auth.user;
-    if (user == null) {
-      _setStateSafely(
-        const AccountTradingState(enabled: false, isLoading: false),
-      );
-      return;
-    }
-
-    _setStateSafely(
-      state.copyWith(
-        enabled: state.enabled ?? user.tradingEnabled,
-        isLoading: true,
-      ),
-    );
-
-    try {
-      final repo = _ref.read(settingsRepositoryProvider);
-      final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
-      final settings = await repo.getSettings(user.id, mode: mode);
-
-      // Use systemRunning and systemState from settings response (now included in one call)
-      if (_disposed) return;
-      _setStateSafely(
-        state.copyWith(
-          enabled: settings.tradingEnabled,
-          systemRunning: settings.systemRunning,
-          systemState: settings.systemState,
-          isLoading: false,
-        ),
-      );
-      _syncAuthTrading(settings.tradingEnabled);
-    } catch (_) {
-      if (_disposed) return;
-      _setStateSafely(state.copyWith(enabled: false, isLoading: false));
-    }
-  }
-
-  Future<bool> setEnabled(bool enabled) async {
-    // Debounce rapid taps - wait for 500ms after last tap
-    if (_busy) return false;
-
-    // Use debouncer to prevent rapid spam
-    final completer = Completer<bool>();
-    _debouncer.runFuture(() async {
-      final result = await _setEnabledInternal(enabled);
-      if (!completer.isCompleted) {
-        completer.complete(result);
-      }
-    });
-
-    return completer.future;
-  }
-
-  Future<bool> _setEnabledInternal(bool enabled) async {
-    if (_busy) return false;
-    _busy = true;
-
-    final auth = _ref.read(authProvider);
-    final user = auth.user;
-    if (user == null) {
-      _busy = false;
-      return false;
-    }
-
-    final previous = state.enabled ?? user.tradingEnabled;
-    final isAdmin = auth.isAdmin;
-    final currentMode = isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
-
-    // Optimistic update - only update UI, not auth state yet
-    _setStateSafely(state.copyWith(enabled: enabled, isLoading: true));
-
-    try {
-      final repo = _ref.read(settingsRepositoryProvider);
-
-      // Exclusive mode logic for Admin: enable one mode = disable other
-      if (isAdmin && enabled && currentMode != null) {
-        final otherMode = currentMode == 'demo' ? 'real' : 'demo';
-        await repo.updateSettings(user.id, {
-          'tradingEnabled': false,
-        }, mode: otherMode);
-      }
-
-      await repo.updateSettings(user.id, {
-        'tradingEnabled': enabled,
-      }, mode: currentMode);
-
-      final settings = await repo.getSettings(user.id, mode: currentMode);
-
-      if (_disposed) return true;
-
-      _setStateSafely(
-        state.copyWith(
-          enabled: settings.tradingEnabled,
-          systemRunning: settings.systemRunning,
-          systemState: settings.systemState,
-          isLoading: false,
-        ),
-      );
-      _syncAuthTrading(settings.tradingEnabled);
-      return true;
-    } catch (_) {
-      if (_disposed) return false;
-      _setStateSafely(state.copyWith(enabled: previous, isLoading: false));
-      return false;
-    } finally {
-      _busy = false;
-    }
-  }
-
-  void _syncAuthTrading(bool enabled) {
-    final auth = _ref.read(authProvider);
-    final currentUser = auth.user;
-    if (currentUser == null) return;
-    // Only update if the value actually changed to avoid triggering rebuild loops
-    if (currentUser.tradingEnabled == enabled) return;
-    _ref
-        .read(authProvider.notifier)
-        .updateCurrentUser(currentUser.copyWith(tradingEnabled: enabled));
-  }
-}
-
-/// Admin portfolio mode — 'demo' | 'real' (only relevant when isAdmin == true)
-/// Regular users always see their single portfolio (no mode switching)
-/// Default is 'demo' since admin demo account is the one actively trading
-final adminPortfolioModeProvider = StateProvider<String>((ref) => 'demo');
-
-final accountTradingProvider =
-    StateNotifierProvider<AccountTradingNotifier, AccountTradingState>((ref) {
-      final auth = ref.watch(authProvider);
-      if (auth.isAdmin) {
-        ref.watch(adminPortfolioModeProvider);
-      }
-      return AccountTradingNotifier(ref);
-    });
-
-/// Daily status provider — reads daily_pnl from /user/daily-status (based on actual trades)
-final dailyStatusProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
-  ref,
-) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) return {};
-  final repo = ref.watch(settingsRepositoryProvider);
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  return repo.getDailyStatus(auth.user!.id, mode: mode);
-});
-
-/// Portfolio data provider — passes mode for admin users
-final portfolioProvider = FutureProvider<PortfolioModel>((ref) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) {
-    throw Exception('غير مصادق');
-  }
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(portfolioRepositoryProvider);
-  return repo.getPortfolio(auth.user!.id, mode: mode);
-});
-
-final activePositionsProvider = FutureProvider<List<TradeModel>>((ref) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) {
-    throw Exception('غير مصادق');
-  }
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(portfolioRepositoryProvider);
-  return repo.getActivePositions(auth.user!.id, mode: mode);
-});
-
-/// Successful (qualified) coins provider
-final successfulCoinsProvider = FutureProvider<List<Map<String, dynamic>>>((
-  ref,
-) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) return [];
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(portfolioRepositoryProvider);
-  return repo.getSuccessfulCoins(auth.user!.id, mode: mode);
-});
-
-/// Stats data provider — passes mode for admin users
-/// ✅ NOT autoDispose for auto-refresh support
-final statsProvider = FutureProvider<StatsModel>((ref) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) {
-    throw Exception('غير مصادق');
-  }
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(portfolioRepositoryProvider);
-  return repo.getStats(auth.user!.id, mode: mode);
-});
-
-/// Portfolio refresh coordinator — polls and invalidates all trading data
-/// ✅ Ensures portfolio data stays fresh without manual refresh
-final portfolioRefreshCoordinatorProvider = StateNotifierProvider((ref) {
-  return PortfolioRefreshCoordinator(ref);
-});
-
-class PortfolioRefreshCoordinator extends StateNotifier<int> {
+class AccountTradingNotifier
+    extends StateNotifier<LoadingState<AccountTradingState>> {
   final Ref _ref;
   Timer? _pollingTimer;
-  // Unified polling interval — handles portfolio, stats, positions, AND trading state
-  // Previously had TWO separate 10s timers (this + AccountTradingNotifier).
-  // Now AccountTradingNotifier delegates to this coordinator for data refresh.
-  static const _pollInterval = Duration(seconds: 15);
 
-  PortfolioRefreshCoordinator(this._ref) : super(0) {
-    _startPolling();
+  AccountTradingNotifier(this._ref)
+      : super(const LoadingState()) {
+    _init();
   }
 
-  void _startPolling() {
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(_pollInterval, (_) {
-      _invalidateAll();
-    });
-  }
-
-  void _invalidateAll() {
-    _ref.invalidate(portfolioProvider);
-    _ref.invalidate(statsProvider);
-    _ref.invalidate(activePositionsProvider);
-    // Also refresh trading state (was previously a separate 10s poller)
-    try {
-      _ref.read(accountTradingProvider.notifier).load();
-    } catch (_) {
-      // Silent — trading state refresh is non-critical
+  void _init() {
+    final auth = _ref.read(authProvider);
+    if (auth.isAuthenticated && auth.user != null) {
+      fetch();
+      startPolling();
     }
   }
 
-  void refresh() => _invalidateAll();
+  Future<void> fetch() async {
+    state = const LoadingState(status: LoadingStatus.loading);
+
+    try {
+      final auth = _ref.read(authProvider);
+      if (!auth.isAuthenticated || auth.user == null) {
+        state = const LoadingState(status: LoadingStatus.error, error: 'غير مصادق');
+        return;
+      }
+
+      final portfolioRepo = _ref.read(portfolioRepositoryProvider);
+
+      final results = await Future.wait([
+        portfolioRepo.getPortfolio(auth.user!.id),
+        portfolioRepo.getStats(auth.user!.id),
+        portfolioRepo.getActivePositions(auth.user!.id),
+      ]);
+
+      final accountState = AccountTradingState(
+        portfolio: results[0] as PortfolioModel,
+        stats: results[1] as StatsModel,
+        activePositions: results[2] as List<TradeModel>,
+      );
+
+      state = LoadingState(status: LoadingStatus.loaded, data: accountState);
+    } catch (e) {
+      state = LoadingState(status: LoadingStatus.error, error: e.toString());
+    }
+  }
+
+  Future<void> refresh() => fetch();
+
+  void startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(
+      _portfolioPollingInterval,
+      (_) => _silentFetch(),
+    );
+  }
+
+  void stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  Future<void> _silentFetch() async {
+    try {
+      final auth = _ref.read(authProvider);
+      if (!auth.isAuthenticated || auth.user == null) return;
+
+      final portfolioRepo = _ref.read(portfolioRepositoryProvider);
+
+      final results = await Future.wait([
+        portfolioRepo.getPortfolio(auth.user!.id),
+        portfolioRepo.getStats(auth.user!.id),
+        portfolioRepo.getActivePositions(auth.user!.id),
+      ]);
+
+      final accountState = AccountTradingState(
+        portfolio: results[0] as PortfolioModel,
+        stats: results[1] as StatsModel,
+        activePositions: results[2] as List<TradeModel>,
+      );
+
+      if (mounted) {
+        state = LoadingState(status: LoadingStatus.loaded, data: accountState);
+      }
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -335,69 +123,30 @@ class PortfolioRefreshCoordinator extends StateNotifier<int> {
   }
 }
 
-/// Helper to toggle trading with biometric authentication
-/// Returns true if successful, false otherwise
-Future<bool> toggleTradingWithBiometric({
-  required WidgetRef ref,
-  required bool enabled,
-  required Future<bool> Function(String reason) biometricAuth,
-  required void Function(String message, SnackType type) showMessage,
-}) async {
-  final bio = ref.read(biometricServiceProvider);
-  if (await bio.isAvailable) {
-    final reason = enabled ? 'تأكيد تفعيل التداول' : 'تأكيد إيقاف التداول';
-    final ok = await biometricAuth(reason);
-    if (!ok) {
-      showMessage('فشل التحقق من البصمة', SnackType.error);
-      return false;
-    }
-  }
-
-  final success = await ref
-      .read(accountTradingProvider.notifier)
-      .setEnabled(enabled);
-
-  refreshTradingData(ref);
-
-  showMessage(
-    success
-        ? (enabled ? 'تم تفعيل التداول' : 'تم إيقاف التداول')
-        : 'تعذر إتمام العملية، حاول مرة أخرى',
-    success ? SnackType.success : SnackType.error,
+/// Derived provider — extracts PortfolioModel from the unified source.
+/// NO independent API calls.
+final portfolioProvider = Provider<LoadingState<PortfolioModel>>((ref) {
+  final account = ref.watch(accountTradingProvider);
+  return account.when(
+    data: (state) => LoadingState(
+      status: LoadingStatus.loaded,
+      data: state.portfolio,
+    ),
+    loading: () => const LoadingState(status: LoadingStatus.loading),
+    error: (err, _) => LoadingState(status: LoadingStatus.error, error: err),
   );
+});
 
-  return success;
-}
-
-/// Unified refresh helper — invalidates all trading-related providers
-/// Use this instead of manually invalidating multiple providers
-void refreshTradingData(WidgetRef ref) {
-  ref.invalidate(portfolioProvider);
-  ref.invalidate(statsProvider);
-  ref.invalidate(activePositionsProvider);
-  ref.invalidate(recentTradesProvider);
-  ref.invalidate(tradesListProvider);
-  ref.invalidate(dailyStatusProvider);
-  ref.invalidate(systemStatusProvider);
-  ref.invalidate(accountTradingProvider);
-}
-
-/// Refresh specific providers based on type
-void refreshByType(WidgetRef ref, RefreshType type) {
-  switch (type) {
-    case RefreshType.tradingData:
-      refreshTradingData(ref);
-      break;
-    case RefreshType.notifications:
-      ref.invalidate(unreadCountProvider);
-      ref.invalidate(notificationsListProvider);
-      break;
-    case RefreshType.full:
-      refreshTradingData(ref);
-      ref.invalidate(unreadCountProvider);
-      ref.invalidate(notificationsListProvider);
-      break;
-  }
-}
-
-enum RefreshType { tradingData, notifications, full }
+/// Derived provider — extracts StatsModel from the unified source.
+/// NO independent API calls.
+final statsProvider = Provider<LoadingState<StatsModel>>((ref) {
+  final account = ref.watch(accountTradingProvider);
+  return account.when(
+    data: (state) => LoadingState(
+      status: LoadingStatus.loaded,
+      data: state.stats,
+    ),
+    loading: () => const LoadingState(status: LoadingStatus.loading),
+    error: (err, _) => LoadingState(status: LoadingStatus.error, error: err),
+  );
+});

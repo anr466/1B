@@ -6,16 +6,15 @@ import 'package:trading_app/core/constants/verification_types.dart';
 import 'package:trading_app/core/models/user_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/core/services/api_service.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
+import 'package:trading_app/core/services/api_service.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
-import 'package:trading_app/design/widgets/flow_stepper.dart';
+import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/flow_stepper.dart';
 import 'package:trading_app/navigation/route_names.dart';
 import 'package:trading_app/features/auth/widgets/countdown_timer.dart';
-import 'package:trading_app/main.dart';
-import 'package:trading_app/design/widgets/app_screen_header.dart';
 
 /// OTP Verification Screen — 6 خانات + عداد 60s + إعادة إرسال
 class OtpVerificationScreen extends ConsumerStatefulWidget {

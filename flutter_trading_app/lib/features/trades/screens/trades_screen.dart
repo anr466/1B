@@ -85,10 +85,8 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: cs.surface,
-        body: SafeArea(
-          child: Column(
+      child: SafeArea(
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ─── Header ──────────────────────
@@ -190,7 +188,6 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
             ],
           ),
         ),
-      ),
     );
   }
 

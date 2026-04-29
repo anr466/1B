@@ -3,21 +3,32 @@ import 'package:trading_app/core/models/trade_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/unified_async_state.dart';
 
-/// Recent trades for dashboard
-final recentTradesProvider = FutureProvider.autoDispose<List<TradeModel>>((
-  ref,
-) async {
+final recentTradesProvider =
+    FutureProvider.autoDispose<List<TradeModel>>((ref) async {
   final auth = ref.watch(authProvider);
   if (!auth.isAuthenticated || auth.user == null) {
     throw Exception('غير مصادق');
   }
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
   final repo = ref.watch(tradesRepositoryProvider);
-  return repo.getRecentTrades(auth.user!.id, mode: mode);
+  return repo.getRecentTrades(auth.user!.id);
 });
 
-/// Trades list state for pagination
+final analyticsTradesProvider = FutureProvider.autoDispose<List<TradeModel>>((ref) async {
+  final auth = ref.watch(authProvider);
+  if (!auth.isAuthenticated || auth.user == null) {
+    throw Exception('غير مصادق');
+  }
+  final repo = ref.watch(tradesRepositoryProvider);
+  final result = await repo.getTrades(
+    auth.user!.id,
+    page: 1,
+    perPage: 100,
+  );
+  return result.trades;
+});
+
 class TradesListState {
   final List<TradeModel> trades;
   final int currentPage;
@@ -45,25 +56,28 @@ class TradesListState {
     bool? hasMore,
     String? error,
     String? statusFilter,
-  }) => TradesListState(
-    trades: trades ?? this.trades,
-    currentPage: currentPage ?? this.currentPage,
-    totalPages: totalPages ?? this.totalPages,
-    isLoading: isLoading ?? this.isLoading,
-    hasMore: hasMore ?? this.hasMore,
-    error: error,
-    statusFilter: statusFilter ?? this.statusFilter,
-  );
+  }) =>
+      TradesListState(
+        trades: trades ?? this.trades,
+        currentPage: currentPage ?? this.currentPage,
+        totalPages: totalPages ?? this.totalPages,
+        isLoading: isLoading ?? this.isLoading,
+        hasMore: hasMore ?? this.hasMore,
+        error: error,
+        statusFilter: statusFilter ?? this.statusFilter,
+      );
 }
 
-/// Trades list notifier with pagination
 class TradesListNotifier extends StateNotifier<TradesListState> {
   final Ref _ref;
 
   TradesListNotifier(this._ref) : super(const TradesListState());
 
   Future<void> loadFirstPage({String? statusFilter}) async {
-    state = TradesListState(isLoading: true, statusFilter: statusFilter);
+    state = TradesListState(
+      isLoading: true,
+      statusFilter: statusFilter ?? state.statusFilter,
+    );
     await _loadPage(1);
   }
 
@@ -77,17 +91,26 @@ class TradesListNotifier extends StateNotifier<TradesListState> {
     await loadFirstPage(statusFilter: state.statusFilter);
   }
 
+  Future<void> setFilter(String? status) async {
+    if (status == state.statusFilter) return;
+    await loadFirstPage(statusFilter: status);
+  }
+
   Future<void> _loadPage(int page) async {
     try {
       final auth = _ref.read(authProvider);
-      if (!auth.isAuthenticated || auth.user == null) return;
+      if (!auth.isAuthenticated || auth.user == null) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'غير مصادق',
+        );
+        return;
+      }
 
       final repo = _ref.read(tradesRepositoryProvider);
-      final mode = auth.isAdmin ? _ref.read(adminPortfolioModeProvider) : null;
       final result = await repo.getTrades(
         auth.user!.id,
         page: page,
-        mode: mode,
         status: state.statusFilter,
       );
 
@@ -103,31 +126,29 @@ class TradesListNotifier extends StateNotifier<TradesListState> {
         hasMore: page < result.pages,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
     }
   }
 }
 
 final tradesListProvider =
-    StateNotifierProvider.autoDispose<TradesListNotifier, TradesListState>((
-      ref,
-    ) {
-      return TradesListNotifier(ref);
-    });
+    StateNotifierProvider.autoDispose<TradesListNotifier, TradesListState>((ref) {
+  return TradesListNotifier(ref);
+});
 
-/// Analytics trades — 100 trades for equity curve
-final analyticsTradesProvider = FutureProvider.autoDispose((ref) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) {
-    throw Exception('غير مصادق');
-  }
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(tradesRepositoryProvider);
-  final result = await repo.getTrades(
-    auth.user!.id,
-    page: 1,
-    perPage: 100,
-    mode: mode,
+/// Derived provider — extracts active positions from the unified source.
+/// NO independent API calls.
+final activePositionsProvider = Provider<LoadingState<List<TradeModel>>>((ref) {
+  final account = ref.watch(accountTradingProvider);
+  return account.when(
+    data: (state) => LoadingState(
+      status: LoadingStatus.loaded,
+      data: state.activePositions,
+    ),
+    loading: () => const LoadingState(status: LoadingStatus.loading),
+    error: (err, _) => LoadingState(status: LoadingStatus.error, error: err),
   );
-  return result.trades;
 });

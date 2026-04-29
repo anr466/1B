@@ -1,9 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/user_model.dart';
-import 'package:trading_app/core/providers/portfolio_provider.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/services/api_service.dart';
-import 'package:trading_app/main.dart';
 
 /// Auth State
 enum AuthStatus { initial, authenticated, unauthenticated, loading }
@@ -39,11 +38,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void _onSessionExpired() {
-    _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
-    state = const AuthState(
-      status: AuthStatus.unauthenticated,
-      error: 'انتهت الجلسة، سجّل دخولك مرة أخرى',
-    );
+    _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
+    state = const AuthState(status: AuthStatus.unauthenticated, error: 'انتهت الجلسة، سجّل دخولك مرة أخرى');
   }
 
   /// Check existing session on app start with strict validation
@@ -142,7 +138,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       _ref.read(pushNotificationServiceProvider).stopPolling();
     } catch (_) {}
-    _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
+    _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
 
     if (clearTokens) {
       try {
@@ -177,7 +173,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (_) {}
     final authService = _ref.read(authServiceProvider);
     await authService.logout();
-    _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
+    _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
     _ref.read(biometricTrustProvider.notifier).clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
@@ -225,7 +221,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _syncAdminPortfolioMode(UserModel user) async {
     if (!user.isAdmin) {
-      _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
+      _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
       return;
     }
 

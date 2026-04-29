@@ -123,10 +123,8 @@ except ImportError:
 
     limiter = MockLimiter()
 
-try:
-    from backend.utils.uptime_calculator import uptime_calc
-except (ImportError, ModuleNotFoundError):
-    uptime_calc = None
+# uptime_calc is now handled by StateManager
+uptime_calc = None
 
 admin_unified_bp = Blueprint("admin_unified", __name__, url_prefix="/admin")
 db = get_db_manager()

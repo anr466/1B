@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/models/trade_model.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/privacy_provider.dart';
@@ -11,6 +12,7 @@ import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
+import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/metric_card.dart';
@@ -29,7 +31,8 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void _refresh() {
-    refreshTradingData(ref);
+    ref.invalidate(portfolioProvider);
+    ref.invalidate(statsProvider);
   }
 
   @override
@@ -41,11 +44,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        key: const Key('dashboard_screen'),
-        backgroundColor: cs.surface,
-        body: SafeArea(
-          child: RefreshIndicator(
+      child: SafeArea(
+        child: RefreshIndicator(
             key: const Key('dashboard_refresh'),
             color: cs.primary,
             onRefresh: () async => _refresh(),
@@ -88,7 +88,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 
@@ -577,11 +576,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
 
     final allTrades = recentTrades.valueOrNull ?? const <TradeModel>[];
-    final livePositions = activeTrades.valueOrNull;
+    final livePositions = activeTrades.data;
     final hasLiveData =
         livePositions != null &&
         !activeTrades.isLoading &&
-        !activeTrades.hasError;
+        !activeTrades.isError;
 
     List<TradeModel> openList;
     if (hasLiveData) {
@@ -930,26 +929,4 @@ class _PnlCompact extends StatelessWidget {
   }
 }
 
-// AppCard placeholder for error state
-class AppCard extends StatelessWidget {
-  final Widget child;
 
-  const AppCard({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
-        border: Border.all(
-          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
-          width: 1,
-        ),
-      ),
-      child: child,
-    );
-  }
-}

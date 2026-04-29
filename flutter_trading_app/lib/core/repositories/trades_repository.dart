@@ -78,4 +78,5 @@ class TradesRepository {
       data['message'] ?? data['error'] ?? 'فشل تحميل تفاصيل الصفقة',
     );
   }
+
 }

@@ -37,6 +37,7 @@ class UserModel {
   });
 
   bool get isAdmin => userType == 'admin';
+  bool get isVerified => emailVerified;
   String get displayName =>
       fullName ??
       name ??

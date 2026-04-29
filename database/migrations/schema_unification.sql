@@ -10,8 +10,7 @@
 -- ============================================================================
 -- PHASE 1: BACKUP VERIFICATION (RUN MANUALLY FIRST!)
 -- ============================================================================
--- IMPORTANT: Ensure WAL mode is enabled before proceeding
--- PRAGMA journal_mode; -- Should return 'wal'
+-- PostgreSQL handles WAL automatically — no PRAGMA needed
 
 -- ============================================================================
 -- PHASE 2: DUPLICATE TABLE RESOLUTION
@@ -166,10 +165,10 @@ CREATE INDEX IF NOT EXISTS idx_system_alerts_resolved ON system_alerts(resolved)
 -- PHASE 9: PERFORMANCE OPTIMIZATIONS
 -- ============================================================================
 
--- Enable memory-mapped I/O for better performance
-PRAGMA mmap_size = 268435456; -- 256MB
+-- PostgreSQL uses shared_buffers (in postgresql.conf) instead of mmap
+-- No PRAGMA equivalent needed
 
--- Optimize database
+-- Optimize database (PostgreSQL also supports VACUUM)
 VACUUM;
 ANALYZE;
 
