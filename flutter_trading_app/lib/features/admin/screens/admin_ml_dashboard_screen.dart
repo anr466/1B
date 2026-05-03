@@ -12,6 +12,7 @@ import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 
 Future<Map<String, dynamic>> _safeGet(Future<Map<String, dynamic>> Function() fn) async {
   try { return await fn(); } catch (_) { return {}; }
@@ -366,7 +367,7 @@ class AdminMLDashboardScreen extends ConsumerWidget {
                 child: LinearProgressIndicator(
                   value: score.clamp(0.0, 1.0),
                   backgroundColor: cs.onSurface.withValues(alpha: 0.08),
-                  color: score >= 0.7 ? cs.primary : (score >= 0.4 ? Colors.orange : cs.error),
+                  color: score >= 0.7 ? cs.primary : (score >= 0.4 ? cs.tertiary : cs.error),
                   minHeight: 8,
                 ),
               ),

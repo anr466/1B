@@ -13,6 +13,7 @@ import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 
 Future<Map<String, dynamic>> _safeStatus(AdminRepository repo) async {
   try { return await repo.getBackgroundStatus(); } catch (_) { return {}; }
@@ -250,7 +251,7 @@ class AdminBackgroundControlScreen extends ConsumerWidget {
                 cs: cs,
                 icon: Icons.stop,
                 label: 'إيقاف',
-                color: Colors.orange,
+                color: SemanticColors.of(context).warning,
                 enabled: running,
                 loading: loading == 'stop',
                 onTap: () => action('stop', (r) => r.stopBackground()),
@@ -338,7 +339,7 @@ class AdminBackgroundControlScreen extends ConsumerWidget {
             final levelColor = level == 'error'
                 ? cs.error
                 : level == 'warning'
-                    ? Colors.orange
+                    ? SemanticColors.of(context).warning
                     : cs.primary;
             return Padding(
               padding: const EdgeInsets.only(bottom: SpacingTokens.xs),

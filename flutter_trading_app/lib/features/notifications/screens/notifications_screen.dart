@@ -272,16 +272,20 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   void _handleOtherNotification(NotificationModel notification) {
-    // التعامل مع الإشعارات الأخرى
     switch (notification.type) {
       case 'system':
-        // يمكن التوجيه لصفحة الإعدادات أو النظام
-        break;
+        AppSnackbar.show(
+          context,
+          message: notification.message ?? 'إشعار نظام',
+          type: SnackType.info,
+        );
       case 'error':
-        // يمكن التوجيه لصفحة دعم أو مساعدة
-        break;
+        AppSnackbar.show(
+          context,
+          message: notification.message ?? 'إشعار خطأ',
+          type: SnackType.error,
+        );
       default:
-        // لا تفعل شيء للإشعارات العامة
         break;
     }
   }

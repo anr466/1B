@@ -14,6 +14,7 @@ import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/navigation/route_names.dart';
+import 'package:trading_app/design/tokens/semantic_colors.dart';
 
 Future<Map<String, dynamic>> _safeLogsStats(AdminRepository repo) async {
   try { return await repo.getLogsStatistics(); } catch (_) { return {}; }
@@ -172,7 +173,7 @@ class _ActivityLogsTab extends ConsumerWidget {
             final levelColor = level == 'error'
                 ? cs.error
                 : level == 'warning'
-                    ? Colors.orange
+                    ? SemanticColors.of(context).warning
                     : cs.primary;
             return Padding(
               padding: const EdgeInsets.only(bottom: SpacingTokens.xs),
@@ -327,13 +328,13 @@ class _SystemErrorsTab extends ConsumerWidget {
                 const SizedBox(width: SpacingTokens.sm),
                 _statChip(cs, 'حرجة', '${data.stats['critical'] ?? 0}', cs.error),
                 const SizedBox(width: SpacingTokens.sm),
-                _statChip(cs, 'محلولة', '${data.stats['resolved'] ?? 0}', Colors.green),
+                _statChip(cs, 'محلولة', '${data.stats['resolved'] ?? 0}', SemanticColors.of(context).positive),
               ],
             ),
             const SizedBox(height: SpacingTokens.sm),
             ...data.errors.map((e) {
               final severity = e['severity'] ?? 'info';
-              final sevColor = severity == 'critical' ? cs.error : Colors.orange;
+              final sevColor = severity == 'critical' ? cs.error : SemanticColors.of(context).warning;
               return Padding(
                 padding: const EdgeInsets.only(bottom: SpacingTokens.xs),
                 child: AppCard(
@@ -557,7 +558,7 @@ class _LogsManagementTabState extends ConsumerState<_LogsManagementTab> {
                         height: 24,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(Icons.copy_all, color: Colors.orange),
+                    : Icon(Icons.copy_all, color: SemanticColors.of(context).warning),
                 title: Text('حذف المكرر', style: TypographyTokens.body(cs.onSurface)),
                 subtitle: Text('إزالة السجلات المكررة', style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.5))),
                 trailing: _isCleaning ? null : const Icon(Icons.chevron_left),

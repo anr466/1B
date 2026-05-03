@@ -37,6 +37,7 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   Timer? _saveIndicatorTimer;
 
   double _positionSizePct = 10.0;
+  bool _initialized = false;
   double _stopLossPct = 2.0;
   double _takeProfitPct = 5.0;
   double _maxDailyLossPct = 10.0;
@@ -232,10 +233,8 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                     onRetry: () => ref.invalidate(settingsDataProvider),
                   ),
                   data: (s) {
-                    if (_positionSizePct == 0 &&
-                        _stopLossPct == 0 &&
-                        _takeProfitPct == 0 &&
-                        _maxDailyLossPct == 0) {
+                    if (!_initialized) {
+                      _initialized = true;
                       _positionSizePct =
                           s.positionSizePct > 0 ? s.positionSizePct : 10.0;
                       _stopLossPct = s.stopLossPct > 0 ? s.stopLossPct : 2.0;
