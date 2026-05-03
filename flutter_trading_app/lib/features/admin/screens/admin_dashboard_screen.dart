@@ -116,16 +116,6 @@ class AdminDashboardScreen extends ConsumerWidget {
                       _actionItem(
                         context,
                         cs,
-                        BrandIcons.user,
-                        'إدارة المستخدمين',
-                        RouteNames.userManagement,
-                      ),
-
-                      // المحفظة والصفقات متاحتان من التنقل السفلي (Bottom Nav)
-                      // لا نكررهم هنا لتجنب الازدواجية
-                      _actionItem(
-                        context,
-                        cs,
                         BrandIcons.history,
                         'سجلات النظام',
                         RouteNames.systemLogs,

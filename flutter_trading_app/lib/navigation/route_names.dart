@@ -29,8 +29,6 @@ class RouteNames {
   // ─── Admin ──────────────────────────────────────
   static const String adminDashboard = '/admin/dashboard';
   static const String tradingControl = '/admin/trading-control';
-  static const String userManagement = '/admin/users';
-  static const String adminUserDetail = '/admin/users/detail';
   static const String systemLogs = '/admin/logs';
   static const String adminLogsDashboard = '/admin/logs/dashboard';
   static const String errorDetails = '/admin/logs/error';

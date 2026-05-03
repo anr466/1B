@@ -7,11 +7,9 @@ import 'package:trading_app/features/admin/screens/admin_background_control_scre
 import 'package:trading_app/features/admin/screens/admin_dashboard_screen.dart';
 import 'package:trading_app/features/admin/screens/admin_logs_dashboard_screen.dart';
 import 'package:trading_app/features/admin/screens/admin_ml_dashboard_screen.dart';
-import 'package:trading_app/features/admin/screens/admin_user_detail_screen.dart';
 import 'package:trading_app/features/admin/screens/error_details_screen.dart';
 import 'package:trading_app/features/admin/screens/system_logs_screen.dart';
 import 'package:trading_app/features/admin/screens/trading_control_screen.dart';
-import 'package:trading_app/features/admin/screens/user_management_screen.dart';
 import 'package:trading_app/features/analytics/screens/analytics_screen.dart';
 import 'package:trading_app/features/auth/screens/forgot_password_screen.dart';
 import 'package:trading_app/features/auth/screens/login_screen.dart';
@@ -200,27 +198,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RouteNames.tradingControl,
         builder: (_, __) => const TradingControlScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.userManagement,
-        builder: (_, __) => const UserManagementScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.adminUserDetail,
-        builder: (_, state) {
-          final extra = state.extra;
-          final queryUserId = int.tryParse(state.uri.queryParameters['userId'] ?? '');
-          if (extra is Map<String, dynamic>) {
-            final userId = (extra['userId'] ?? extra['id']) as int?;
-            if (userId != null) {
-              return AdminUserDetailScreen(
-                userId: userId,
-                initialData: extra,
-              );
-            }
-          }
-          return AdminUserDetailScreen(userId: queryUserId ?? 0);
-        },
       ),
       GoRoute(
         path: RouteNames.systemLogs,
