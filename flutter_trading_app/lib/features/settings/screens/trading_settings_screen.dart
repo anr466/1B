@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/constants/ux_messages.dart';
-import 'package:trading_app/core/models/settings_model.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/settings_provider.dart';
 import 'package:trading_app/core/services/trading_toggle_service.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -16,17 +18,7 @@ import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
-
-/// Settings Provider
-final settingsDataProvider = FutureProvider.autoDispose<SettingsModel>((
-  ref,
-) async {
-  final auth = ref.watch(authProvider);
-  if (!auth.isAuthenticated || auth.user == null) throw Exception('غير مصادق');
-  final mode = auth.isAdmin ? ref.watch(adminPortfolioModeProvider) : null;
-  final repo = ref.watch(settingsRepositoryProvider);
-  return repo.getSettings(auth.user!.id, mode: mode);
-});
+import 'package:trading_app/design/widgets/app_button.dart';
 
 /// Trading Settings Screen — إعدادات التداول (sliders + save)
 class TradingSettingsScreen extends ConsumerStatefulWidget {
@@ -39,6 +31,48 @@ class TradingSettingsScreen extends ConsumerStatefulWidget {
 
 class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
   bool _isSwitchingMode = false;
+  bool _saving = false;
+  bool _saveSuccess = false;
+  Timer? _debounce;
+  Timer? _saveIndicatorTimer;
+
+  double _positionSizePct = 10.0;
+  double _stopLossPct = 2.0;
+  double _takeProfitPct = 5.0;
+  double _maxDailyLossPct = 10.0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _saveIndicatorTimer?.cancel();
+    super.dispose();
+  }
+
+  void _debouncedUpdate(int userId, Map<String, dynamic> fields) {
+    _debounce?.cancel();
+    setState(() {
+      _saving = true;
+      _saveSuccess = false;
+    });
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final repo = ref.read(settingsRepositoryProvider);
+        await repo.updateSettings(userId, fields);
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _saveSuccess = true;
+          });
+          _saveIndicatorTimer?.cancel();
+          _saveIndicatorTimer = Timer(const Duration(seconds: 2), () {
+            if (mounted) setState(() => _saveSuccess = false);
+          });
+        }
+      } catch (_) {
+        if (mounted) setState(() => _saving = false);
+      }
+    });
+  }
 
   Future<void> _changeTradingMode(String mode) async {
     final cs = Theme.of(context).colorScheme;
@@ -61,13 +95,17 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
             style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
             ),
-            TextButton(
+            AppButton(
+              label: 'تبديل',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('تبديل', style: TextStyle(color: cs.primary)),
             ),
           ],
         ),
@@ -133,19 +171,17 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
             style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
             ),
-            TextButton(
+            AppButton(
+              label: v ? 'تفعيل' : 'إيقاف',
+              variant: v ? AppButtonVariant.primary : AppButtonVariant.danger,
+              isFullWidth: false,
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(
-                v ? 'تفعيل' : 'إيقاف',
-                style: TextStyle(
-                  color: v ? cs.primary : cs.error,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
             ),
           ],
         ),
@@ -154,13 +190,20 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
 
     if (confirmed != true) return;
 
-    await toggleTradingWithBiometric(
-      ref: ref,
+    final service = ref.read(tradingToggleServiceProvider);
+    await service.toggleSelf(
       enabled: v,
       biometricAuth: (reason) =>
           ref.read(biometricServiceProvider).authenticate(reason: reason),
-      showMessage: (message, type) =>
-          AppSnackbar.show(context, message: message, type: type),
+      showMessage: (message, type) {
+        final snackType = switch (type) {
+          'success' => SnackType.success,
+          'error' => SnackType.error,
+          'warning' => SnackType.warning,
+          _ => SnackType.info,
+        };
+        AppSnackbar.show(context, message: message, type: snackType);
+      },
     );
   }
 
@@ -189,6 +232,18 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                     onRetry: () => ref.invalidate(settingsDataProvider),
                   ),
                   data: (s) {
+                    if (_positionSizePct == 0 &&
+                        _stopLossPct == 0 &&
+                        _takeProfitPct == 0 &&
+                        _maxDailyLossPct == 0) {
+                      _positionSizePct =
+                          s.positionSizePct > 0 ? s.positionSizePct : 10.0;
+                      _stopLossPct = s.stopLossPct > 0 ? s.stopLossPct : 2.0;
+                      _takeProfitPct =
+                          s.takeProfitPct > 0 ? s.takeProfitPct : 5.0;
+                      _maxDailyLossPct =
+                          s.maxDailyLossPct > 0 ? s.maxDailyLossPct : 10.0;
+                    }
                     return ListView(
                       padding: const EdgeInsets.all(SpacingTokens.base),
                       children: [
@@ -259,43 +314,115 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                           dailyStatus: ref.watch(dailyStatusProvider),
                         ),
                         const SizedBox(height: SpacingTokens.md),
+                        // ─── Risk Management Sliders ───────────
                         AppCard(
                           padding: const EdgeInsets.all(SpacingTokens.md),
-                          child: Row(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                Icons.auto_awesome,
-                                color: cs.primary,
-                                size: 24,
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.tune_rounded,
+                                    color: cs.primary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: SpacingTokens.sm),
+                                  Text(
+                                    'إدارة المخاطرة',
+                                    style: TypographyTokens.h4(cs.onSurface),
+                                  ),
+                                  const Spacer(),
+                                  if (_saving)
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: cs.primary,
+                                      ),
+                                    )
+                                  else if (_saveSuccess)
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      size: 16,
+                                      color: SemanticColors.of(context).positive,
+                                    ),
+                                ],
                               ),
-                              const SizedBox(width: SpacingTokens.md),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'ملخص التحكم',
-                                      style: TypographyTokens.body(
-                                        cs.onSurface,
-                                      ),
-                                    ),
-                                    const SizedBox(height: SpacingTokens.xxs),
-                                    Text(
-                                      'هذه الشاشة مخصصة فقط لتفعيل التداول واختيار المحفظة النشطة ومراجعة حالة المخاطرة اليومية.',
-                                      style: TypographyTokens.caption(
-                                        cs.onSurface.withValues(alpha: 0.5),
-                                      ),
-                                    ),
-                                    const SizedBox(height: SpacingTokens.xs),
-                                    Text(
-                                      'الدخول والخروج وحجم الصفقة وإدارة المخاطر التفصيلية تُدار من محرك التداول الخلفي والاستراتيجية النشطة لتجنب التعارض أو السلوك المضلل.',
-                                      style: TypographyTokens.caption(
-                                        cs.onSurface.withValues(alpha: 0.45),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              const SizedBox(height: SpacingTokens.md),
+                              _RiskSlider(
+                                label: 'حجم الصفقة (% من الرصيد)',
+                                caption:
+                                    'النسبة المئوية من رصيد المحفظة لكل صفقة',
+                                value: _positionSizePct,
+                                min: 1,
+                                max: 100,
+                                suffix: '%',
+                                fractionDigits: 0,
+                                minLabel: '1%',
+                                maxLabel: '100%',
+                                onChanged: (v) {
+                                  setState(() => _positionSizePct = v);
+                                  _debouncedUpdate(auth.user!.id, {
+                                    'position_size_percentage': v,
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: SpacingTokens.sm),
+                              _RiskSlider(
+                                label: 'وقف الخسارة (%)',
+                                caption: 'نسبة الخسارة القصوى قبل إغلاق الصفقة',
+                                value: _stopLossPct,
+                                min: 0.5,
+                                max: 50,
+                                suffix: '%',
+                                fractionDigits: 1,
+                                minLabel: '0.5%',
+                                maxLabel: '50%',
+                                onChanged: (v) {
+                                  setState(() => _stopLossPct = v);
+                                  _debouncedUpdate(auth.user!.id, {
+                                    'stop_loss_pct': v,
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: SpacingTokens.sm),
+                              _RiskSlider(
+                                label: 'جني الأرباح (%)',
+                                caption: 'نسبة الربح المستهدفة لإغلاق الصفقة',
+                                value: _takeProfitPct,
+                                min: 1,
+                                max: 100,
+                                suffix: '%',
+                                fractionDigits: 0,
+                                minLabel: '1%',
+                                maxLabel: '100%',
+                                onChanged: (v) {
+                                  setState(() => _takeProfitPct = v);
+                                  _debouncedUpdate(auth.user!.id, {
+                                    'take_profit_pct': v,
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: SpacingTokens.sm),
+                              _RiskSlider(
+                                label: 'الحد الأقصى للخسارة اليومية (%)',
+                                caption:
+                                    'إيقاف التداول تلقائياً عند تجاوز هذه النسبة',
+                                value: _maxDailyLossPct,
+                                min: 1,
+                                max: 50,
+                                suffix: '%',
+                                fractionDigits: 0,
+                                minLabel: '1%',
+                                maxLabel: '50%',
+                                onChanged: (v) {
+                                  setState(() => _maxDailyLossPct = v);
+                                  _debouncedUpdate(auth.user!.id, {
+                                    'max_daily_loss_pct': v,
+                                  });
+                                },
                               ),
                             ],
                           ),
@@ -376,7 +503,7 @@ class _PortfolioModeSwitcher extends StatelessWidget {
                   color: (_isDemo ? demoColor : realColor).withValues(
                     alpha: 0.12,
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(SpacingTokens.radiusFull),
                 ),
                 child: Text(
                   _isDemo ? 'تجريبية' : 'حقيقية',
@@ -447,7 +574,7 @@ class _PortfolioModeSwitcher extends StatelessWidget {
               padding: const EdgeInsets.all(SpacingTokens.sm),
               decoration: BoxDecoration(
                 color: cs.errorContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(SpacingTokens.radiusSm),
               ),
               child: Row(
                 children: [
@@ -503,7 +630,7 @@ class _ModeButton extends StatelessWidget {
           color: isActive
               ? activeColor.withValues(alpha: 0.12)
               : cs.surfaceContainerHighest.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
           border: Border.all(
             color: isActive ? activeColor : cs.outline.withValues(alpha: 0.3),
             width: isActive ? 2 : 1,
@@ -547,28 +674,25 @@ class _ModeButton extends StatelessWidget {
   }
 }
 
-/// Reusable slider card for trading settings
-// ignore: unused_element
-class _SliderCard extends StatelessWidget {
+/// Risk slider — reusable slider for risk management
+class _RiskSlider extends StatelessWidget {
   final String label;
   final String caption;
   final double value;
   final double min;
   final double max;
-  final int divisions;
   final String suffix;
   final int fractionDigits;
   final String minLabel;
   final String maxLabel;
   final ValueChanged<double> onChanged;
 
-  const _SliderCard({
+  const _RiskSlider({
     required this.label,
     required this.caption,
     required this.value,
     required this.min,
     required this.max,
-    required this.divisions,
     required this.suffix,
     required this.fractionDigits,
     required this.minLabel,
@@ -579,57 +703,53 @@ class _SliderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return AppCard(
-      padding: const EdgeInsets.all(SpacingTokens.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: TypographyTokens.body(cs.onSurface)),
-              Text(
-                '${value.toStringAsFixed(fractionDigits)}$suffix',
-                style: TypographyTokens.body(
-                  cs.primary,
-                ).copyWith(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: SpacingTokens.xxs),
-          Text(
-            caption,
-            style: TypographyTokens.caption(
-              cs.onSurface.withValues(alpha: 0.5),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(label, style: TypographyTokens.body(cs.onSurface)),
             ),
+            Text(
+              '${value.toStringAsFixed(fractionDigits)}$suffix',
+              style: TypographyTokens.mono(cs.primary, fontSize: 15),
+            ),
+          ],
+        ),
+        const SizedBox(height: SpacingTokens.xxs),
+        Text(
+          caption,
+          style: TypographyTokens.caption(
+            cs.onSurface.withValues(alpha: 0.5),
           ),
-          Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: divisions,
-            label: '${value.toStringAsFixed(fractionDigits)}$suffix',
-            onChanged: onChanged,
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                minLabel,
-                style: TypographyTokens.caption(
-                  cs.onSurface.withValues(alpha: 0.4),
-                ),
+        ),
+        Slider(
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          label: '${value.toStringAsFixed(fractionDigits)}$suffix',
+          onChanged: onChanged,
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              minLabel,
+              style: TypographyTokens.caption(
+                cs.onSurface.withValues(alpha: 0.4),
               ),
-              Text(
-                maxLabel,
-                style: TypographyTokens.caption(
-                  cs.onSurface.withValues(alpha: 0.4),
-                ),
+            ),
+            Text(
+              maxLabel,
+              style: TypographyTokens.caption(
+                cs.onSurface.withValues(alpha: 0.4),
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -698,7 +818,7 @@ class _DailyRiskCard extends StatelessWidget {
               ),
               const SizedBox(height: SpacingTokens.sm),
               ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(SpacingTokens.xs),
                 child: LinearProgressIndicator(
                   value: progress,
                   backgroundColor: cs.surfaceContainerHighest,
