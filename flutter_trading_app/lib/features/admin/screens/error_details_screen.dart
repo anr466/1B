@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -11,6 +12,7 @@ import 'package:trading_app/design/widgets/app_icon_button.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
 /// Error Details Provider
@@ -21,15 +23,46 @@ final _errorDetailsProvider = FutureProvider.autoDispose
     });
 
 /// Error Details Screen — تفاصيل الخطأ
-class ErrorDetailsScreen extends ConsumerWidget {
+class ErrorDetailsScreen extends ConsumerStatefulWidget {
   final int errorId;
 
   const ErrorDetailsScreen({super.key, required this.errorId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ErrorDetailsScreen> createState() => _ErrorDetailsScreenState();
+}
+
+class _ErrorDetailsScreenState extends ConsumerState<ErrorDetailsScreen> {
+  bool _isResolving = false;
+  bool _isRetrying = false;
+
+  Widget _buildDemoRealBanner(WidgetRef ref, ColorScheme cs) {
+    final mode = ref.watch(adminPortfolioModeProvider);
+    final isDemo = mode == 'demo';
+    final color = isDemo ? Colors.blue : Colors.red;
+    final icon = isDemo ? Icons.science_outlined : Icons.shield_outlined;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: SpacingTokens.md, vertical: SpacingTokens.xs),
+      color: color.withValues(alpha: 0.08),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: SpacingTokens.xs),
+          Text(
+            isDemo ? 'الوضع التجريبي' : 'الوضع الحقيقي',
+            style: TypographyTokens.caption(color).copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final errorAsync = ref.watch(_errorDetailsProvider(errorId));
+    final errorAsync = ref.watch(_errorDetailsProvider(widget.errorId));
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -39,13 +72,14 @@ class ErrorDetailsScreen extends ConsumerWidget {
           child: Column(
             children: [
               AppScreenHeader(
-                title: 'تفاصيل الخطأ #$errorId',
+                title: 'تفاصيل الخطأ #${widget.errorId}',
                 showBack: true,
                 trailing: AppIconButton(
                   icon: Icons.refresh_rounded,
-                  onTap: () => ref.invalidate(_errorDetailsProvider(errorId)),
+                  onTap: () => ref.invalidate(_errorDetailsProvider(widget.errorId)),
                 ),
               ),
+              _buildDemoRealBanner(ref, cs),
               Expanded(
                 child: errorAsync.when(
                   loading: () => const Padding(
@@ -55,7 +89,7 @@ class ErrorDetailsScreen extends ConsumerWidget {
                   error: (e, _) => ErrorState(
                     message: e.toString(),
                     onRetry: () =>
-                        ref.invalidate(_errorDetailsProvider(errorId)),
+                        ref.invalidate(_errorDetailsProvider(widget.errorId)),
                   ),
                   data: (error) => SingleChildScrollView(
                     padding: const EdgeInsets.all(SpacingTokens.base),
@@ -83,7 +117,7 @@ class ErrorDetailsScreen extends ConsumerWidget {
                           _buildSimilarErrorsCard(context, cs, error),
                         ],
                         const SizedBox(height: SpacingTokens.md),
-                        _buildActionsCard(context, cs, error, ref),
+                        _buildActionsCard(context, cs, error),
                         const SizedBox(height: SpacingTokens.xl),
                       ],
                     ),
@@ -319,9 +353,7 @@ class ErrorDetailsScreen extends ConsumerWidget {
                   Clipboard.setData(
                     ClipboardData(text: error['details'].toString()),
                   );
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('تم النسخ')));
+                  AppSnackbar.show(context, message: 'تم النسخ', type: SnackType.success);
                 },
               ),
             ],
@@ -366,9 +398,7 @@ class ErrorDetailsScreen extends ConsumerWidget {
                   Clipboard.setData(
                     ClipboardData(text: error['traceback'].toString()),
                   );
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('تم النسخ')));
+                  AppSnackbar.show(context, message: 'تم النسخ', type: SnackType.success);
                 },
               ),
             ],
@@ -380,14 +410,12 @@ class ErrorDetailsScreen extends ConsumerWidget {
               color: cs.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
             ),
-            constraints: const BoxConstraints(maxHeight: 300),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                error['traceback'].toString(),
-                style: TypographyTokens.code(
-                  cs.onSurface,
-                ).copyWith(fontSize: 11),
-              ),
+            constraints: const BoxConstraints(maxHeight: 250),
+            child: SelectableText(
+              error['traceback'].toString(),
+              style: TypographyTokens.code(
+                cs.onSurface,
+              ).copyWith(fontSize: 11),
             ),
           ),
         ],
@@ -469,7 +497,6 @@ class ErrorDetailsScreen extends ConsumerWidget {
     BuildContext context,
     ColorScheme cs,
     Map<String, dynamic> error,
-    WidgetRef ref,
   ) {
     final sem = SemanticColors.of(context);
     final status = error['status'] as String?;
@@ -490,15 +517,17 @@ class ErrorDetailsScreen extends ConsumerWidget {
           if (!isResolved) ...[
             AppButton(
               label: 'تعليم كمحلول',
-              onPressed: () => _resolveError(context, ref),
-              icon: Icons.check_circle,
+              onPressed: _isResolving ? null : _resolveError,
+              icon: _isResolving ? null : Icons.check_circle,
+              isLoading: _isResolving,
             ),
             const SizedBox(height: SpacingTokens.sm),
             if (canAutoFix)
               AppButton(
                 label: 'إعادة محاولة الإصلاح التلقائي',
-                onPressed: () => _retryAutoFix(context, ref),
-                icon: Icons.autorenew,
+                onPressed: _isRetrying ? null : _retryAutoFix,
+                icon: _isRetrying ? null : Icons.autorenew,
+                isLoading: _isRetrying,
               ),
           ] else
             Container(
@@ -524,7 +553,7 @@ class ErrorDetailsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _resolveError(BuildContext context, WidgetRef ref) async {
+  Future<void> _resolveError() async {
     final notes = await showDialog<String>(
       context: context,
       builder: (ctx) => _ResolveDialog(),
@@ -532,48 +561,41 @@ class ErrorDetailsScreen extends ConsumerWidget {
 
     if (notes == null) return;
 
+    setState(() => _isResolving = true);
     try {
       final repo = ref.read(adminRepositoryProvider);
-      await repo.resolveSystemError(errorId, notes: notes);
+      await repo.resolveSystemError(widget.errorId, notes: notes);
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('تم تعليم الخطأ كمحلول')));
-        ref.invalidate(_errorDetailsProvider(errorId));
+      if (mounted) {
+        AppSnackbar.show(context, message: 'تم تعليم الخطأ كمحلول', type: SnackType.success);
+        ref.invalidate(_errorDetailsProvider(widget.errorId));
+        setState(() => _isResolving = false);
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('فشلت العملية: $e')));
+      if (mounted) {
+        AppSnackbar.show(context, message: 'فشلت العملية: $e', type: SnackType.error);
+        setState(() => _isResolving = false);
       }
     }
   }
 
-  Future<void> _retryAutoFix(BuildContext context, WidgetRef ref) async {
+  Future<void> _retryAutoFix() async {
+    setState(() => _isRetrying = true);
     try {
       final repo = ref.read(adminRepositoryProvider);
-      final result = await repo.retryAutoFix(errorId);
+      final result = await repo.retryAutoFix(widget.errorId);
 
-      if (context.mounted) {
+      if (mounted) {
         final message = result['message'] ?? 'تمت العملية';
         final success = result['success'] == true;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: success
-                ? SemanticColors.of(context).successContainer
-                : null,
-          ),
-        );
-        ref.invalidate(_errorDetailsProvider(errorId));
+        AppSnackbar.show(context, message: message, type: success ? SnackType.success : SnackType.error);
+        ref.invalidate(_errorDetailsProvider(widget.errorId));
+        setState(() => _isRetrying = false);
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('فشلت العملية: $e')));
+      if (mounted) {
+        AppSnackbar.show(context, message: 'فشلت العملية: $e', type: SnackType.error);
+        setState(() => _isRetrying = false);
       }
     }
   }
@@ -621,13 +643,17 @@ class _ResolveDialogState extends State<_ResolveDialog> {
           ],
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'إلغاء',
+            variant: AppButtonVariant.text,
+            isFullWidth: false,
             onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء'),
           ),
-          FilledButton(
+          AppButton(
+            label: 'تأكيد',
+            variant: AppButtonVariant.primary,
+            isFullWidth: false,
             onPressed: () => Navigator.pop(context, _controller.text),
-            child: const Text('تأكيد'),
           ),
         ],
       ),
