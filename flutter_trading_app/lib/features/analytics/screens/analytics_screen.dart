@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trading_app/core/models/trade_model.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
@@ -31,6 +32,26 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   void _refresh() {
     ref.invalidate(statsProvider);
     ref.invalidate(analyticsTradesProvider);
+  }
+
+  List<TradeModel> _filterByDate(List<TradeModel> trades) {
+    final now = DateTime.now();
+    final cutoff = switch (_selectedRange) {
+      'today' => now.subtract(const Duration(hours: 24)),
+      'week' => now.subtract(const Duration(days: 7)),
+      'month' => now.subtract(const Duration(days: 30)),
+      _ => null,
+    };
+    if (cutoff == null) return trades;
+    return trades.where((t) {
+      final timeStr = t.exitTime ?? t.entryTime;
+      if (timeStr == null) return true;
+      try {
+        return DateTime.parse(timeStr).isAfter(cutoff);
+      } catch (_) {
+        return true;
+      }
+    }).toList();
   }
 
   @override
@@ -288,7 +309,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       ),
       data: (list) {
         if (referenceBalance <= 0) return const SizedBox.shrink();
-        final closed = list.where((t) => t.pnl != null).toList();
+        final filtered = _filterByDate(list);
+        final closed = filtered.where((t) => t.pnl != null).toList();
         if (closed.length < 2) {
           return EmptyState(
             message: 'لا توجد بيانات كافية لرسم المنحنى',
