@@ -264,24 +264,6 @@ class BinanceManager:
                         "last_verified": row[5],
                     }
 
-                allow_env_keys = (
-                    os.getenv("ALLOW_ENV_BINANCE_KEYS_FOR_TESTING") or ""
-                ).strip().lower() in ("1", "true", "yes", "on")
-                env_api_key = (os.getenv("BINANCE_BACKEND_API_KEY") or "").strip()
-                env_api_secret = (os.getenv("BINANCE_BACKEND_API_SECRET") or "").strip()
-                if allow_env_keys and env_api_key and env_api_secret:
-                    self.logger.info(
-                        f"✅ استخدام مفاتيح Binance من البيئة للمستخدم {user_id} داخل BinanceManager في وضع الاختبار"
-                    )
-                    return {
-                        "api_key": env_api_key,
-                        "api_secret": env_api_secret,
-                        "is_testnet": False,
-                        "is_active": True,
-                        "permissions": [],
-                        "last_verified": None,
-                    }
-
                 return None
 
         except Exception as e:

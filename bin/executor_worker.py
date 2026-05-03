@@ -52,8 +52,26 @@ class ExecutorWorker:
         # 2. Main Loop
         while True:
             try:
+                # Check if GroupBSystem is running (API-spawned trading engine)
+                # to avoid double-monitoring race condition
+                group_b_active = False
+                try:
+                    with get_db_connection() as conn:
+                        row = conn.execute(
+                            "SELECT trading_state FROM system_status WHERE trading_state = 'RUNNING' LIMIT 1"
+                        ).fetchone()
+                        if row:
+                            group_b_active = True
+                except Exception:
+                    pass
+
                 await self.process_pending_signals()
-                await self.monitor_open_positions()
+
+                # Only monitor positions if GroupBSystem is NOT running
+                # to prevent both systems closing the same positions
+                if not group_b_active:
+                    await self.monitor_open_positions()
+
                 await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"💥 Executor loop error: {e}")
