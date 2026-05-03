@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
+import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/services/trading_toggle_service.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -14,6 +16,7 @@ import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_setting_tile.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/trading_status_strip.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Profile Screen — الحساب / الإعدادات
@@ -25,6 +28,24 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  Future<void> _toggleTrading(bool newValue) async {
+    final service = TradingToggleService(ref as Ref);
+    await service.toggleSelf(
+      enabled: newValue,
+      biometricAuth: (reason) =>
+          ref.read(biometricServiceProvider).authenticate(reason: reason),
+      showMessage: (message, type) {
+        final snackType = switch (type) {
+          'success' => SnackType.success,
+          'error' => SnackType.error,
+          'warning' => SnackType.warning,
+          _ => SnackType.info,
+        };
+        AppSnackbar.show(context, message: message, type: snackType);
+      },
+    );
+  }
+
   Future<void> _showEditProfileDialog(BuildContext context) async {
     final auth = ref.read(authProvider);
     final user = auth.user;
@@ -141,6 +162,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
+    final tradingState = ref.watch(accountTradingProvider);
     final user = auth.user;
     final pagePadding = ResponsiveUtils.pageHorizontalPadding(context);
     final maxWidth = ResponsiveUtils.maxContentWidth(context);
@@ -236,6 +258,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ],
                     ),
+                  ),
+
+                  const SizedBox(height: SpacingTokens.lg),
+
+                  // ─── Trading Toggle ────────────────────
+                  TradingStatusStrip(
+                    enabled: tradingState.enabled,
+                    isLoading: tradingState.isLoading,
+                    onChanged: tradingState.enabled == null
+                        ? null
+                        : _toggleTrading,
                   ),
 
                   const SizedBox(height: SpacingTokens.lg),
