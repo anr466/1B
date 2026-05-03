@@ -335,6 +335,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             trading_brain=getattr(self, "trading_brain", None),
             adaptive_optimizer=getattr(self, "optimizer", None),
             ml_training_manager=self.ml_training_manager,
+            dual_mode_router=self.dual_mode_router,
         )
         self.logger.info(
             "🎯 Trading Orchestrator initialized (5-system + ML architecture)"
@@ -930,10 +931,11 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                 )
                 for action in actions:
                     result["actions"].append(action)
-                    if action["type"] == "CLOSE":
+                    if action["type"] in ("CLOSE", "PARTIAL_CLOSE"):
                         exit_price = action.get("price") or current_prices.get(
                             action["symbol"]
                         )
+                        close_pct = action.get("close_pct", 1.0)
                         if exit_price:
                             pos = next(
                                 (
@@ -944,16 +946,13 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
                                 None,
                             )
                             if pos:
-                                from backend.core.exit_engine import ExitEngine
-
-                                exit_engine = ExitEngine()
-                                exit_result = exit_engine.execute_exit(
-                                    pos, exit_price, action["reason"], close_pct=1.0
+                                close_reason = (
+                                    f"MON_{action['reason']}"
                                 )
-                                if exit_result["success"]:
-                                    self.orchestrator._close_position_in_db(
-                                        pos, exit_result
-                                    )
+                                exit_result = self._close_position(
+                                    pos, exit_price, close_reason, close_pct
+                                )
+                                if exit_result:
                                     result["positions_closed"] += 1
                     elif action["type"] == "UPDATE":
                         pos = next(

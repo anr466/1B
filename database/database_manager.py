@@ -62,14 +62,14 @@ POSTGRES_UPSERT_CONFLICTS = {
     "verification_codes": ["email"],
     "user_sessions": ["user_id"],
     "user_devices": ["user_id", "device_id"],
-    "biometric_auth": ["user_id"],
+    "user_biometric_auth": ["user_id"],
     "pending_verifications": ["user_id", "action"],
     "user_binance_keys": ["user_id"],
     "successful_coins": ["symbol", "strategy", "timeframe"],
     "active_positions": ["user_id", "symbol", "strategy", "is_demo"],
     "trading_signals": ["symbol", "strategy", "timeframe"],
     "portfolio_growth_history": ["user_id", "date", "is_demo"],
-    "coin_states": ["symbol"],
+    "coin_trade_history": ["symbol"],
 }
 
 POSTGRES_BOOLEAN_COLUMNS = {
@@ -1117,8 +1117,8 @@ class DatabaseManager(
                         is_demo, created_at, updated_at
                     )
                     SELECT
-                        u.id, 1000.0, 1000.0, 0.0,
-                        0.0, 0.0, 1000.0,
+                        u.id, 10000.0, 10000.0, 0.0,
+                        0.0, 0.0, 10000.0,
                         TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     FROM users u
                     WHERE u.user_type = 'admin'

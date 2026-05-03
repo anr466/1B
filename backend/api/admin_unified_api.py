@@ -13,7 +13,6 @@ from config.security.encryption_utils import decrypt_data
 from backend.infrastructure.db_access import get_db_manager, open_db_connection
 from config.logging_config import get_logger
 from flask import Blueprint, request, jsonify, g
-import subprocess
 import json
 from datetime import datetime
 import os
@@ -86,7 +85,7 @@ except (ImportError, ModuleNotFoundError):
                 jsonify(
                     {
                         "success": False,
-                        "error": "Admin authentication system unavailable",
+                        "message": "Admin authentication system unavailable",
                     }
                 ),
                 503,
@@ -122,9 +121,6 @@ except ImportError:
             return decorator
 
     limiter = MockLimiter()
-
-# uptime_calc is now handled by StateManager
-uptime_calc = None
 
 admin_unified_bp = Blueprint("admin_unified", __name__, url_prefix="/admin")
 db = get_db_manager()
@@ -212,14 +208,7 @@ def get_admin_dashboard():
 
         conn.close()
 
-        # حساب uptime
         uptime_data = {}
-        if uptime_calc:
-            try:
-                uptime_data = uptime_calc.get_uptime()
-            except Exception as e:
-                logger.debug(f"فشل حساب uptime: {e}")
-                uptime_data = {"formatted": "0s"}
 
         return {
             "success": True,
@@ -258,7 +247,7 @@ def get_admin_dashboard():
             _cache_ttl = original_ttl  # Restore original TTL
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # ==================== System Overview ====================
@@ -285,24 +274,11 @@ def get_system_overview():
 
         conn.close()
 
-        # حساب uptime ديناميكياً
-        uptime_data = {}
-        if uptime_calc:
-            try:
-                uptime_data = uptime_calc.get_uptime()
-            except Exception as e:
-                logger.debug(f"فشل حساب uptime: {e}")
-                uptime_data = {
-                    "uptime_seconds": 0,
-                    "formatted": "0s",
-                    "started_at": datetime.now().isoformat(),
-                }
-        else:
-            uptime_data = {
-                "uptime_seconds": 0,
-                "formatted": "0s",
-                "started_at": datetime.now().isoformat(),
-            }
+        uptime_data = {
+            "uptime_seconds": 0,
+            "formatted": "0s",
+            "started_at": datetime.now().isoformat(),
+        }
 
         return {
             "success": True,
@@ -482,7 +458,7 @@ def get_errors():
         limit = min(int(request.args.get("limit", 50)), 200)  # حد أقصى 200
 
         # Build query - معالجة آمنة
-        query = "SELECT * FROM system_errors WHERE 1=1"
+        query = "SELECT id, error_type, error_message, severity, resolved, created_at, resolved_at FROM system_errors WHERE 1=1"
         params = []
 
         # التحقق من صحة severity
@@ -520,7 +496,7 @@ def get_errors():
                     or row_dict.get("source")
                     or "unknown",
                     "error_message": row_dict.get("error_message"),
-                    "user_id": row_dict.get("user_id"),
+                    "userId": row_dict.get("user_id"),
                     "severity": row_dict.get("severity"),
                     "resolved": bool(row_dict.get("resolved", 0)),
                     "status": row_dict.get("status")
@@ -771,7 +747,8 @@ def get_group_b_performance():
             else:
                 is_running = False
                 pid = None
-        except Exception:
+        except Exception as e:
+            logger.error(f"pgrep background_trading_manager check failed: {e}")
             is_running = False
             pid = None
 
@@ -1014,7 +991,7 @@ def get_all_users():
         )
     except Exception as e:
         logger.error(f"❌ get_all_users failed: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @admin_unified_bp.route("/legacy/users/<user_id>", methods=["GET", "PATCH", "DELETE"])
@@ -1028,7 +1005,7 @@ def manage_user(user_id):
         try:
             conn = get_safe_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
+            cursor.execute("SELECT id FROM users WHERE id=%s", (user_id,))
             user = cursor.fetchone()
             conn.close()
 
@@ -1135,7 +1112,7 @@ def reset_demo_account():
             "positions": 0,
             "history": 0,
         }
-        initial_balance = getattr(db, "DEMO_ACCOUNT_INITIAL_BALANCE", 1000.0)
+        initial_balance = getattr(db, "DEMO_ACCOUNT_INITIAL_BALANCE", 10000.0)
 
         reset_ok = db.reset_user_portfolio(admin_id, initial_balance=initial_balance)
         if not reset_ok:
@@ -1273,7 +1250,9 @@ def get_active_positions():
         from backend.utils.trading_context import get_trading_context
 
         # ✅ استخدام request context بدلاً من g مباشرة
-        admin_id = getattr(g, "user_id", None) or 1
+        admin_id = getattr(g, "user_id", None)
+        if admin_id is None:
+            return jsonify({"success": False, "message": "Unauthorized"}), 401
         requested_mode = request.args.get("mode")
         trading_context = get_trading_context(
             db, admin_id, requested_mode=requested_mode
@@ -1387,7 +1366,7 @@ def close_position(position_id):
         conn = get_safe_connection()
         cursor = conn.cursor()
 
-        position = cursor.execute(
+        cursor.execute(
             """
             SELECT id, user_id, symbol, entry_price, quantity, position_type, is_demo, is_active
             FROM active_positions
@@ -1395,7 +1374,8 @@ def close_position(position_id):
             LIMIT 1
             """,
             (pid,),
-        ).fetchone()
+        )
+        position = cursor.fetchone()
         conn.close()
 
         if not position:
@@ -1695,7 +1675,7 @@ def get_trades():
         conn = get_safe_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM active_positions ORDER BY id DESC LIMIT %s OFFSET %s",
+            "SELECT id, user_id, symbol, strategy, timeframe, position_type, entry_date, entry_price, quantity, stop_loss, take_profit, order_id, entry_commission, exit_commission, is_active, is_demo, ml_status, ml_confidence, signal_metadata, created_at, updated_at, trailing_sl_price, highest_price, exit_reason, exit_price, profit_loss, profit_pct, closed_at, entry_indicators, exit_order_id, position_size, break_even_moved, tp_levels_hit, brain_decision_id FROM active_positions ORDER BY id DESC LIMIT %s OFFSET %s",
             (page_size, (page - 1) * page_size),
         )
         trades = cursor.fetchall()
@@ -1703,7 +1683,7 @@ def get_trades():
 
         return jsonify({"success": True, "data": trades or [], "page": page})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @admin_unified_bp.route("/trades/export", methods=["GET"])
@@ -1828,7 +1808,7 @@ def get_analytics_overview():
             }
         )
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @admin_unified_bp.route("/analytics/revenue", methods=["GET"])
@@ -1862,7 +1842,7 @@ def get_analytics_revenue():
             }
         )
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # ==================== Backtesting ====================
@@ -1912,7 +1892,7 @@ def get_backtest_results():
             }
         )
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @admin_unified_bp.route("/backtest/run", methods=["POST"])
@@ -1920,6 +1900,7 @@ def get_backtest_results():
 def run_backtest():
     """تشغيل الاختبار الخلفي"""
     try:
+        import subprocess
         payload = request.get_json(silent=True) or {}
         script_name = str(payload.get("script", "v8_backtest.py")).strip()
 
@@ -1962,7 +1943,7 @@ def run_backtest():
         )
     except Exception as e:
         logger.error(f"❌ run_backtest failed: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @admin_unified_bp.route("/database/stats", methods=["GET"])
@@ -1977,7 +1958,7 @@ def get_database_stats():
                 "data": {
                     "engine": "postgresql",
                     "tables": len(counts),
-                    "path": db.database_url,
+                    "path": "[redacted]",
                     "table_row_counts": counts,
                 },
             }
@@ -2278,6 +2259,7 @@ def retry_binance_connection():
 
 
 # ==================== Public System Status (for app) ====================
+@require_admin
 @admin_unified_bp.route("/system/public-status", methods=["GET"])
 def get_public_system_status():
     """الحالة العامة للنظام بدون مصادقة - للتطبيق"""
@@ -2318,6 +2300,7 @@ def get_public_system_status():
 
 
 # ==================== Notification Services Status ====================
+@require_admin
 @admin_unified_bp.route("/system/notifications-status", methods=["GET"])
 def get_notifications_status():
     """فحص حالة خدمات الإشعارات"""
@@ -2435,7 +2418,9 @@ def manage_config():
 def get_binance_status():
     """حالة Binance"""
     try:
-        user_id = getattr(g, "user_id", None) or 1
+        user_id = getattr(g, "user_id", None)
+        if user_id is None:
+            return jsonify({"success": False, "message": "Unauthorized"}), 401
         conn = get_safe_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -2466,7 +2451,9 @@ def get_binance_status():
 def get_binance_keys():
     """مفاتيح Binance"""
     try:
-        user_id = getattr(g, "user_id", None) or 1
+        user_id = getattr(g, "user_id", None)
+        if user_id is None:
+            return jsonify({"success": False, "message": "Unauthorized"}), 401
         conn = get_safe_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -2507,7 +2494,9 @@ def get_binance_keys():
 def test_binance_connection():
     """اختبار اتصال Binance"""
     try:
-        user_id = getattr(g, "user_id", None) or 1
+        user_id = getattr(g, "user_id", None)
+        if user_id is None:
+            return jsonify({"success": False, "message": "Unauthorized"}), 401
 
         from backend.utils.binance_manager import BinanceManager
 
@@ -2586,7 +2575,7 @@ def get_security_audit_log_direct():
         )
     except Exception as e:
         logger.error(f"Error fetching security audit log: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 _END_OF_MAIN_ROUTES = True

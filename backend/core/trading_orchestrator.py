@@ -34,6 +34,7 @@ class TradingOrchestrator:
         trading_brain=None,
         adaptive_optimizer=None,
         ml_training_manager=None,
+        dual_mode_router=None,
     ):
         self.data_provider = data_provider
         self.db = db
@@ -43,6 +44,7 @@ class TradingOrchestrator:
         self.trading_brain = trading_brain
         self.adaptive_optimizer = adaptive_optimizer
         self.ml_training_manager = ml_training_manager
+        self.dual_mode_router = dual_mode_router
 
         # ===== أنظمة التحليل =====
         self.state_analyzer = CoinStateAnalyzer()
@@ -290,6 +292,21 @@ class TradingOrchestrator:
                     f"Score: {best_signal['score']} | Decision: {best_signal['decision']}"
                 )
 
+                # ===== Dual-Mode Router: Spot LONG vs Margin SHORT =====
+                if self.dual_mode_router:
+                    routed = self.dual_mode_router.route_signal(
+                        best_signal, state.regime
+                    )
+                    if not routed:
+                        logger.info(
+                            f"   🚫 [{symbol}] DualModeRouter REJECTED: "
+                            f"side={best_signal.get('side', 'LONG')} regime={state.regime}"
+                        )
+                        continue
+                    logger.info(
+                        f"   ✅ [{symbol}] DualModeRouter: {routed['mode']} {routed['side']}"
+                    )
+
                 best_signal["position_size"] = size_result["position_usd"]
                 success = self._open_position(symbol, best_signal)
                 if success:
@@ -383,18 +400,17 @@ class TradingOrchestrator:
 
     def _get_balance(self):
         if not self.db:
-            return 1000.0
+            return 10000.0
+
         try:
             with self.db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
+                row = conn.execute(
+                    "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s",
                     (self.user_id, self.is_demo_trading),
-                )
-                row = cursor.fetchone()
-                return float(row[0]) if row and row[0] else 1000.0
+                ).fetchone()
+                return float(row[0]) if row and row[0] else 10000.0
         except Exception:
-            return 1000.0
+            return 10000.0
 
     def _can_open_new_positions(self, open_positions, balance):
         heat = self.risk_manager.check_heat(open_positions, balance)

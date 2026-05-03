@@ -14,7 +14,7 @@ from backend.utils.trading_context import get_effective_is_demo, is_admin_user
 class DbPortfolioMixin:
     """Portfolio-related database methods (portfolio, trades, Binance keys)"""
 
-    DEMO_ACCOUNT_INITIAL_BALANCE = 1000.0
+    DEMO_ACCOUNT_INITIAL_BALANCE = 10000.0
 
     def _ensure_demo_account(self, conn, user_id: int) -> None:
         # Guard: only admin users may have an experimental demo account
@@ -413,7 +413,7 @@ class DbPortfolioMixin:
         }
         return self.add_user_trade(user_id, trade_data)
 
-    def get_open_trades(self, user_id: int) -> List[Dict[str, Any]]:
+    def get_open_trades(self, user_id: int, is_demo: bool = False) -> List[Dict[str, Any]]:
         """جلب الصفقات المفتوحة للمستخدم — يقرأ من active_positions"""
         with self.get_connection() as conn:
             rows = conn.execute(
@@ -429,10 +429,10 @@ class DbPortfolioMixin:
                     CASE WHEN position_type IN ('long', 'LONG') THEN 'buy' ELSE 'sell' END AS side,
                     stop_loss, take_profit, created_at
                 FROM active_positions
-                WHERE user_id = %s AND is_active = TRUE
+                WHERE user_id = %s AND is_active = TRUE AND is_demo = %s
                 ORDER BY COALESCE(entry_date, created_at) DESC
             """,
-                (user_id,),
+                (user_id, is_demo),
             ).fetchall()
 
             return [dict(row) for row in rows]
