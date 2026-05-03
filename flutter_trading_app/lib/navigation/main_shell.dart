@@ -162,8 +162,9 @@ class _MainShellState extends ConsumerState<MainShell> {
     
     // Redirect Admin to Admin Dashboard instead of Profile on Tab 4
     if (index == 4 && auth.isAdmin) {
-      context.go(RouteNames.adminDashboard);
-      setState(() => _currentIndex = index);
+      // Use push() so MainShell stays in the nav stack;
+      // admin screens can then pop() back to the app.
+      context.push(RouteNames.adminDashboard);
       return;
     }
     

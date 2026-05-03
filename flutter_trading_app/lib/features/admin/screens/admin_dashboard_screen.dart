@@ -13,7 +13,9 @@ import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
+import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Admin Dashboard Screen — لوحة تحكم المدير
@@ -24,7 +26,7 @@ class AdminDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final statusAsync = ref.watch(tradingCycleLiveProvider);
-    final statsAsync = ref.watch(statsProvider);
+    final statsAsync = ref.watch(systemStatsProvider);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -34,6 +36,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           child: Column(
             children: [
               AppScreenHeader(title: 'لوحة الإدارة', showBack: true),
+              const DemoRealBanner(),
               Expanded(
                 child: RefreshIndicator(
                   color: cs.primary,
@@ -42,8 +45,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                     try {
                       ref.invalidate(systemStatusProvider);
                       ref.read(tradingCycleLiveProvider.notifier).refresh();
-                      ref.invalidate(portfolioProvider);
-                      ref.invalidate(statsProvider);
+                      ref.invalidate(accountTradingProvider);
+                      ref.invalidate(systemStatsProvider);
                       ref.invalidate(adminUsersProvider);
                       ref.invalidate(activePositionsProvider);
                       await Future.delayed(const Duration(milliseconds: 500));
@@ -68,11 +71,14 @@ class AdminDashboardScreen extends ConsumerWidget {
                       statusAsync.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 1, itemHeight: 80),
-                        error: (e, _) => _buildErrorCard(
-                          cs,
-                          'خطأ في تحميل حالة النظام',
-                          () => ref.invalidate(tradingCycleLiveProvider),
-                        ),
+                        error: (e, _) {
+                          debugPrint('[AdminDashboard] status error: $e');
+                          return _buildErrorCard(
+                            cs,
+                            'تعذر تحميل البيانات',
+                            () => ref.invalidate(tradingCycleLiveProvider),
+                          );
+                        },
                         data: (s) => _buildStatusCard(context, cs, s),
                       ),
                       const SizedBox(height: SpacingTokens.lg),
@@ -83,11 +89,14 @@ class AdminDashboardScreen extends ConsumerWidget {
                       statsAsync.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 3, itemHeight: 100),
-                        error: (e, _) => _buildErrorCard(
-                          cs,
-                          'خطأ في تحميل الإحصائيات',
-                          () => ref.invalidate(statsProvider),
-                        ),
+                        error: (e, _) {
+                          debugPrint('[AdminDashboard] stats error: $e');
+                          return _buildErrorCard(
+                            cs,
+                            'تعذر تحميل البيانات',
+                            () => ref.invalidate(systemStatsProvider),
+                          );
+                        },
                         data: (stats) => _buildStatsGrid(context, cs, stats),
                       ),
                       const SizedBox(height: SpacingTokens.lg),
@@ -120,6 +129,30 @@ class AdminDashboardScreen extends ConsumerWidget {
                         BrandIcons.history,
                         'سجلات النظام',
                         RouteNames.systemLogs,
+                      ),
+
+                      _actionItem(
+                        context,
+                        cs,
+                        BrandIcons.settings,
+                        'لوحة السجلات',
+                        RouteNames.adminLogsDashboard,
+                      ),
+
+                      _actionItem(
+                        context,
+                        cs,
+                        BrandIcons.chart,
+                        'التحكم بالخلفية',
+                        RouteNames.adminBackgroundControl,
+                      ),
+
+                      _actionItem(
+                        context,
+                        cs,
+                        BrandIcons.memory,
+                        'لوحة ML',
+                        RouteNames.adminMlDashboard,
                       ),
 
                       const SizedBox(height: SpacingTokens.xl),
@@ -190,9 +223,9 @@ class AdminDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildStatsGrid(BuildContext context, ColorScheme cs, dynamic stats) {
-    final totalTrades = stats.totalTrades ?? 0;
-    final winRate = stats.winRate ?? 0.0;
-    final totalProfit = stats.totalPnl ?? 0.0;
+    final totalTrades = (stats['trades'] ?? 0) as int;
+    final winRate = (stats['win_rate'] ?? 0.0).toDouble();
+    final totalProfit = (stats['total_profit'] ?? 0.0).toDouble();
 
     return Row(
       children: [
@@ -301,9 +334,11 @@ class AdminDashboardScreen extends ConsumerWidget {
           Expanded(
             child: Text(message, style: TypographyTokens.bodySmall(cs.error)),
           ),
-          TextButton(
+          AppButton(
+            label: 'إعادة',
+            variant: AppButtonVariant.text,
+            isFullWidth: false,
             onPressed: onRetry,
-            child: Text('إعادة', style: TextStyle(color: cs.error)),
           ),
         ],
       ),

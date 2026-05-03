@@ -3,19 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
-import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/core/services/trading_toggle_service.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_setting_tile.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
-import 'package:trading_app/design/widgets/trading_status_strip.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Profile Screen — الحساب / الإعدادات
@@ -27,17 +25,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  Future<void> _toggleTrading(bool newValue) async {
-    await toggleTradingWithBiometric(
-      ref: ref,
-      enabled: newValue,
-      biometricAuth: (reason) =>
-          ref.read(biometricServiceProvider).authenticate(reason: reason),
-      showMessage: (message, type) =>
-          AppSnackbar.show(context, message: message, type: type),
-    );
-  }
-
   Future<void> _showEditProfileDialog(BuildContext context) async {
     final auth = ref.read(authProvider);
     final user = auth.user;
@@ -89,14 +76,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ],
             ),
             actions: [
-              TextButton(
+              AppButton(
+                label: 'إلغاء',
+                variant: AppButtonVariant.text,
+                isFullWidth: false,
                 onPressed: saving ? null : () => Navigator.of(ctx).pop(),
-                child: Text(
-                  'إلغاء',
-                  style: TextStyle(color: cs.onSurface.withValues(alpha: 0.6)),
-                ),
               ),
-              TextButton(
+              AppButton(
+                label: 'حفظ',
+                variant: AppButtonVariant.primary,
+                isFullWidth: false,
+                isLoading: saving,
                 onPressed: saving
                     ? null
                     : () async {
@@ -139,13 +129,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           setDlgState(() => saving = false);
                         }
                       },
-                child: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text('حفظ', style: TextStyle(color: cs.primary)),
               ),
             ],
           ),
@@ -158,7 +141,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
-    final tradingState = ref.watch(accountTradingProvider);
     final user = auth.user;
     final pagePadding = ResponsiveUtils.pageHorizontalPadding(context);
     final maxWidth = ResponsiveUtils.maxContentWidth(context);
@@ -169,7 +151,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxWidth),
-              child: ListView(
+              child: RefreshIndicator(
+                color: cs.primary,
+                onRefresh: () async {
+                  ref.invalidate(authProvider);
+                },
+                child: ListView(
                 padding: EdgeInsets.only(
                   left: pagePadding,
                   right: pagePadding,
@@ -220,8 +207,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 const SizedBox(height: SpacingTokens.xs),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
+                                    horizontal: SpacingTokens.sm,
+                                    vertical: SpacingTokens.xxs,
                                   ),
                                   decoration: BoxDecoration(
                                     color: cs.primary.withValues(alpha: 0.12),
@@ -249,15 +236,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ],
                     ),
-                  ),
-
-                  const SizedBox(height: SpacingTokens.lg),
-
-                  // ─── Trading Toggle ────────────────────
-                  TradingStatusStrip(
-                    enabled: tradingState.enabled,
-                    isLoading: tradingState.isLoading,
-                    onChanged: tradingState.isLoading ? null : _toggleTrading,
                   ),
 
                   const SizedBox(height: SpacingTokens.lg),
@@ -370,6 +348,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: SpacingTokens.xl),
                 ],
               ),
+              ),
             ),
           ),
         ),
@@ -390,13 +369,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
             ),
-            TextButton(
+            AppButton(
+              label: 'خروج',
+              variant: AppButtonVariant.danger,
+              isFullWidth: false,
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text('خروج', style: TextStyle(color: cs.error)),
             ),
           ],
         ),
@@ -457,13 +440,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ],
               ),
               actions: [
-                TextButton(
+                AppButton(
+                  label: 'إلغاء',
+                  variant: AppButtonVariant.text,
+                  isFullWidth: false,
                   onPressed: isSubmitting
                       ? null
                       : () => Navigator.of(dialogContext).pop(false),
-                  child: Text('إلغاء', style: TextStyle(color: cs.primary)),
                 ),
-                TextButton(
+                AppButton(
+                  label: 'حذف نهائي',
+                  variant: AppButtonVariant.danger,
+                  isFullWidth: false,
+                  isLoading: isSubmitting,
                   onPressed: isSubmitting
                       ? null
                       : () async {
@@ -519,13 +508,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             );
                           }
                         },
-                  child: isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text('حذف نهائي', style: TextStyle(color: cs.error)),
                 ),
               ],
             ),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -13,6 +12,7 @@ import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
 /// Error Details Provider
@@ -36,29 +36,6 @@ class _ErrorDetailsScreenState extends ConsumerState<ErrorDetailsScreen> {
   bool _isResolving = false;
   bool _isRetrying = false;
 
-  Widget _buildDemoRealBanner(WidgetRef ref, ColorScheme cs) {
-    final mode = ref.watch(adminPortfolioModeProvider);
-    final isDemo = mode == 'demo';
-    final color = isDemo ? Colors.blue : Colors.red;
-    final icon = isDemo ? Icons.science_outlined : Icons.shield_outlined;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: SpacingTokens.md, vertical: SpacingTokens.xs),
-      color: color.withValues(alpha: 0.08),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: SpacingTokens.xs),
-          Text(
-            isDemo ? 'الوضع التجريبي' : 'الوضع الحقيقي',
-            style: TypographyTokens.caption(color).copyWith(fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -79,7 +56,7 @@ class _ErrorDetailsScreenState extends ConsumerState<ErrorDetailsScreen> {
                   onTap: () => ref.invalidate(_errorDetailsProvider(widget.errorId)),
                 ),
               ),
-              _buildDemoRealBanner(ref, cs),
+              const DemoRealBanner(),
               Expanded(
                 child: errorAsync.when(
                   loading: () => const Padding(

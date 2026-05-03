@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,9 +31,29 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  int _secondsSinceUpdate = 0;
+  Timer? _updateTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) setState(() => _secondsSinceUpdate += 10);
+    });
+  }
+
+  @override
+  void dispose() {
+    _updateTimer?.cancel();
+    super.dispose();
+  }
+
   void _refresh() {
+    _secondsSinceUpdate = 0;
     ref.invalidate(portfolioProvider);
     ref.invalidate(statsProvider);
+    ref.invalidate(recentTradesProvider);
+    ref.invalidate(activePositionsProvider);
   }
 
   @override
@@ -66,6 +87,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
                     // ─── Hero Balance Card ───────────────────
                     _buildHeroBalanceCard(context, ref),
+                    const SizedBox(height: SpacingTokens.md),
+
+                    // ─── Daily PnL Bar ──────────────────────
+                    _buildDailyPnlBar(context, ref),
+                    const SizedBox(height: SpacingTokens.md),
+
+                    // ─── Open Positions Strip ───────────────
+                    _buildOpenPositionsStrip(context, ref),
                     const SizedBox(height: SpacingTokens.md),
 
                     // ─── Performance Ring + Quick Stats ──────
@@ -137,6 +166,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               ],
             ),
+            _buildLastUpdated(context, ref),
           ],
         ),
         const Spacer(),
@@ -178,6 +208,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Shows relative time since last data fetch
+  Widget _buildLastUpdated(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final accountState = ref.watch(accountTradingProvider);
+    final lastUpdated = accountState.data?.portfolio?.lastUpdated;
+
+    String label = 'مباشر';
+    if (lastUpdated != null) {
+      final dt = DateTime.tryParse(lastUpdated);
+      if (dt != null) {
+        final diff = DateTime.now().difference(dt).inSeconds + _secondsSinceUpdate;
+        if (diff < 60) {
+          label = 'آخر تحديث: منذ $diff ثوانٍ';
+        } else if (diff < 3600) {
+          label = 'آخر تحديث: منذ ${diff ~/ 60} دقائق';
+        } else {
+          label = 'آخر تحديث: منذ ${diff ~/ 3600} ساعات';
+        }
+      }
+    }
+
+    return Text(
+      label,
+      style: TypographyTokens.caption(
+        cs.onSurface.withValues(alpha: 0.40),
+      ),
     );
   }
 
@@ -238,23 +297,159 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   // ──────────────────────────────────────────────────────────────
+  //  DAILY PnL BAR — شريط أرباح اليوم
+  // ──────────────────────────────────────────────────────────────
+  Widget _buildDailyPnlBar(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final semantic = SemanticColors.of(context);
+    final isDark = cs.brightness == Brightness.dark;
+    final portfolio = ref.watch(portfolioProvider);
+    final hideBalance = ref.watch(balanceVisibilityProvider);
+
+    return portfolio.when(
+      loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 50),
+      error: (_, __) => ErrorState(
+        message: 'تعذر تحميل البيانات',
+        onRetry: () => ref.invalidate(portfolioProvider),
+      ),
+      data: (p) {
+        final isPositive = p.dailyPnl >= 0;
+        final accent = isPositive ? semantic.positive : semantic.negative;
+        final label = isPositive ? 'ربح اليوم' : 'خسارة اليوم';
+        final sign = isPositive ? '+' : '';
+        final amount = hideBalance
+            ? '••••••'
+            : '$sign\$${p.dailyPnl.abs().toStringAsFixed(2)}';
+        final pct = hideBalance
+            ? ''
+            : ' ($sign${p.dailyPnlPct.abs().toStringAsFixed(2)}%)';
+
+        return AppCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: SpacingTokens.md,
+            vertical: SpacingTokens.sm + 2,
+          ),
+          backgroundColor: accent.withValues(alpha: isDark ? 0.18 : 0.10),
+          borderColor: accent.withValues(alpha: 0.25),
+          level: 1,
+          child: Row(
+            children: [
+              Icon(
+                isPositive ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+                size: 20,
+                color: accent,
+              ),
+              const SizedBox(width: SpacingTokens.sm),
+              Text(
+                '$label: $amount',
+                style: TypographyTokens.body(accent).copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (pct.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(
+                  pct,
+                  style: TypographyTokens.bodySmall(
+                    accent.withValues(alpha: 0.75),
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+              const Spacer(),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  OPEN POSITIONS STRIP — شريط الصفقات المفتوحة
+  // ──────────────────────────────────────────────────────────────
+  Widget _buildOpenPositionsStrip(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final positionsState = ref.watch(activePositionsProvider);
+
+    if (positionsState.isLoading) {
+      return const LoadingShimmer(itemCount: 1, itemHeight: 54);
+    }
+
+    final positions = positionsState.data ?? [];
+
+    if (positions.isEmpty) {
+      return AppCard(
+        padding: const EdgeInsets.all(SpacingTokens.md),
+        level: 1,
+        child: Row(
+          children: [
+            Icon(
+              Icons.inventory_2_outlined,
+              size: 16,
+              color: cs.onSurface.withValues(alpha: 0.35),
+            ),
+            const SizedBox(width: SpacingTokens.sm),
+            Text(
+              'لا توجد صفقات مفتوحة حالياً',
+              style: TypographyTokens.bodySmall(
+                cs.onSurface.withValues(alpha: 0.4),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final displayPositions = positions.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: SpacingTokens.xs),
+          child: Text(
+            'الصفقات المفتوحة (${positions.length})'.toUpperCase(),
+            style: TypographyTokens.overline(
+              cs.onSurface.withValues(alpha: 0.5),
+            ).copyWith(letterSpacing: 1.5, fontSize: 10),
+          ),
+        ),
+        SizedBox(
+          height: 54,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: displayPositions.length,
+            separatorBuilder: (_, __) => const SizedBox(width: SpacingTokens.sm),
+            itemBuilder: (_, i) => _MiniPositionTile(
+              trade: displayPositions[i],
+              onTap: () => context.push(
+                RouteNames.tradeDetail,
+                extra: displayPositions[i],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────
   //  PERFORMANCE SECTION — Ring + Quick Stats
   // ──────────────────────────────────────────────────────────────
   Widget _buildPerformanceSection(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
     final stats = ref.watch(statsProvider);
 
-    return Container(
+    return AppCard(
       padding: const EdgeInsets.all(SpacingTokens.md),
-      decoration: BoxDecoration(
-        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
-        border: Border.all(
-          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
-          width: 1,
-        ),
-      ),
+      level: 1,
       child: Row(
         children: [
           // Status Ring
@@ -264,7 +459,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               height: 100,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, __) => ErrorState(
+              message: 'تعذر تحميل البيانات',
+              onRetry: () => ref.invalidate(statsProvider),
+            ),
             data: (s) {
               final winRate = s.winRate / 100;
               return StatusRing(
@@ -293,7 +491,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 stats.when(
                   loading: () =>
                       const LoadingShimmer(itemCount: 3, itemHeight: 24),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, __) => ErrorState(
+                    message: 'تعذر تحميل البيانات',
+                    onRetry: () => ref.invalidate(statsProvider),
+                  ),
                   data: (s) => Column(
                     children: [
                       _QuickStatRow(
@@ -334,7 +535,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     return portfolio.when(
       loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 200),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, __) => ErrorState(
+        message: 'تعذر تحميل البيانات',
+        onRetry: () => ref.invalidate(portfolioProvider),
+      ),
       data: (p) {
         final isPositive = p.dailyPnl >= 0;
 
@@ -347,22 +551,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
         // عرض الرسالة إذا لم توجد بيانات
         if (chartData.isEmpty) {
-          return Container(
+          return AppCard(
             padding: const EdgeInsets.all(SpacingTokens.lg),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withValues(
-                  alpha:
-                      Theme.of(context).colorScheme.brightness ==
-                          Brightness.dark
-                      ? 0.10
-                      : 0.08,
-                ),
-                width: 1,
-              ),
-            ),
+            level: 1,
             child: Center(
               child: Text(
                 'لا توجد بيانات كافية للرسم البياني',
@@ -454,7 +645,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               child: portfolio.when(
                 loading: () =>
                     const LoadingShimmer(itemCount: 1, itemHeight: 100),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, __) => ErrorState(
+                  message: 'تعذر تحميل البيانات',
+                  onRetry: () => ref.invalidate(portfolioProvider),
+                ),
                 data: (p) => MetricCard(
                   label: 'متاح',
                   value: _formatCurrency(p.availableBalance),
@@ -468,7 +662,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               child: portfolio.when(
                 loading: () =>
                     const LoadingShimmer(itemCount: 1, itemHeight: 100),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, __) => ErrorState(
+                  message: 'تعذر تحميل البيانات',
+                  onRetry: () => ref.invalidate(portfolioProvider),
+                ),
                 data: (p) => MetricCard(
                   label: 'محجوز',
                   value: _formatCurrency(p.reservedBalance),
@@ -487,7 +684,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               child: portfolio.when(
                 loading: () =>
                     const LoadingShimmer(itemCount: 1, itemHeight: 100),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, __) => ErrorState(
+                  message: 'تعذر تحميل البيانات',
+                  onRetry: () => ref.invalidate(portfolioProvider),
+                ),
                 data: (p) => MetricCard(
                   label: 'ربح محقق',
                   value: _formatPnl(p.realizedPnl),
@@ -502,7 +702,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               child: portfolio.when(
                 loading: () =>
                     const LoadingShimmer(itemCount: 1, itemHeight: 100),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, __) => ErrorState(
+                  message: 'تعذر تحميل البيانات',
+                  onRetry: () => ref.invalidate(portfolioProvider),
+                ),
                 data: (p) => MetricCard(
                   label: 'غير محقق',
                   value: _formatPnl(p.unrealizedPnl),
@@ -597,16 +800,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final hybridItems = _buildHybridTradeItems(openList, closedList);
 
     if (hybridItems.isEmpty) {
-      return Container(
+      return AppCard(
         padding: const EdgeInsets.all(SpacingTokens.lg),
-        decoration: BoxDecoration(
-          color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
-          border: Border.all(
-            color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
-            width: 1,
-          ),
-        ),
+        level: 1,
         child: Center(
           child: Text(
             'لا توجد صفقات حديثة',
@@ -618,15 +814,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusLg),
-        border: Border.all(
-          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
-          width: 1,
-        ),
-      ),
+    return AppCard(
+      padding: EdgeInsets.zero,
+      level: 1,
       child: Column(
         children: hybridItems.asMap().entries.map((entry) {
           final index = entry.key;
@@ -681,6 +871,74 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 // ──────────────────────────────────────────────────────────────
 //  PRIVATE WIDGETS
 // ──────────────────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────
+//  PRIVATE WIDGETS
+// ──────────────────────────────────────────────────────────────
+
+class _MiniPositionTile extends StatelessWidget {
+  final TradeModel trade;
+  final VoidCallback? onTap;
+
+  const _MiniPositionTile({required this.trade, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final semantic = SemanticColors.of(context);
+    final pnl = trade.pnl ?? 0;
+    final pct = trade.pnlPct ?? 0;
+    final isPositive = pnl > 0;
+    final isNegative = pnl < 0;
+    final tone = isPositive
+        ? semantic.positive
+        : isNegative
+        ? semantic.negative
+        : cs.onSurface.withValues(alpha: 0.5);
+    final sign = pct > 0 ? '+' : '';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AppCard(
+        padding: const EdgeInsets.symmetric(
+          horizontal: SpacingTokens.md,
+          vertical: SpacingTokens.sm,
+        ),
+        borderRadius: SpacingTokens.radiusMd,
+        level: 1,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              trade.symbol,
+              style: TypographyTokens.bodySmall(
+                cs.onSurface,
+              ).copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$sign${pct.abs().toStringAsFixed(2)}%',
+                  style: TypographyTokens.caption(
+                    tone,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _QuickStatRow extends StatelessWidget {
   final String label;
@@ -760,7 +1018,7 @@ class _HybridTradeTile extends StatelessWidget {
                 height: 32,
                 decoration: BoxDecoration(
                   color: accentColor,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(SpacingTokens.xxs),
                 ),
               ),
               const SizedBox(width: SpacingTokens.md),
@@ -785,7 +1043,7 @@ class _HybridTradeTile extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: accentColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
+                            borderRadius: BorderRadius.circular(SpacingTokens.radiusFull),
                           ),
                           child: Text(
                             isOpen ? 'مفتوحة' : 'مغلقة',
@@ -872,7 +1130,7 @@ class _OpenTradeLiveIndicator extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: tone.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(SpacingTokens.radiusFull),
         border: Border.all(color: tone.withValues(alpha: 0.20), width: 1),
       ),
       child: Row(

@@ -117,8 +117,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _checkAuth() async {
     if (_navigated) return;
 
+    final storage = ref.read(storageServiceProvider);
+
+    // First-run check: onboarding must be completed before auth flow
+    if (!storage.onboardingDone) {
+      _navigateToOnboarding();
+      return;
+    }
+
     // Ensure in-memory cache is populated from secure storage before auth check
-    await ref.read(storageServiceProvider).loadCachedTokens();
+    await storage.loadCachedTokens();
 
     // Validate stored token with server - restore session if valid
     await ref.read(authProvider.notifier).checkAuth();
@@ -126,7 +134,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     final authState = ref.read(authProvider);
     if (authState.isAuthenticated) {
-      final storage = ref.read(storageServiceProvider);
       final isBiometricEnabled = storage.biometricEnabled;
 
       // If biometric is enabled, ALWAYS show login screen first
@@ -142,6 +149,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       // No valid session - go to login
       _navigateToLogin();
     }
+  }
+
+  void _navigateToOnboarding() {
+    if (_navigated || !mounted) return;
+    _navigated = true;
+    _timeoutTimer?.cancel();
+
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.go(RouteNames.onboarding);
+    });
   }
 
   void _navigateToDashboard() {

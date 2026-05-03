@@ -30,35 +30,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
   String _otpCode = '';
   bool _isLoading = false;
   bool _canResend = false;
+  bool _isResending = false;
   int _resendKey = 0;
-
-  bool get _isSecureSettingsFlow =>
-      _type == 'change_password' ||
-      _type == 'change_email' ||
-      _type == 'change_biometric';
-
-  bool get _hasCustomFlowSteps {
-    final rawSteps = widget.extra?['flow_steps'];
-    return rawSteps is List && rawSteps.isNotEmpty;
-  }
-
-  List<String> get _flowSteps {
-    final rawSteps = widget.extra?['flow_steps'];
-    if (rawSteps is List && rawSteps.isNotEmpty) {
-      return rawSteps.map((e) => e.toString()).toList();
-    }
-
-    switch (_type) {
-      case 'change_password':
-        return const ['التحقق من الهوية', 'رمز التحقق', 'كلمة المرور الجديدة'];
-      case 'change_email':
-        return const ['إدخال البريد الجديد', 'رمز التحقق', 'تأكيد التحديث'];
-      case 'change_biometric':
-        return const ['التحقق بالبصمة', 'رمز التحقق', 'إتمام التفعيل'];
-      default:
-        return const ['إدخال البيانات', 'التحقق'];
-    }
-  }
 
   String get _screenTitle {
     final title = widget.extra?['flow_title']?.toString();
@@ -347,11 +320,16 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
             ],
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, null),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: 'تأكيد',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () {
                 if (!_isStrongPassword(newPass)) {
                   AppSnackbar.show(
@@ -370,10 +348,9 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                   );
                   return;
                 }
-                Navigator.pop(context, newPass);
-              },
-              child: const Text('تأكيد'),
-            ),
+              Navigator.pop(context, newPass);
+            },
+          ),
           ],
         ),
       ),
@@ -382,8 +359,9 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
   }
 
   Future<void> _resendOtp() async {
-    if (!_canResend) return;
+    if (!_canResend || _isResending) return;
 
+    setState(() => _isResending = true);
     try {
       final authService = ref.read(authServiceProvider);
       if (_type == 'registration') {
@@ -438,6 +416,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
       if (!mounted) return;
       setState(() {
         _canResend = false;
+        _isResending = false;
         _resendKey++;
       });
       AppSnackbar.show(
@@ -447,6 +426,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() => _isResending = false);
       AppSnackbar.show(
         context,
         message: ApiService.extractError(e),
@@ -474,13 +454,6 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                       FlowStepper(
                         title: VerificationFlowMetadata.registration.title,
                         steps: VerificationFlowMetadata.registration.steps,
-                        currentStep: 1,
-                      ),
-                    if (_type != 'registration' &&
-                        (_isSecureSettingsFlow || _hasCustomFlowSteps))
-                      FlowStepper(
-                        title: _screenTitle,
-                        steps: _flowSteps,
                         currentStep: 1,
                       ),
                     Expanded(
@@ -557,22 +530,25 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
 
                               // ─── Resend ────────────────────────────
                               Center(
-                                child: _canResend
-                                    ? TextButton(
-                                        onPressed: _resendOtp,
-                                        child: Text(
-                                          'إعادة إرسال الرمز',
-                                          style: TypographyTokens.bodySmall(
-                                            cs.primary,
-                                          ),
-                                        ),
+                                child: _isResending
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
                                       )
-                                    : CountdownTimer(
-                                        key: ValueKey(_resendKey),
-                                        seconds: 60,
-                                        onFinished: () =>
-                                            setState(() => _canResend = true),
-                                      ),
+                                    : _canResend
+                                        ? AppButton(
+                                            label: 'إعادة إرسال الرمز',
+                                            variant: AppButtonVariant.text,
+                                            isFullWidth: false,
+                                            onPressed: _resendOtp,
+                                          )
+                                        : CountdownTimer(
+                                            key: ValueKey(_resendKey),
+                                            seconds: 60,
+                                            onFinished: () =>
+                                                setState(() => _canResend = true),
+                                          ),
                               ),
                               const SizedBox(height: SpacingTokens.md),
                             ],

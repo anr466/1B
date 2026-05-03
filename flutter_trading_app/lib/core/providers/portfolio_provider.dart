@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/models/stats_model.dart';
 import 'package:trading_app/core/models/trade_model.dart';
+import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
 import 'package:trading_app/core/providers/unified_async_state.dart';
@@ -32,6 +34,7 @@ class AccountTradingNotifier
     extends StateNotifier<LoadingState<AccountTradingState>> {
   final Ref _ref;
   Timer? _pollingTimer;
+  bool _disposed = false;
 
   AccountTradingNotifier(this._ref)
       : super(const LoadingState()) {
@@ -46,7 +49,14 @@ class AccountTradingNotifier
     }
   }
 
+  String? _resolveMode() {
+    final auth = _ref.read(authProvider);
+    if (!auth.isAdmin) return null;
+    return _ref.read(adminPortfolioModeProvider);
+  }
+
   Future<void> fetch() async {
+    if (_disposed) return;
     state = const LoadingState(status: LoadingStatus.loading);
 
     try {
@@ -57,11 +67,12 @@ class AccountTradingNotifier
       }
 
       final portfolioRepo = _ref.read(portfolioRepositoryProvider);
+      final mode = _resolveMode();
 
       final results = await Future.wait([
-        portfolioRepo.getPortfolio(auth.user!.id),
-        portfolioRepo.getStats(auth.user!.id),
-        portfolioRepo.getActivePositions(auth.user!.id),
+        portfolioRepo.getPortfolio(auth.user!.id, mode: mode),
+        portfolioRepo.getStats(auth.user!.id, mode: mode),
+        portfolioRepo.getActivePositions(auth.user!.id, mode: mode),
       ]);
 
       final accountState = AccountTradingState(
@@ -97,11 +108,12 @@ class AccountTradingNotifier
       if (!auth.isAuthenticated || auth.user == null) return;
 
       final portfolioRepo = _ref.read(portfolioRepositoryProvider);
+      final mode = _resolveMode();
 
       final results = await Future.wait([
-        portfolioRepo.getPortfolio(auth.user!.id),
-        portfolioRepo.getStats(auth.user!.id),
-        portfolioRepo.getActivePositions(auth.user!.id),
+        portfolioRepo.getPortfolio(auth.user!.id, mode: mode),
+        portfolioRepo.getStats(auth.user!.id, mode: mode),
+        portfolioRepo.getActivePositions(auth.user!.id, mode: mode),
       ]);
 
       final accountState = AccountTradingState(
@@ -110,14 +122,18 @@ class AccountTradingNotifier
         activePositions: results[2] as List<TradeModel>,
       );
 
+      if (_disposed) return;
       if (mounted) {
         state = LoadingState(status: LoadingStatus.loaded, data: accountState);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AccountTradingNotifier] silent fetch error: $e');
+    }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _pollingTimer?.cancel();
     super.dispose();
   }

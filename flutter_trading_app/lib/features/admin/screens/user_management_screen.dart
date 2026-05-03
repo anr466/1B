@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
-import 'package:trading_app/core/providers/portfolio_provider.dart';
-import 'package:trading_app/core/providers/service_providers.dart';
-import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
-import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
+import 'package:trading_app/design/widgets/trading_toggle_button.dart';
+import 'package:trading_app/design/widgets/demo_real_banner.dart';
+import 'package:trading_app/navigation/route_names.dart';
 
 /// User Management Screen — إدارة المستخدمين
 class UserManagementScreen extends ConsumerStatefulWidget {
@@ -25,91 +25,6 @@ class UserManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
-  final Set<int> _toggling = {};
-
-  Future<void> _toggleTrading(int userId, bool currentEnabled) async {
-    if (_toggling.contains(userId)) return;
-
-    // ✅ تأكيد قبل الإجراء
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text(
-            currentEnabled ? 'إيقاف تداول المستخدم' : 'تفعيل تداول المستخدم',
-          ),
-          content: Text(
-            currentEnabled
-                ? 'سيتم إيقاف التداول لهذا المستخدم. الصفقات المفتوحة ستستمر.'
-                : 'سيتم تفعيل التداول لهذا المستخدم.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(currentEnabled ? 'إيقاف' : 'تفعيل'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true) return;
-
-    // ✅ تحقق بالبصمة
-    final bio = ref.read(biometricServiceProvider);
-    final trustNotifier = ref.read(biometricTrustProvider.notifier);
-
-    if (await bio.isAvailable && !trustNotifier.isTrusted) {
-      final reason = currentEnabled
-          ? 'تأكيد إيقاف تداول المستخدم'
-          : 'تأكيد تفعيل تداول المستخدم';
-      final ok = await bio.authenticate(reason: reason);
-      if (!ok) {
-        if (mounted) {
-          AppSnackbar.show(
-            context,
-            message: 'فشل التحقق من البصمة',
-            type: SnackType.error,
-          );
-        }
-        return;
-      }
-      trustNotifier.markTrusted();
-    }
-
-    setState(() => _toggling.add(userId));
-    try {
-      final repo = ref.read(adminRepositoryProvider);
-      await repo.toggleUserTrading(userId, !currentEnabled);
-      ref.invalidate(adminUsersProvider);
-      ref.invalidate(accountTradingProvider);
-      ref.invalidate(portfolioProvider);
-      ref.invalidate(statsProvider);
-      ref.invalidate(activePositionsProvider);
-      ref.invalidate(recentTradesProvider);
-      ref.invalidate(dailyStatusProvider);
-      ref.invalidate(tradingCycleLiveProvider);
-      ref.invalidate(systemStatusProvider);
-    } catch (e) {
-      // ✅ تراجع عن الحالة عند الفشل
-      if (mounted) {
-        AppSnackbar.show(
-          context,
-          message: 'تعذر إتمام العملية، حاول مرة أخرى',
-          type: SnackType.error,
-        );
-        // إعادة تحديث القائمة لإظهار الحالة الصحيحة
-        ref.invalidate(adminUsersProvider);
-      }
-    } finally {
-      if (mounted) setState(() => _toggling.remove(userId));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -123,6 +38,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           child: Column(
             children: [
               AppScreenHeader(title: 'إدارة المستخدمين', showBack: true),
+              const DemoRealBanner(),
               Expanded(
                 child: RefreshIndicator(
                   color: cs.primary,
@@ -150,25 +66,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                           final isAdmin =
                               (u['userType'] ?? u['user_type'] ?? u['type']) ==
                               'admin';
-                          final isActive =
-                              u['isActive'] == true ||
-                              u['isActive'] == 1 ||
-                              u['is_active'] == true ||
-                              u['is_active'] == 1 ||
-                              u['emailVerified'] == true ||
-                              u['emailVerified'] == 1 ||
-                              u['email_verified'] == true ||
-                              u['email_verified'] == 1;
                           final tradingEnabled =
                               u['tradingEnabled'] == true ||
                               u['tradingEnabled'] == 1 ||
                               u['trading_enabled'] == true ||
                               u['trading_enabled'] == 1;
-                          final tradingMode =
-                              (u['tradingMode'] ?? u['trading_mode'] ?? '')
-                                  .toString();
-                          final isToggling = _toggling.contains(userId);
-
                           return Padding(
                             padding: const EdgeInsets.only(
                               bottom: SpacingTokens.sm,
@@ -178,159 +80,102 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    children: [
-                                      // Avatar
-                                      Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          color: isAdmin
-                                              ? cs.primary.withValues(
-                                                  alpha: 0.12,
-                                                )
-                                              : cs.surfaceContainerHighest,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Center(
-                                          child: BrandIcon(
-                                            isAdmin
-                                                ? BrandIcons.shield
-                                                : BrandIcons.user,
-                                            size: 20,
+                                  GestureDetector(
+                                    onTap: () => context.push(
+                                      RouteNames.adminUserDetail,
+                                      extra: u,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        // Avatar
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
                                             color: isAdmin
-                                                ? cs.primary
-                                                : cs.onSurface.withValues(
-                                                    alpha: 0.5,
-                                                  ),
+                                                ? cs.primary.withValues(
+                                                    alpha: 0.12,
+                                                  )
+                                                : cs.surfaceContainerHighest,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Center(
+                                            child: BrandIcon(
+                                              isAdmin
+                                                  ? BrandIcons.shield
+                                                  : BrandIcons.user,
+                                              size: 20,
+                                              color: isAdmin
+                                                  ? cs.primary
+                                                  : cs.onSurface.withValues(
+                                                      alpha: 0.5,
+                                                    ),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: SpacingTokens.md),
+                                        const SizedBox(width: SpacingTokens.md),
 
-                                      // Info
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              u['fullName'] ??
-                                                  u['full_name'] ??
-                                                  u['name'] ??
-                                                  u['username'] ??
-                                                  'مستخدم',
-                                              style:
-                                                  TypographyTokens.body(
-                                                    cs.onSurface,
-                                                  ).copyWith(
-                                                    fontWeight: FontWeight.w600,
+                                        // Info
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                u['fullName'] ??
+                                                    u['full_name'] ??
+                                                    u['name'] ??
+                                                    u['username'] ??
+                                                    'مستخدم',
+                                                style:
+                                                    TypographyTokens.body(
+                                                      cs.onSurface,
+                                                    ).copyWith(
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                              ),
+                                              const SizedBox(
+                                                height: SpacingTokens.xxs,
+                                              ),
+                                              Text(
+                                                u['email'] ?? '',
+                                                style: TypographyTokens.caption(
+                                                  cs.onSurface.withValues(
+                                                    alpha: 0.4,
                                                   ),
-                                            ),
-                                            const SizedBox(
-                                              height: SpacingTokens.xxs,
-                                            ),
-                                            Text(
-                                              u['email'] ?? '',
-                                              style: TypographyTokens.caption(
-                                                cs.onSurface.withValues(
-                                                  alpha: 0.4,
                                                 ),
                                               ),
-                                            ),
-                                            const SizedBox(
-                                              height: SpacingTokens.xxs,
-                                            ),
-                                            Row(
-                                              children: [
-                                                StatusBadge(
-                                                  text: tradingEnabled
-                                                      ? 'تداول مفعّل'
-                                                      : 'تداول متوقف',
-                                                  type: tradingEnabled
-                                                      ? BadgeType.success
-                                                      : BadgeType.warning,
-                                                  showDot: tradingEnabled,
-                                                ),
-                                                if (tradingEnabled) ...[
-                                                  const SizedBox(
-                                                    width: SpacingTokens.xs,
-                                                  ),
-                                                  StatusBadge(
-                                                    text: tradingMode == 'real'
-                                                        ? 'حقيقي'
-                                                        : 'تجريبي',
-                                                    type: tradingMode == 'real'
-                                                        ? BadgeType.warning
-                                                        : BadgeType.info,
-                                                    showDot: false,
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ],
+                                              const SizedBox(
+                                                height: SpacingTokens.xxs,
+                                              ),
+                                              StatusBadge(
+                                                text: tradingEnabled
+                                                    ? 'مفعّل'
+                                                    : 'متوقف',
+                                                type: tradingEnabled
+                                                    ? BadgeType.success
+                                                    : BadgeType.warning,
+                                                showDot: tradingEnabled,
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-
-                                      // Status badges
-                                      Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
-                                        children: [
-                                          if (isAdmin)
-                                            StatusBadge(
-                                              text: 'مدير',
-                                              type: BadgeType.info,
-                                              showDot: false,
-                                            ),
-                                          const SizedBox(
-                                            height: SpacingTokens.xs,
-                                          ),
-                                          StatusBadge(
-                                            text: isActive
-                                                ? 'مفعّل'
-                                                : 'غير مفعّل',
-                                            type: isActive
-                                                ? BadgeType.success
-                                                : BadgeType.warning,
-                                            showDot: false,
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
 
                                   // Trading toggle row
                                   if (!isAdmin) ...[
                                     const Divider(height: SpacingTokens.lg),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          'تفعيل التداول',
-                                          style: TypographyTokens.bodySmall(
-                                            cs.onSurface.withValues(alpha: 0.7),
-                                          ),
-                                        ),
-                                        isToggling
-                                            ? const SizedBox(
-                                                width: 24,
-                                                height: 24,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              )
-                                            : Switch.adaptive(
-                                                value: tradingEnabled,
-                                                onChanged: (_) =>
-                                                    _toggleTrading(
-                                                      userId,
-                                                      tradingEnabled,
-                                                    ),
-                                              ),
-                                      ],
+                                    TradingToggleButton(
+                                      targetUserId: userId,
+                                      value: tradingEnabled,
+                                      subtitle: tradingEnabled
+                                          ? 'يفتح صفقات جديدة'
+                                          : 'لن يفتح صفقات جديدة',
+                                      onChanged: (_) {
+                                        ref.invalidate(adminUsersProvider);
+                                      },
                                     ),
                                   ],
                                 ],
@@ -349,4 +194,5 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       ),
     );
   }
+
 }

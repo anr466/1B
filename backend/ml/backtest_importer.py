@@ -115,6 +115,7 @@ class BacktestImporter:
                     FROM backtest_results
                     WHERE imported_to_ml = FALSE
                     ORDER BY timestamp
+                    LIMIT 1000
                 """).fetchall()
 
                 if not rows:

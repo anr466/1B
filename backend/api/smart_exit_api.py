@@ -454,6 +454,7 @@ def get_exit_errors(user_id):
 
 
 @smart_exit_bp.route("/defaults", methods=["GET"])
+@require_auth
 def get_default_settings():
     """جلب الإعدادات الافتراضية"""
     return jsonify(

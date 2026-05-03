@@ -284,6 +284,7 @@ def trigger_health_check():
 
 # معلومات عن الـ Blueprint
 @ml_learning_bp.route("/info", methods=["GET"])
+@admin_required
 def get_info():
     """معلومات عن API التعلم"""
     return jsonify(

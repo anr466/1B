@@ -797,6 +797,18 @@ def login_user():
             )
 
         # ✅ التحقق من تفعيل الحساب (إجباري)
+        if not user.get("is_active", True):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "الحساب معطل. يرجى التواصل مع الدعم.",
+                        "account_disabled": True,
+                    }
+                ),
+                403,
+            )
+
         # البريد الإلكتروني يجب أن يكون مفعلاً
         if not user.get("email_verified", False):
             return (
@@ -1077,6 +1089,11 @@ def validate_session():
                 }
             )
 
+    except jwt.ExpiredSignatureError:
+        return (
+            jsonify({"success": False, "message": "Token منتهي الصلاحية"}),
+            401,
+        )
     except Exception as e:
         log_error(f"خطأ في التحقق من الجلسة: {str(e)}")
         return (
@@ -1157,12 +1174,18 @@ def refresh_token():
                 500,
             )
 
+    except jwt.ExpiredSignatureError:
+        return (
+            jsonify({"success": False, "error": "refresh_token منتهي الصلاحية"}),
+            401,
+        )
     except Exception as e:
         logger.error(f"خطأ في تحديث التوكن: {str(e)}")
         return jsonify({"success": False, "error": "خطأ في تحديث التوكن"}), 500
 
 
 @auth_bp.route("/logout", methods=["POST"])
+@require_auth
 def logout_user():
     """تسجيل خروج المستخدم وإبطال Token"""
     try:
@@ -1219,6 +1242,8 @@ def delete_account():
                     401,
                 )
             user_id = payload.get("user_id")
+        except jwt.ExpiredSignatureError:
+            return jsonify({"success": False, "error": "التوكن منتهي الصلاحية"}), 401
         except Exception as token_error:
             logger.error(f"خطأ في التحقق من التوكن: {token_error}")
             return jsonify({"success": False, "error": "التوكن غير صالح"}), 401

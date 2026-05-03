@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/user_model.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
@@ -38,7 +39,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void _onSessionExpired() {
-    _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
+    _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
     state = const AuthState(status: AuthStatus.unauthenticated, error: 'انتهت الجلسة، سجّل دخولك مرة أخرى');
   }
 
@@ -78,7 +79,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       try {
         final authService = _ref.read(authServiceProvider);
         await authService.logout();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[AuthNotifier] checkAuth cleanup error: $e');
+      }
       state = AuthState(
         status: AuthStatus.unauthenticated,
         error: null, // Don't show error on auto-check
@@ -137,13 +140,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> forceUnauthenticated({bool clearTokens = true}) async {
     try {
       _ref.read(pushNotificationServiceProvider).stopPolling();
-    } catch (_) {}
-    _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
+    } catch (e) {
+      debugPrint('[AuthNotifier] forceUnauthenticated stopPolling error: $e');
+    }
+    _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
 
     if (clearTokens) {
       try {
         await _ref.read(authServiceProvider).logout();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[AuthNotifier] forceUnauthenticated logout error: $e');
+      }
     }
 
     state = const AuthState(status: AuthStatus.unauthenticated);
@@ -154,8 +161,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final pushService = _ref.read(pushNotificationServiceProvider);
       pushService.start(userId);
-    } catch (_) {
-      // Silent — notification polling is non-critical
+    } catch (e) {
+      debugPrint('[AuthNotifier] startNotificationPolling error: $e');
     }
   }
 
@@ -170,10 +177,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await pushService.unregisterFcmToken(fcmToken);
       }
       pushService.stopPolling();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AuthNotifier] logout cleanup error: $e');
+    }
     final authService = _ref.read(authServiceProvider);
     await authService.logout();
-    _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
+    _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
     _ref.read(biometricTrustProvider.notifier).clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
@@ -187,7 +196,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final pushService = _ref.read(pushNotificationServiceProvider);
       pushService.stopPolling();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AuthNotifier] deleteAccount stopPolling error: $e');
+    }
 
     try {
       final authService = _ref.read(authServiceProvider);
@@ -221,7 +232,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _syncAdminPortfolioMode(UserModel user) async {
     if (!user.isAdmin) {
-      _ref.read(adminPortfolioModeProvider.notifier).state = 'real' as String?;
+      _ref.read(adminPortfolioModeProvider.notifier).state = 'real';
       return;
     }
 

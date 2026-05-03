@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/models/portfolio_model.dart';
 import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/privacy_provider.dart';
+import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/settings_provider.dart';
+import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
@@ -19,7 +20,8 @@ import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
-import 'package:trading_app/navigation/route_names.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 
 /// Portfolio Screen — عرض تفصيلي للمحفظة
 class PortfolioScreen extends ConsumerStatefulWidget {
@@ -30,6 +32,76 @@ class PortfolioScreen extends ConsumerStatefulWidget {
 }
 
 class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
+  bool _isSwitchingMode = false;
+
+  Future<void> _switchPortfolioMode(String mode) async {
+    final cs = Theme.of(context).colorScheme;
+    final isDemo = mode == 'demo';
+    final label = isDemo ? 'التجريبي' : 'الحقيقي';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: cs.surfaceContainerHighest,
+          title: Text(
+            'التبديل للوضع $label',
+            style: TypographyTokens.h3(cs.onSurface),
+          ),
+          content: Text(
+            isDemo
+                ? 'سيتم عرض بيانات المحفظة التجريبية. هل تريد المتابعة؟'
+                : 'سيتم عرض بيانات المحفظة الحقيقية. تأكد من وجود مفاتيح Binance. هل تريد المتابعة؟',
+            style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
+          ),
+          actions: [
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
+              onPressed: () => Navigator.of(ctx).pop(false),
+            ),
+            AppButton(
+              label: 'تبديل',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isSwitchingMode = true);
+    try {
+      final auth = ref.read(authProvider);
+      if (auth.user == null) return;
+
+      // Persist mode change to backend
+      final settingsRepo = ref.read(settingsRepositoryProvider);
+      await settingsRepo.updateTradingMode(auth.user!.id, mode);
+
+      if (!mounted) return;
+
+      // Update mode provider — triggers portfolio refresh
+      ref.read(adminPortfolioModeProvider.notifier).state = mode;
+
+      // Invalidate ALL dependent providers so they re-fetch with new mode
+      ref.invalidate(accountTradingProvider);
+      ref.invalidate(settingsDataProvider);
+      ref.invalidate(dailyStatusProvider);
+    } catch (_) {
+      if (mounted) {
+        AppSnackbar.show(context, message: 'فشل تبديل وضع المحفظة', type: SnackType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _isSwitchingMode = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -39,7 +111,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     final hideBalance = ref.watch(balanceVisibilityProvider);
     final portfolioMode = isAdmin
         ? ref.watch(adminPortfolioModeProvider)
-        : null;
+        : 'demo';
     final pagePadding = ResponsiveUtils.pageHorizontalPadding(context);
     final maxWidth = ResponsiveUtils.maxContentWidth(context);
 
@@ -49,7 +121,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
         child: RefreshIndicator(
             color: cs.primary,
             onRefresh: () async {
-              ref.invalidate(portfolioProvider);
+              ref.invalidate(accountTradingProvider);
             },
             child: Center(
               child: ConstrainedBox(
@@ -77,7 +149,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                     // ─── Admin: Demo | Real Switcher ────────────────
                     if (isAdmin) ...[
                       const SizedBox(height: SpacingTokens.sm),
-                      _buildAdminModeSwitcher(context, ref, cs, portfolioMode!),
+                      _buildAdminModeSwitcher(context, ref, cs, portfolioMode),
                     ],
 
                     const SizedBox(height: SpacingTokens.base),
@@ -88,7 +160,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                           const LoadingShimmer(itemCount: 1, itemHeight: 200),
                       error: (e, _) => ErrorState(
                         message: e.toString(),
-                        onRetry: () => ref.invalidate(portfolioProvider),
+                        onRetry: () => ref.invalidate(accountTradingProvider),
                       ),
                       data: (p) => AppCard(
                         level: 0,
@@ -255,20 +327,22 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
                     const SizedBox(height: SpacingTokens.base),
 
-                    // ─── Portfolio Breakdown (Column Chart) ─────
+                    // ─── Portfolio Breakdown (Bars) ────
                     portfolio.when(
                       loading: () =>
-                          const LoadingShimmer(itemCount: 1, itemHeight: 220),
+                          const LoadingShimmer(itemCount: 1, itemHeight: 120),
                       error: (e, _) => ErrorState(
                         message: e.toString(),
-                        onRetry: () => ref.invalidate(portfolioProvider),
+                        onRetry: () => ref.invalidate(accountTradingProvider),
                       ),
-                      data: (p) => _buildPortfolioBreakdownChart(
-                        context,
-                        p,
-                        hideBalance,
-                      ),
+                      data: (p) =>
+                          _buildPortfolioBreakdown(context, p, hideBalance),
                     ),
+
+                    const SizedBox(height: SpacingTokens.base),
+
+                    // ─── Open Positions Distribution ──
+                    _buildOpenPositionsDistribution(context, ref, hideBalance),
 
                     const SizedBox(height: SpacingTokens.xl),
                   ],
@@ -280,51 +354,18 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     );
   }
 
-  Widget _buildPortfolioBreakdownChart(
+  Widget _buildPortfolioBreakdown(
     BuildContext context,
     PortfolioModel p,
     bool hideBalance,
   ) {
     final cs = Theme.of(context).colorScheme;
     final semantic = SemanticColors.of(context);
-
     final total = p.currentBalance > 0 ? p.currentBalance : p.initialBalance;
-    final availablePct = total > 0 ? (p.availableBalance / total) * 100 : 0.0;
-    final reservedPct = total > 0 ? (p.reservedBalance / total) * 100 : 0.0;
-
-    final sections = <PieChartSectionData>[
-      if (p.availableBalance > 0)
-        PieChartSectionData(
-          value: p.availableBalance,
-          title: '${availablePct.toStringAsFixed(0)}%',
-          color: semantic.positive,
-          radius: 55,
-          titleStyle: TypographyTokens.caption(
-            cs.surface,
-          ).copyWith(fontWeight: FontWeight.w700, color: cs.surface),
-        ),
-      if (p.reservedBalance > 0)
-        PieChartSectionData(
-          value: p.reservedBalance,
-          title: '${reservedPct.toStringAsFixed(0)}%',
-          color: semantic.info,
-          radius: 55,
-          titleStyle: TypographyTokens.caption(
-            cs.surface,
-          ).copyWith(fontWeight: FontWeight.w700, color: cs.surface),
-        ),
-    ];
-
-    if (sections.isEmpty) {
-      sections.add(
-        PieChartSectionData(
-          value: 1,
-          title: '',
-          color: cs.surfaceContainerHighest,
-          radius: 55,
-        ),
-      );
-    }
+    final availablePct =
+        total > 0 ? ((p.availableBalance / total) * 100).clamp(0, 100) : 0.0;
+    final reservedPct =
+        total > 0 ? ((p.reservedBalance / total) * 100).clamp(0, 100) : 0.0;
 
     return AppCard(
       level: 0,
@@ -333,56 +374,94 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('هيكل المحفظة', style: TypographyTokens.h3(cs.onSurface)),
-          const SizedBox(height: SpacingTokens.md),
+          const SizedBox(height: SpacingTokens.lg),
+          // ── Available ──
           Row(
             children: [
-              Expanded(
-                child: SizedBox(
-                  height: 150,
-                  child: PieChart(
-                    PieChartData(
-                      sections: sections,
-                      centerSpaceRadius: 35,
-                      sectionsSpace: 2,
-                      pieTouchData: PieTouchData(
-                        touchCallback: (event, response) {},
-                      ),
-                    ),
+              SizedBox(
+                width: 50,
+                child: Text(
+                  'متاح',
+                  style: TypographyTokens.caption(
+                    cs.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ),
-              const SizedBox(width: SpacingTokens.md),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _legendItem(
-                    'متاح',
-                    p.availableBalance,
+              const SizedBox(width: SpacingTokens.sm),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(SpacingTokens.xs),
+                  child: LinearProgressIndicator(
+                    value: availablePct / 100,
+                    backgroundColor: cs.surfaceContainerHighest,
+                    color: semantic.positive,
+                    minHeight: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.sm),
+              SizedBox(
+                width: 100,
+                child: MoneyText(
+                  amount: p.availableBalance,
+                  isSensitive: hideBalance,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.xs),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  '${availablePct.toStringAsFixed(0)}%',
+                  style: TypographyTokens.mono(
                     semantic.positive,
-                    cs,
+                    fontSize: 13,
                   ),
-                  const SizedBox(height: SpacingTokens.sm),
-                  _legendItem(
-                    'إجمالي الربح',
-                    p.totalPnl,
-                    p.totalPnl >= 0 ? semantic.positive : semantic.negative,
-                    cs,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: SpacingTokens.md),
+          // ── Reserved ──
+          Row(
+            children: [
+              SizedBox(
+                width: 50,
+                child: Text(
+                  'محجوز',
+                  style: TypographyTokens.caption(
+                    cs.onSurface.withValues(alpha: 0.6),
                   ),
-                  const SizedBox(height: SpacingTokens.sm),
-                  _legendItem(
-                    'غير محقق',
-                    p.unrealizedPnl,
-                    p.unrealizedPnl >= 0 ? semantic.info : semantic.negative,
-                    cs,
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.sm),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(SpacingTokens.xs),
+                  child: LinearProgressIndicator(
+                    value: reservedPct / 100,
+                    backgroundColor: cs.surfaceContainerHighest,
+                    color: semantic.info,
+                    minHeight: 14,
                   ),
-                  const SizedBox(height: SpacingTokens.sm),
-                  _legendItem(
-                    'محجوز',
-                    p.reservedBalance,
-                    SemanticColors.of(context).info,
-                    cs,
-                  ),
-                ],
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.sm),
+              SizedBox(
+                width: 100,
+                child: MoneyText(
+                  amount: p.reservedBalance,
+                  isSensitive: hideBalance,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.xs),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  '${reservedPct.toStringAsFixed(0)}%',
+                  style: TypographyTokens.mono(semantic.info, fontSize: 13),
+                ),
               ),
             ],
           ),
@@ -391,34 +470,75 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     );
   }
 
-  Widget _legendItem(String label, double value, Color color, ColorScheme cs) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+  Widget _buildOpenPositionsDistribution(
+    BuildContext context,
+    WidgetRef ref,
+    bool hideBalance,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    final semantic = SemanticColors.of(context);
+    final positions = ref.watch(activePositionsProvider);
+
+    return positions.when(
+      loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 100),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (list) {
+        if (list.isEmpty) return const SizedBox.shrink();
+
+        return AppCard(
+          level: 0,
+          padding: const EdgeInsets.all(SpacingTokens.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '$label: ',
-                style: TypographyTokens.caption(
-                  cs.onSurface.withValues(alpha: 0.45),
-                ),
+                'توزيع الصفقات المفتوحة',
+                style: TypographyTokens.h3(cs.onSurface),
               ),
-              _PortfolioBalanceValue(amount: value, fontSize: 11),
+              const SizedBox(height: SpacingTokens.md),
+              ...list.map((pos) {
+                final invested =
+                    pos.positionSize ??
+                    (pos.entryPrice * pos.quantity);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: pos.pnl != null && pos.pnl! >= 0
+                                  ? semantic.positive
+                                  : pos.pnl != null && pos.pnl! < 0
+                                  ? semantic.negative
+                                  : cs.primary,
+                              borderRadius: BorderRadius.circular(SpacingTokens.xxs),
+                            ),
+                          ),
+                          const SizedBox(width: SpacingTokens.sm),
+                          Text(
+                            pos.symbol,
+                            style: TypographyTokens.body(cs.onSurface),
+                          ),
+                        ],
+                      ),
+                      MoneyText(
+                        amount: invested,
+                        isSensitive: hideBalance,
+                        fontSize: 14,
+                      ),
+                    ],
+                  ),
+                );
+              }),
             ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -435,7 +555,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
         _modeChip(cs, ref, 'حقيقي', 'real', currentMode),
         const Spacer(),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: SpacingTokens.sm, vertical: SpacingTokens.xxs),
           decoration: BoxDecoration(
             color: cs.primary.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(SpacingTokens.radiusBadge),
@@ -475,7 +595,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
   ) {
     final isSelected = currentMode == mode;
     return GestureDetector(
-      onTap: () => context.push(RouteNames.tradingSettings),
+      onTap: isSelected ? null : () => _switchPortfolioMode(mode),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(
@@ -490,14 +610,31 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
             width: 0.8,
           ),
         ),
-        child: Text(
-          label,
-          style:
-              TypographyTokens.caption(
-                isSelected ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.6),
-              ).copyWith(
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isSwitchingMode && isSelected)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: cs.onPrimary,
+                  ),
+                ),
               ),
+            Text(
+              label,
+              style:
+                  TypographyTokens.caption(
+                    isSelected ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.6),
+                  ).copyWith(
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+            ),
+          ],
         ),
       ),
     );

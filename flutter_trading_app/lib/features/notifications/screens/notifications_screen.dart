@@ -11,6 +11,7 @@ import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Notifications Screen — الإشعارات مع pagination + mark all read
@@ -70,7 +71,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 showBack: true,
                 trailing:
                     state.notifications.isNotEmpty && !state.isMarkingAllRead
-                    ? TextButton(
+                    ? AppButton(
+                        label: 'الكل كمقروء',
+                        variant: AppButtonVariant.text,
+                        isFullWidth: false,
                         onPressed: () async {
                           await ref
                               .read(notificationsListProvider.notifier)
@@ -82,18 +86,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                             type: SnackType.success,
                           );
                         },
-                        child: state.isMarkingAllRead
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                'قراءة الكل',
-                                style: TypographyTokens.bodySmall(cs.primary),
-                              ),
                       )
                     : null,
               ),

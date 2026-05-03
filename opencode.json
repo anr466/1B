@@ -1,40 +1,11 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["AGENTS.md"],
+  "instructions": [
+    "AGENTS.md"
+  ],
   "autoupdate": false,
   "compaction": {
     "auto": false,
     "prune": false
-  },
-  "personality": {
-    "language": "ar",
-    "code_language": "en",
-    "style": "concise",
-    "expertise": ["trading", "crypto", "ml", "flutter", "flask", "postgresql"]
-  },
-  "behavior": {
-    "always_verify": "flutter analyze || python -m pytest tests/",
-    "never_guess": ["trading_logic", "risk_parameters", "strategy_behavior"],
-    "prefer_existing_patterns": true,
-    "double_check_gotchas": [
-      "flask_not_fastapi",
-      "scaffold_in_shellroute",
-      "binance_keys_from_db_not_env",
-      "strategy_never_modify_base",
-      "demo_account_admin_only",
-      "start_server_does_not_exist"
-    ]
-  },
-  "hooks": {
-    "on_flutter_change": "flutter analyze",
-    "on_backend_change": "python -m pytest tests/",
-    "on_migration": "never modify existing migrations — always add new ones"
-  },
-  "guardrails": {
-    "never_delete": ["runtime/logs/", "database/migrations/*.sql"],
-    "never_modify": ["backend/strategies/base_strategy.py", "config/unified_settings.py"],
-    "always_check_dual_mode": true,
-    "deploy_target": "docker",
-    "vps": "root@72.60.190.188"
   }
 }

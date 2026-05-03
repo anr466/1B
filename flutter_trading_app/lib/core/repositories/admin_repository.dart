@@ -167,6 +167,19 @@ class AdminRepository {
     throw Exception(data['message'] ?? 'فشل تحميل المستخدمين');
   }
 
+  Future<Map<String, dynamic>> getUserDetails(int userId) async {
+    final response = await _api.get(ApiEndpoints.adminUserDetails(userId));
+    final data = response.data;
+    if (data['success'] == true) {
+      final nested = data['data'];
+      if (nested is Map) {
+        return Map<String, dynamic>.from(nested);
+      }
+      throw Exception('بيانات المستخدم غير صالحة');
+    }
+    throw Exception(data['message'] ?? 'فشل تحميل تفاصيل المستخدم');
+  }
+
   Future<void> toggleUserTrading(int userId, bool enabled) async {
     final response = await _api.post(
       ApiEndpoints.adminToggleUserTrading(userId),
@@ -175,6 +188,30 @@ class AdminRepository {
     final data = response.data;
     if (data['success'] != true) {
       throw Exception(data['error'] ?? 'فشل تحديث حالة التداول');
+    }
+  }
+
+  Future<void> forceCloseUserPositions(int userId) async {
+    final response = await _api.post(
+      ApiEndpoints.adminForceCloseUserPositions(userId),
+    );
+    final data = response.data;
+    if (data['success'] != true) {
+      throw Exception(data['error'] ?? 'فشل إغلاق الصفقات');
+    }
+  }
+
+  Future<void> closePosition(int positionId, {String? reason, double? exitPrice}) async {
+    final response = await _api.post(
+      ApiEndpoints.adminClosePosition(positionId),
+      data: {
+        if (reason != null) 'reason': reason,
+        if (exitPrice != null) 'exit_price': exitPrice,
+      },
+    );
+    final data = response.data;
+    if (data['success'] != true) {
+      throw Exception(data['message'] ?? data['error'] ?? 'فشل إغلاق الصفقة');
     }
   }
 
@@ -360,5 +397,201 @@ class AdminRepository {
       return _unwrapPayload(data);
     }
     throw Exception(data['message'] ?? data['error'] ?? 'فشل تحميل الحالة اليومية');
+  }
+
+  // ─── ML ──────────────────────────────────────────
+  Future<Map<String, dynamic>> getMlBacktestStatus() async {
+    final response = await _api.get(ApiEndpoints.mlBacktestStatus);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل حالة الباك تست');
+  }
+
+  Future<Map<String, dynamic>> getMlReliability() async {
+    final response = await _api.get(ApiEndpoints.mlReliability);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل موثوقية ML');
+  }
+
+  Future<Map<String, dynamic>> getMlProgress() async {
+    final response = await _api.get(ApiEndpoints.mlProgress);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل تقدم ML');
+  }
+
+  Future<Map<String, dynamic>> getMlQualityMetrics() async {
+    final response = await _api.get(ApiEndpoints.mlQualityMetrics);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل مقاييس الجودة');
+  }
+
+  Future<Map<String, dynamic>> getAdminNotificationSettings() async {
+    final response = await _api.get(ApiEndpoints.adminNotificationSettings);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل إعدادات الإشعارات');
+  }
+
+  Future<Map<String, dynamic>> updateAdminNotificationSettings(
+    Map<String, dynamic> settings,
+  ) async {
+    final response = await _api.put(
+      ApiEndpoints.adminNotificationSettings,
+      data: settings,
+    );
+    return response.data;
+  }
+
+  // ─── Background Control ──────────────────────────
+  Future<Map<String, dynamic>> getBackgroundStatus() async {
+    final response = await _api.get(ApiEndpoints.backgroundStatus);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل حالة الخلفية');
+  }
+
+  Future<Map<String, dynamic>> startBackground() async {
+    final response = await _api.post(ApiEndpoints.backgroundStart);
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> stopBackground() async {
+    final response = await _api.post(ApiEndpoints.backgroundStop);
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> emergencyStopBackground() async {
+    final response = await _api.post(ApiEndpoints.backgroundEmergencyStop);
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> getBackgroundSettings() async {
+    final response = await _api.get(ApiEndpoints.backgroundSettings);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل إعدادات الخلفية');
+  }
+
+  Future<Map<String, dynamic>> updateBackgroundSettings(
+    Map<String, dynamic> settings,
+  ) async {
+    final response = await _api.put(
+      ApiEndpoints.backgroundSettings,
+      data: settings,
+    );
+    return response.data;
+  }
+
+  Future<({List<Map<String, dynamic>> entries, int total})> getBackgroundLogs({
+    int page = 1,
+    int perPage = 50,
+  }) async {
+    final response = await _api.get(
+      ApiEndpoints.backgroundLogs,
+      queryParameters: {'page': page, 'limit': perPage},
+    );
+    final data = response.data;
+    if (data['success'] == true) {
+      final nested = data['data'] ?? data;
+      return (
+        entries: List<Map<String, dynamic>>.from(nested['entries'] ?? []),
+        total: ParsingService.asInt(nested['total'] ?? 0),
+      );
+    }
+    return (entries: <Map<String, dynamic>>[], total: 0);
+  }
+
+  // ─── Logs ────────────────────────────────────────
+  Future<Map<String, dynamic>> getLogsStatistics() async {
+    final response = await _api.get(ApiEndpoints.logsStatistics);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل إحصائيات السجلات');
+  }
+
+  Future<Map<String, dynamic>> getLogsRetentionPolicy() async {
+    final response = await _api.get(ApiEndpoints.logsRetentionPolicy);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل سياسة الاحتفاظ');
+  }
+
+  Future<Map<String, dynamic>> updateLogsRetentionPolicy(
+    Map<String, dynamic> policy,
+  ) async {
+    final response = await _api.put(
+      ApiEndpoints.logsRetentionPolicy,
+      data: policy,
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> cleanOldLogs({int? olderThanDays}) async {
+    final response = await _api.post(
+      ApiEndpoints.logsCleanupOld,
+      data: {if (olderThanDays != null) 'older_than_days': olderThanDays},
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> cleanDuplicateLogs() async {
+    final response = await _api.post(ApiEndpoints.logsCleanupDuplicate);
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> clearAllLogs() async {
+    final response = await _api.post(ApiEndpoints.logsClear);
+    return response.data;
+  }
+
+  // ─── Wallet / PnL / Top Traders ──────────────────
+  Future<Map<String, dynamic>> getAdminWallet() async {
+    final response = await _api.get(ApiEndpoints.adminWallet);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل المحفظة');
+  }
+
+  Future<Map<String, dynamic>> getAdminPnl() async {
+    final response = await _api.get(ApiEndpoints.adminPnl);
+    final data = response.data;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('فشل تحميل الأرباح والخسائر');
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminTopTraders() async {
+    final response = await _api.get(ApiEndpoints.adminTopTraders);
+    final data = response.data;
+    if (data['success'] == true) {
+      final nested = data['data'] ?? data;
+      return List<Map<String, dynamic>>.from(nested['traders'] ?? []);
+    }
+    throw Exception('فشل تحميل كبار المتداولين');
+  }
+
+  Future<Map<String, dynamic>> getSystemStats() async {
+    final response = await _api.get(ApiEndpoints.adminSystemStats);
+    final data = response.data;
+    if (data is Map<String, dynamic> && data['success'] == true) {
+      return Map<String, dynamic>.from(data['data'] as Map);
+    }
+    if (data is Map && data['success'] == true) {
+      return Map<String, dynamic>.from(data['data'] as Map);
+    }
+    throw Exception('فشل تحميل إحصائيات النظام');
   }
 }

@@ -3,7 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/models/trade_model.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
+import 'package:trading_app/features/admin/screens/admin_background_control_screen.dart';
 import 'package:trading_app/features/admin/screens/admin_dashboard_screen.dart';
+import 'package:trading_app/features/admin/screens/admin_logs_dashboard_screen.dart';
+import 'package:trading_app/features/admin/screens/admin_ml_dashboard_screen.dart';
+import 'package:trading_app/features/admin/screens/admin_user_detail_screen.dart';
 import 'package:trading_app/features/admin/screens/error_details_screen.dart';
 import 'package:trading_app/features/admin/screens/system_logs_screen.dart';
 import 'package:trading_app/features/admin/screens/trading_control_screen.dart';
@@ -202,6 +206,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const UserManagementScreen(),
       ),
       GoRoute(
+        path: RouteNames.adminUserDetail,
+        builder: (_, state) {
+          final extra = state.extra;
+          final queryUserId = int.tryParse(state.uri.queryParameters['userId'] ?? '');
+          if (extra is Map<String, dynamic>) {
+            final userId = (extra['userId'] ?? extra['id']) as int?;
+            if (userId != null) {
+              return AdminUserDetailScreen(
+                userId: userId,
+                initialData: extra,
+              );
+            }
+          }
+          return AdminUserDetailScreen(userId: queryUserId ?? 0);
+        },
+      ),
+      GoRoute(
         path: RouteNames.systemLogs,
         builder: (_, __) => const SystemLogsScreen(),
       ),
@@ -210,6 +231,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => ErrorDetailsScreen(
           errorId: state.extra is int ? state.extra as int : 0,
         ),
+      ),
+      GoRoute(
+        path: RouteNames.adminMlDashboard,
+        builder: (_, __) => const AdminMLDashboardScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.adminBackgroundControl,
+        builder: (_, __) => const AdminBackgroundControlScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.adminLogsDashboard,
+        builder: (_, __) => const AdminLogsDashboardScreen(),
       ),
     ],
   );

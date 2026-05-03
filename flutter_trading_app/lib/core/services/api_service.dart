@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/services/storage_service.dart';
@@ -77,8 +78,8 @@ class ApiService {
           final response = await _dio.fetch(retryOptions);
           return handler.resolve(response);
         }
-      } catch (_) {
-        // keep original error path
+      } catch (e) {
+        debugPrint('[ApiService] connection recovery error: $e');
       } finally {
         _isRecoveringConnection = false;
       }
@@ -146,7 +147,8 @@ class ApiService {
           final response = await _dio.fetch(err.requestOptions);
           return handler.resolve(response);
         }
-      } catch (_) {
+      } catch (e) {
+        debugPrint('[ApiService] token refresh error: $e');
         _refreshCompleter!.complete(false);
       }
 
@@ -272,8 +274,8 @@ class ApiService {
         );
         return true;
       }
-    } catch (_) {
-      // silent fail — caller handles
+    } catch (e) {
+      debugPrint('[ApiService] _refreshToken error: $e');
     }
     return false;
   }

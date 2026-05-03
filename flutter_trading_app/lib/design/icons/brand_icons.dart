@@ -268,6 +268,63 @@ class BrandIcons {
     c.drawCircle(Offset(w * 0.5, h * 0.5), w * 0.32, p);
   }
 
+  static void memory(Canvas c, Size s, Paint p) {
+    final w = s.width, h = s.height;
+    // Chip body
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.1, h * 0.15, w * 0.8, h * 0.7),
+      Radius.circular(w * 0.06),
+    );
+    c.drawRRect(rect, p);
+    // inner lines
+    c.drawLine(Offset(w * 0.25, h * 0.3), Offset(w * 0.75, h * 0.3), p);
+    c.drawLine(Offset(w * 0.25, h * 0.45), Offset(w * 0.75, h * 0.45), p);
+    c.drawLine(Offset(w * 0.25, h * 0.6), Offset(w * 0.75, h * 0.6), p);
+    // pins left
+    for (int i = 0; i < 4; i++) {
+      c.drawLine(
+        Offset(w * 0.1, h * 0.22 + h * 0.14 * i),
+        Offset(w * 0.18, h * 0.22 + h * 0.14 * i),
+        p,
+      );
+    }
+    // pins right
+    for (int i = 0; i < 4; i++) {
+      c.drawLine(
+        Offset(w * 0.9, h * 0.22 + h * 0.14 * i),
+        Offset(w * 0.82, h * 0.22 + h * 0.14 * i),
+        p,
+      );
+    }
+  }
+
+  static void search(Canvas c, Size s, Paint p) {
+    final w = s.width, h = s.height;
+    c.drawCircle(Offset(w * 0.38, h * 0.38), w * 0.22, p);
+    c.drawLine(Offset(w * 0.55, h * 0.55), Offset(w * 0.85, h * 0.85), p);
+  }
+
+  static void trophy(Canvas c, Size s, Paint p) {
+    final w = s.width, h = s.height;
+    final path = Path()
+      ..moveTo(w * 0.3, h * 0.15)
+      ..lineTo(w * 0.7, h * 0.15)
+      ..lineTo(w * 0.7, h * 0.3)
+      ..lineTo(w * 0.82, h * 0.3)
+      ..lineTo(w * 0.82, h * 0.55)
+      ..quadraticBezierTo(w * 0.82, h * 0.75, w * 0.6, h * 0.75)
+      ..quadraticBezierTo(w * 0.53, h * 0.7, w * 0.5, h * 0.7)
+      ..quadraticBezierTo(w * 0.47, h * 0.7, w * 0.4, h * 0.75)
+      ..quadraticBezierTo(w * 0.18, h * 0.75, w * 0.18, h * 0.55)
+      ..lineTo(w * 0.18, h * 0.3)
+      ..lineTo(w * 0.3, h * 0.3)
+      ..close();
+    c.drawPath(path, p);
+    // handles
+    c.drawLine(Offset(w * 0.25, h * 0.85), Offset(w * 0.25, h * 0.7), p);
+    c.drawLine(Offset(w * 0.75, h * 0.85), Offset(w * 0.75, h * 0.7), p);
+  }
+
   static double _cos(double a) {
     // Using Taylor series approximation to avoid dart:math import in icons
     // Actually let's just use a lookup since we only have 6 angles

@@ -433,6 +433,18 @@ def register_mobile_auth_routes(bp, shared):
                     400,
                 )
 
+            # ✅ التحقق من قوة كلمة المرور
+            if len(password) < 8:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل",
+                        }
+                    ),
+                    400,
+                )
+
             if otp_service:
                 verified, result = otp_service.verify_email_otp(email, otp_code)
 
@@ -555,7 +567,7 @@ def register_mobile_auth_routes(bp, shared):
                                 """
                                 INSERT INTO user_notification_settings (user_id, settings_data)
                                 VALUES (%s, %s)
-                                ON CONFLICT DO NOTHING
+                                ON CONFLICT (user_id) DO NOTHING
                                 """,
                                 (
                                     user_id,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/system_status_model.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
@@ -58,7 +59,9 @@ class SystemStatusNotifier
       if (!_disposed && _initialLoadDone) {
         state = AsyncValue.data(status);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[SystemStatusNotifier] silent load error: $e');
+    }
   }
 
   Future<void> refresh() async {
@@ -97,7 +100,7 @@ final mlStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return repo.getMlStatus();
 });
 
-final adminPortfolioModeProvider = StateProvider<String?>((ref) => null);
+final adminPortfolioModeProvider = StateProvider<String>((ref) => 'demo');
 
 final adminPortfolioStateProvider = StateNotifierProvider<AdminPortfolioNotifier,
     UnifiedAsyncState<AdminPortfolioData>>((ref) {
@@ -131,6 +134,7 @@ class AdminPortfolioNotifier
     extends StateNotifier<UnifiedAsyncState<AdminPortfolioData>> {
   final Ref _ref;
   Timer? _pollingTimer;
+  bool _disposed = false;
 
   AdminPortfolioNotifier(this._ref)
       : super(UnifiedAsyncState<AdminPortfolioData>.initial()) {
@@ -150,6 +154,7 @@ class AdminPortfolioNotifier
   }
 
   Future<void> _silentFetch() async {
+    if (_disposed) return;
     try {
       final repo = _ref.read(adminRepositoryProvider);
       final results = await Future.wait([
@@ -167,13 +172,17 @@ class AdminPortfolioNotifier
         mlStatus: Map<String, dynamic>.from(results[2] as Map),
       );
 
+      if (_disposed) return;
       if (mounted) {
         state = UnifiedAsyncState<AdminPortfolioData>.loaded(data);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AdminPortfolioNotifier] silent fetch error: $e');
+    }
   }
 
   Future<void> fetch() async {
+    if (_disposed) return;
     state = UnifiedAsyncState<AdminPortfolioData>.loading();
     await _silentFetch();
   }
@@ -182,6 +191,7 @@ class AdminPortfolioNotifier
 
   @override
   void dispose() {
+    _disposed = true;
     _pollingTimer?.cancel();
     super.dispose();
   }
@@ -197,4 +207,9 @@ final dailyStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final repo = ref.watch(adminRepositoryProvider);
   final today = DateTime.now().toIso8601String().substring(0, 10);
   return repo.getDailyStatus(today);
+});
+
+final systemStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final repo = ref.watch(adminRepositoryProvider);
+  return repo.getSystemStats();
 });

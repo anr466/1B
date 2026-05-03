@@ -13,6 +13,7 @@ import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/flow_stepper.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
@@ -66,13 +67,17 @@ class _SecuritySettingsScreenState
             onChanged: (value) => oldPassword = value,
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: 'إرسال الرمز',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('إرسال الرمز'),
             ),
           ],
         ),
@@ -158,13 +163,17 @@ class _SecuritySettingsScreenState
             onChanged: (value) => newEmail = value,
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: 'إرسال الرمز',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('إرسال الرمز'),
             ),
           ],
         ),

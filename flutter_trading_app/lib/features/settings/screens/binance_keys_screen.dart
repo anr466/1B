@@ -29,6 +29,7 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
   bool _obscureSecret = true;
   bool _isSaving = false;
   bool _isValidating = false;
+  bool _isDeleting = false;
   bool _isValidated = false;
   String? _validatedFingerprint;
 
@@ -133,13 +134,17 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
             style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('إلغاء', style: TextStyle(color: cs.primary)),
             ),
-            TextButton(
+            AppButton(
+              label: 'تأكيد',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('تأكيد', style: TextStyle(color: cs.primary)),
             ),
           ],
         ),
@@ -186,6 +191,82 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _deleteKeys() async {
+    final auth = ref.read(authProvider);
+    if (auth.user == null) return;
+
+    final cs = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: cs.surfaceContainerHighest,
+          title: Text(
+            'حذف مفاتيح Binance',
+            style: TypographyTokens.h3(cs.error),
+          ),
+          content: Text(
+            'سيتم حذف مفاتيح Binance API الخاصة بك. لن يتمكن النظام من التداول الحقيقي بعد الحذف. هل أنت متأكد؟',
+            style: TypographyTokens.body(cs.onSurface.withValues(alpha: 0.7)),
+          ),
+          actions: [
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
+              onPressed: () => Navigator.of(ctx).pop(false),
+            ),
+            AppButton(
+              label: 'حذف',
+              variant: AppButtonVariant.danger,
+              isFullWidth: false,
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      final repo = ref.read(settingsRepositoryProvider);
+      final result = await repo.deleteBinanceKey(auth.user!.id);
+
+      if (!mounted) return;
+      if (result['success'] == true) {
+        _apiKeyCtrl.clear();
+        _apiSecretCtrl.clear();
+        setState(() {
+          _isValidated = false;
+          _validatedFingerprint = null;
+        });
+        AppSnackbar.show(
+          context,
+          message: 'تم حذف المفاتيح بنجاح',
+          type: SnackType.success,
+        );
+      } else {
+        AppSnackbar.show(
+          context,
+          message: result['error'] ?? result['message'] ?? 'تعذر حذف المفاتيح',
+          type: SnackType.error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackbar.show(
+        context,
+        message: UxMessages.networkError,
+        type: SnackType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
     }
   }
 
@@ -316,6 +397,16 @@ class _BinanceKeysScreenState extends ConsumerState<BinanceKeysScreen> {
                               ),
                             ),
                           ],
+                        ),
+
+                        const SizedBox(height: SpacingTokens.lg),
+
+                        // ─── Delete Button ───────────────────
+                        AppButton(
+                          label: 'حذف المفاتيح',
+                          variant: AppButtonVariant.danger,
+                          onPressed: _isSaving || _isValidating ? null : _deleteKeys,
+                          isLoading: _isDeleting,
                         ),
 
                         const SizedBox(height: SpacingTokens.lg),

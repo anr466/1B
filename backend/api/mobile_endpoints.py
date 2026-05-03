@@ -236,7 +236,8 @@ def get_user_portfolio(user_id):
                 rows = db.execute_query(base_query, (owner_id, demo_flag == 1))
                 if rows and len(rows) > 0:
                     return rows[0]
-            except Exception:
+            except Exception as e:
+                logger.debug(f"load_portfolio_base_balances failed: {e}")
                 pass
             return {}
 
@@ -375,7 +376,8 @@ def get_user_portfolio(user_id):
                         invested_balance = safe_float(
                             extra[0].get("invested_balance", 0)
                         )
-            except Exception:
+            except Exception as e:
+                logger.debug(f"portfolio backfill failed: {e}")
                 pass
 
         total_pnl = safe_float(
@@ -508,7 +510,8 @@ def get_user_stats(user_id):
                 rows = db.execute_query(base_query, (owner_id, demo_flag == 1))
                 if rows and len(rows) > 0:
                     return rows[0]
-            except Exception:
+            except Exception as e:
+                logger.debug(f"load_stats_base_balances failed: {e}")
                 pass
             return {}
 

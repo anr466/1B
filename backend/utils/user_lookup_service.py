@@ -33,7 +33,7 @@ def get_user_by_email(email: str) -> Optional[Dict]:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id, username, email, password_hash, email_verified,
-                          user_type, phone_number
+                          user_type, phone_number, is_active
                    FROM users
                    WHERE LOWER(email) = LOWER(%s)""",
                 (email,),
@@ -48,6 +48,7 @@ def get_user_by_email(email: str) -> Optional[Dict]:
                     "email_verified": row[4],
                     "user_type": row[5],
                     "phone_number": row[6],
+                    "is_active": row[7],
                 }
             return None
     except Exception as e:
@@ -70,7 +71,7 @@ def get_user_by_username(username: str) -> Optional[Dict]:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id, username, email, password_hash, email_verified,
-                          user_type, phone_number
+                          user_type, phone_number, is_active
                    FROM users
                    WHERE username = %s""",
                 (username,),
@@ -85,6 +86,7 @@ def get_user_by_username(username: str) -> Optional[Dict]:
                     "email_verified": row[4],
                     "user_type": row[5],
                     "phone_number": row[6],
+                    "is_active": row[7],
                 }
             return None
     except Exception as e:

@@ -14,7 +14,6 @@ import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
-import 'package:trading_app/design/widgets/financial_metric_tile.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
 import 'package:trading_app/design/widgets/pnl_indicator.dart';
@@ -28,6 +27,7 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
+  String _selectedRange = 'all';
   void _refresh() {
     ref.invalidate(statsProvider);
     ref.invalidate(analyticsTradesProvider);
@@ -61,6 +61,17 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     ),
                     const SizedBox(height: SpacingTokens.base),
 
+                    // ─── Date Range Filter ───────────
+                    _DateRangeFilter(
+                      selected: _selectedRange,
+                      onChanged: (v) {
+                        setState(() => _selectedRange = v);
+                        _refresh();
+                      },
+                    ),
+
+                    const SizedBox(height: SpacingTokens.base),
+
                     stats.when(
                       loading: () =>
                           const LoadingShimmer(itemCount: 4, itemHeight: 90),
@@ -70,6 +81,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                       ),
                       data: (s) => Column(
                         children: [
+                          // ─── Equity Curve (MAIN focus) ────────
+                          _equityCurveCard(context, ref),
+                          const SizedBox(height: SpacingTokens.md),
+
                           // ─── Performance Summary ──────────
                           AppCard(
                             level: 0,
@@ -160,46 +175,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                           ),
                           const SizedBox(height: SpacingTokens.md),
 
-                          // ─── Win/Loss ─────────────────────
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FinancialMetricTile(
-                                  label: 'نسبة الفوز',
-                                  value: '${s.winRate.toStringAsFixed(1)}%',
-                                  footer: _progressBar(
-                                    cs,
-                                    s.winRate / 100,
-                                    cs.primary,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: SpacingTokens.sm),
-                              Expanded(
-                                child: Tooltip(
-                                  message:
-                                      'إجمالي الأرباح ÷ إجمالي الخسائر. '
-                                      'قيمة > 1 تعني أن الأرباح أكبر من الخسائر. '
-                                      'قيمة مثالية: 1.5+',
-                                  child: FinancialMetricTile(
-                                    label: 'معامل الربح',
-                                    value: s.profitFactor.toStringAsFixed(2),
-                                    footer: _progressBar(
-                                      cs,
-                                      (s.profitFactor / 3).clamp(0, 1),
-                                      cs.primary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: SpacingTokens.md),
-
-                          // ─── Equity Curve ───────────────────
-                          _equityCurveCard(context, ref),
-                          const SizedBox(height: SpacingTokens.md),
-
                           // ─── Trades Breakdown ─────────────
                           AppCard(
                             padding: const EdgeInsets.all(SpacingTokens.md),
@@ -269,18 +244,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     );
   }
 
-  Widget _progressBar(ColorScheme cs, double value, Color color) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: LinearProgressIndicator(
-        value: value.clamp(0.0, 1.0),
-        backgroundColor: cs.outline.withValues(alpha: 0.2),
-        valueColor: AlwaysStoppedAnimation(color),
-        minHeight: 6,
-      ),
-    );
-  }
-
   Widget _breakdownRow(
     ColorScheme cs,
     String label,
@@ -319,7 +282,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     return trades.when(
       loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 190),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, __) => ErrorState(
+        message: 'تعذر تحميل البيانات',
+        onRetry: () => ref.invalidate(analyticsTradesProvider),
+      ),
       data: (list) {
         if (referenceBalance <= 0) return const SizedBox.shrink();
         final closed = list.where((t) => t.pnl != null).toList();
@@ -433,10 +399,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ),
               const SizedBox(height: SpacingTokens.sm),
               SizedBox(
-                height: 190,
+                height: 250,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -626,5 +592,66 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ? 5
         : 10;
     return step * pow10;
+  }
+}
+
+/// Date range filter — segmented control for analytics period
+class _DateRangeFilter extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  const _DateRangeFilter({required this.selected, required this.onChanged});
+
+  static const _ranges = [
+    ('today', 'اليوم'),
+    ('week', 'الأسبوع'),
+    ('month', 'الشهر'),
+    ('all', 'الكل'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      children: _ranges.map((r) {
+        final isSelected = selected == r.$1;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              end: r.$1 != 'all' ? SpacingTokens.xs : 0,
+            ),
+            child: GestureDetector(
+              onTap: () => onChanged(r.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: SpacingTokens.sm,
+                  vertical: SpacingTokens.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? cs.primary
+                      : cs.surfaceContainerHighest.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(SpacingTokens.radiusSm),
+                  border: Border.all(
+                    color: isSelected
+                        ? cs.primary
+                        : cs.outline.withValues(alpha: 0.3),
+                    width: isSelected ? 1.5 : 0.8,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  r.$2,
+                  style: TypographyTokens.label(
+                    isSelected ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 }

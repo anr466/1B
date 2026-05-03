@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:trading_app/core/constants/api_endpoints.dart';
 import 'package:trading_app/core/services/api_service.dart';
 import 'package:trading_app/core/services/storage_service.dart';
@@ -350,8 +351,8 @@ class AuthService {
     // Invalidate server-side session before clearing local data
     try {
       await _api.post('/auth/logout');
-    } catch (_) {
-      // Silent — network failure should not block local logout
+    } catch (e) {
+      debugPrint('[AuthService] logout server call error: $e');
     }
     await _storage.clearSessionPreservingLoginOptions();
   }

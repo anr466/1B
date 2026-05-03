@@ -245,14 +245,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 cs.onSurface.withValues(alpha: 0.5),
                               ),
                             ),
-                            TextButton(
+                            AppButton(
+                              label: 'تسجيل الدخول',
+                              variant: AppButtonVariant.text,
+                              isFullWidth: false,
                               onPressed: () => context.pop(),
-                              child: Text(
-                                'تسجيل الدخول',
-                                style: TypographyTokens.bodySmall(
-                                  cs.primary,
-                                ).copyWith(fontWeight: FontWeight.w600),
-                              ),
                             ),
                           ],
                         ),

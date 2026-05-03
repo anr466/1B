@@ -114,7 +114,7 @@ class SmartPerformanceTracker:
         """الحصول على تقرير صحة التعلم من DB"""
         report = {}
         with get_db_connection() as conn:
-            rows = conn.execute("SELECT strategy_name, regime, score, trades FROM strategy_learning").fetchall()
+            rows = conn.execute("SELECT strategy_name, regime, score, trades FROM strategy_learning LIMIT 1000").fetchall()
             for strategy, regime, score, trades in rows:
                 if strategy not in report:
                     report[strategy] = {}

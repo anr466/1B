@@ -626,6 +626,12 @@ _core_blueprints = [
             __import__("backend.api.system_endpoints", fromlist=["system_bp"]).system_bp
         ),
     ),
+    (
+        "Token Refresh",
+        lambda: (
+            __import__("backend.api.token_refresh_endpoint", fromlist=["token_refresh_bp"]).token_refresh_bp
+        ),
+    ),
 ]
 
 for name, loader in _core_blueprints:

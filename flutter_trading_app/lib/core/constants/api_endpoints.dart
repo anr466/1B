@@ -132,7 +132,7 @@ class ApiEndpoints {
   static String notificationRead(int notificationId) =>
       '/user/notifications/$notificationId/read';
   static const String notificationSettings = '/user/notifications/settings';
-  static const String fcmToken = '/user/fcm-token';
+  static const String fcmToken = '/notifications/fcm-token';
   static String tradeDetail(int tradeId) => '/user/trade/$tradeId';
 
   // ─── Secure Actions ─────────────────────────────
@@ -162,6 +162,10 @@ class ApiEndpoints {
   static String adminDeleteUser(int userId) => '/admin/users/$userId/delete';
   static String adminToggleUserTrading(int userId) =>
       '/admin/users/$userId/toggle-trading';
+  static String adminForceCloseUserPositions(int userId) =>
+      '/admin/users/$userId/force-close';
+  static String adminClosePosition(int positionId) =>
+      '/admin/positions/$positionId/close';
 
   // ─── Admin Trading Control ──────────────────────
   static const String tradingState = '/admin/trading/state';
@@ -191,4 +195,38 @@ class ApiEndpoints {
   static String retrySystemError(int errorId) =>
       '/admin/system-errors/$errorId/retry';
   static const String clearResolvedErrors = '/admin/errors/resolved';
+
+  // ─── ML ──────────────────────────────────────────
+  static const String mlBacktestStatus = '/admin/ml/backtest-status';
+  static const String mlReliability = '/admin/ml/reliability';
+  static const String mlStatus = '/admin/ml/status';
+  static const String mlProgress = '/admin/ml/progress';
+  static const String mlQualityMetrics = '/admin/ml/quality-metrics';
+  static const String adminNotificationSettings =
+      '/admin/notification-settings';
+
+  // ─── Background Control ──────────────────────────
+  static const String backgroundStart = '/admin/background/start';
+  static const String backgroundStop = '/admin/background/stop';
+  static const String backgroundEmergencyStop =
+      '/admin/background/emergency-stop';
+  static const String backgroundStatus = '/admin/background/status';
+  static const String backgroundSettings = '/admin/background/settings';
+  static const String backgroundLogs = '/admin/background/logs';
+
+  // ─── Logs ────────────────────────────────────────
+  static const String adminAuditLog = '/admin/audit/log';
+  static const String adminReportsGenerate = '/admin/reports/generate';
+  static String adminReportDownload(String reportId) =>
+      '/admin/reports/download/$reportId';
+  static const String logsCleanupOld = '/admin/logs/cleanup/old';
+  static const String logsCleanupDuplicate = '/admin/logs/cleanup/duplicate';
+  static const String logsRetentionPolicy = '/admin/logs/retention-policy';
+  static const String logsStatistics = '/admin/logs/statistics';
+  static const String logsClear = '/admin/logs/clear';
+
+  // ─── Wallet / PnL / Top Traders ──────────────────
+  static const String adminWallet = '/admin/wallet';
+  static const String adminPnl = '/admin/pnl';
+  static const String adminTopTraders = '/admin/top-traders';
 }

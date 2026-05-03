@@ -490,7 +490,8 @@ def register_registration_routes(bp, shared):
             ).decode("utf-8")
 
             user_id = None
-            is_verified = bool(is_phone_verified)
+            email_verified = False
+            is_phone_verified_flag = bool(is_phone_verified)
 
             try:
                 with db_manager.get_write_connection() as conn:
@@ -542,8 +543,8 @@ def register_registration_routes(bp, shared):
                                 password_hash,
                                 phone_number,
                                 full_name,
-                                is_verified,
-                                bool(is_phone_verified),
+                                email_verified,
+                                is_phone_verified_flag,
                                 verification_method,
                             ),
                         )
@@ -575,7 +576,7 @@ def register_registration_routes(bp, shared):
                             INSERT INTO user_notification_settings (
                                 user_id, settings_data
                             ) VALUES (%s, %s)
-                            ON CONFLICT DO NOTHING
+                            ON CONFLICT (user_id) DO NOTHING
                         """,
                             (
                                 user_id,
@@ -895,7 +896,7 @@ def register_registration_routes(bp, shared):
                             INSERT INTO user_notification_settings (
                                 user_id, settings_data
                             ) VALUES (%s, %s)
-                            ON CONFLICT DO NOTHING
+                            ON CONFLICT (user_id) DO NOTHING
                         """,
                             (
                                 user_id,

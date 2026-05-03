@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trading_app/core/models/trade_model.dart';
+import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/money_text.dart';
@@ -219,7 +223,11 @@ class TradeDetailScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: SpacingTokens.md),
+                    if (t.isOpen) ...[
+                      const SizedBox(height: SpacingTokens.md),
+                      _CloseTradeButton(trade: t),
+                      const SizedBox(height: SpacingTokens.md),
+                    ],
                     if (t.strategy != null ||
                         t.notes != null ||
                         t.timeframe != null)
@@ -311,6 +319,84 @@ class TradeDetailScreen extends ConsumerWidget {
           '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return iso;
+    }
+  }
+}
+
+class _CloseTradeButton extends ConsumerStatefulWidget {
+  final TradeModel trade;
+  const _CloseTradeButton({required this.trade});
+
+  @override
+  ConsumerState<_CloseTradeButton> createState() => _CloseTradeButtonState();
+}
+
+class _CloseTradeButtonState extends ConsumerState<_CloseTradeButton> {
+  bool _isClosing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdmin = ref.watch(authProvider).isAdmin;
+    if (!isAdmin) return const SizedBox.shrink();
+
+    return AppButton(
+      label: 'إغلاق الصفقة يدوياً (أدمن)',
+      variant: AppButtonVariant.danger,
+      icon: Icons.close,
+      isLoading: _isClosing,
+      onPressed: _isClosing ? null : _handleCloseTrade,
+    );
+  }
+
+  Future<void> _handleCloseTrade() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد الإغلاق'),
+        content: Text(
+          'هل أنت متأكد من إغلاق صفقة ${widget.trade.symbol} يدوياً؟\n'
+          'سعر الدخول: \$${widget.trade.entryPrice.toStringAsFixed(6)}',
+        ),
+        actions: [
+          AppButton(
+            label: 'إلغاء',
+            variant: AppButtonVariant.text,
+            isFullWidth: false,
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          AppButton(
+            label: 'إغلاق',
+            variant: AppButtonVariant.danger,
+            isFullWidth: false,
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isClosing = true);
+    try {
+      final positionId = widget.trade.id ?? 0;
+      final repo = ref.read(adminRepositoryProvider);
+      await repo.closePosition(positionId, reason: 'MANUAL_CLOSE');
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          message: 'تم إغلاق صفقة ${widget.trade.symbol}',
+          type: SnackType.success,
+        );
+        ref.invalidate(recentTradesProvider);
+        ref.invalidate(activePositionsProvider);
+        ref.invalidate(tradesListProvider);
+        setState(() => _isClosing = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        AppSnackbar.show(context, message: 'خطأ: $e', type: SnackType.error);
+        setState(() => _isClosing = false);
+      }
     }
   }
 }

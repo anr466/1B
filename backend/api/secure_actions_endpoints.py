@@ -745,12 +745,14 @@ def cancel_verification(action):
 
         try:
             pending = _get_pending_verification(user_id, action)
-        except Exception:
+        except Exception as e:
+            logger.error(f"verification check failed: {e}")
             pending = None
         if pending:
             try:
                 _delete_pending_verification(user_id, action)
-            except Exception:
+            except Exception as e:
+                logger.error(f"delete pending verification failed: {e}")
                 pass
             return jsonify({"success": True, "message": "تم إلغاء طلب التحقق"})
 
@@ -779,7 +781,7 @@ def execute_secure_action(
                 "Binance client permissions API is unavailable"
             )
 
-        with db_manager.get_connection() as conn:
+        with db_manager.get_write_connection() as conn:
             cursor = conn.cursor()
 
             if action == "change_name":

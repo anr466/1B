@@ -78,7 +78,7 @@ class AdminNotificationService:
 
                 # التحقق من وجود إعدادات
                 cursor.execute(
-                    "SELECT * FROM admin_notification_settings WHERE id = 1"
+                    "SELECT id, telegram_enabled, telegram_bot_token, telegram_chat_id, email_enabled, admin_email, webhook_enabled, webhook_url, push_enabled, notify_on_error, notify_on_trade, notify_on_warning FROM admin_notification_settings WHERE id = 1"
                 )
                 settings = cursor.fetchone()
 
@@ -628,7 +628,7 @@ class AdminNotificationService:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    SELECT * FROM system_alerts
+                    SELECT id, alert_type, title, message, severity, data, created_at, read FROM system_alerts
                     WHERE read = 0
                     ORDER BY created_at DESC
                     LIMIT %s

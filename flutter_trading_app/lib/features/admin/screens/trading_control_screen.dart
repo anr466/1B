@@ -16,6 +16,7 @@ import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
+import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 
 /// ────────────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ class TradingControlScreen extends ConsumerWidget {
           child: Column(
             children: [
               AppScreenHeader(title: 'التحكم بالنظام', showBack: true),
+              const DemoRealBanner(),
               Expanded(
                 child: RefreshIndicator(
                   color: cs.primary,
@@ -388,15 +390,19 @@ class TradingControlScreen extends ConsumerWidget {
                       : 'سيبدأ محرك التداول في فتح صفقات جديدة تلقائياً.'),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: isStopping
+                  ? 'إيقاف'
+                  : (isResuming ? 'استئناف' : 'تشغيل'),
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, true),
-              child: Text(
-                isStopping ? 'إيقاف' : (isResuming ? 'استئناف' : 'تشغيل'),
-              ),
             ),
           ],
         ),
@@ -495,7 +501,9 @@ class TradingControlScreen extends ConsumerWidget {
           );
           return;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[TradingControl] toggleTrading error recovery: $e');
+      }
 
       if (context.mounted) {
         AppSnackbar.show(
@@ -527,16 +535,17 @@ class TradingControlScreen extends ConsumerWidget {
             'سيتم إيقاف جميع عمليات التداول فوراً وإغلاق جميع الصفقات المفتوحة. هل أنت متأكد؟',
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: 'إيقاف طوارئ',
+              variant: AppButtonVariant.danger,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, true),
-              child: Text(
-                'إيقاف طوارئ',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
             ),
           ],
         ),
@@ -623,7 +632,9 @@ class TradingControlScreen extends ConsumerWidget {
           );
           return;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[TradingControl] emergencyStop error recovery: $e');
+      }
 
       if (context.mounted) {
         AppSnackbar.show(
@@ -658,16 +669,17 @@ class TradingControlScreen extends ConsumerWidget {
             'سيتم حذف جميع الصفقات التجريبية وإعادة ضبط الرصيد التجريبي إلى الوضع الافتراضي. لا يؤثر على الحساب الحقيقي. هل أنت متأكد؟',
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: 'إعادة الضبط',
+              variant: AppButtonVariant.danger,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, true),
-              child: Text(
-                'إعادة الضبط',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
             ),
           ],
         ),
@@ -727,13 +739,17 @@ class TradingControlScreen extends ConsumerWidget {
             'سيتم إعادة تعيين حالة النظام ومسح الخطأ. هل تريد المتابعة؟',
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'إلغاء',
+              variant: AppButtonVariant.text,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء'),
             ),
-            TextButton(
+            AppButton(
+              label: 'إعادة تعيين',
+              variant: AppButtonVariant.primary,
+              isFullWidth: false,
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('إعادة تعيين'),
             ),
           ],
         ),
@@ -804,7 +820,9 @@ class TradingControlScreen extends ConsumerWidget {
           );
           return;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[TradingControl] resetError error recovery: $e');
+      }
 
       if (context.mounted) {
         AppSnackbar.show(

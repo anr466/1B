@@ -11,6 +11,8 @@ import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/empty_state.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
+import 'package:trading_app/design/widgets/app_button.dart';
+import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
 /// Only loads errors that require admin intervention and are NOT yet resolved
@@ -51,6 +53,7 @@ class SystemLogsScreen extends ConsumerWidget {
                   onDone: () => ref.invalidate(_activeErrorsProvider),
                 ),
               ),
+              const DemoRealBanner(),
               Expanded(
                 child: RefreshIndicator(
                   color: cs.primary,
@@ -84,17 +87,35 @@ class SystemLogsScreen extends ConsumerWidget {
       ),
     );
   }
+
 }
 
 // ─── Clear Resolved Button ────────────────────────────────────────────────────
 
-class _ClearResolvedButton extends ConsumerWidget {
+class _ClearResolvedButton extends ConsumerStatefulWidget {
   final VoidCallback onDone;
   const _ClearResolvedButton({required this.onDone});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ClearResolvedButton> createState() => _ClearResolvedButtonState();
+}
+
+class _ClearResolvedButtonState extends ConsumerState<_ClearResolvedButton> {
+  bool _isClearing = false;
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    if (_isClearing) {
+      return const Padding(
+        padding: EdgeInsets.all(SpacingTokens.md),
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
     return IconButton(
       tooltip: 'مسح السجلات المحلولة',
       icon: Icon(
@@ -112,37 +133,44 @@ class _ClearResolvedButton extends ConsumerWidget {
                 'سيتم حذف جميع الأخطاء المحلولة. هل تريد المتابعة؟',
               ),
               actions: [
-                TextButton(
+                AppButton(
+                  label: 'إلغاء',
+                  variant: AppButtonVariant.text,
+                  isFullWidth: false,
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('إلغاء'),
                 ),
-                TextButton(
+                AppButton(
+                  label: 'مسح',
+                  variant: AppButtonVariant.danger,
+                  isFullWidth: false,
                   onPressed: () => Navigator.pop(context, true),
-                  child: Text('مسح', style: TextStyle(color: cs.error)),
                 ),
               ],
             ),
           ),
         );
         if (confirmed != true) return;
+        setState(() => _isClearing = true);
         try {
           final repo = ref.read(adminRepositoryProvider);
           final deleted = await repo.clearResolvedErrors();
-          onDone();
-          if (context.mounted) {
+          widget.onDone();
+          if (mounted) {
             AppSnackbar.show(
               context,
               message: 'تم حذف $deleted سجل',
               type: SnackType.success,
             );
+            setState(() => _isClearing = false);
           }
         } catch (_) {
-          if (context.mounted) {
+          if (mounted) {
             AppSnackbar.show(
               context,
               message: 'تعذر إتمام العملية',
               type: SnackType.error,
             );
+            setState(() => _isClearing = false);
           }
         }
       },
@@ -209,7 +237,7 @@ class _ErrorCard extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: SpacingTokens.sm,
-                              vertical: 2,
+                              vertical: SpacingTokens.xxs,
                             ),
                             decoration: BoxDecoration(
                               color: severityColor.withValues(alpha: 0.15),
@@ -296,6 +324,32 @@ class _ResolveButtonState extends ConsumerState<_ResolveButton> {
     }
     return GestureDetector(
       onTap: () async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('تأكيد الحل'),
+              content: const Text('هل أنت متأكد من تعليم هذا الخطأ كمحلول؟'),
+              actions: [
+                AppButton(
+                  label: 'إلغاء',
+                  variant: AppButtonVariant.text,
+                  isFullWidth: false,
+                  onPressed: () => Navigator.pop(context, false),
+                ),
+                AppButton(
+                  label: 'تأكيد',
+                  variant: AppButtonVariant.primary,
+                  isFullWidth: false,
+                  onPressed: () => Navigator.pop(context, true),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirmed != true) return;
+
         setState(() => _loading = true);
         try {
           final repo = ref.read(adminRepositoryProvider);

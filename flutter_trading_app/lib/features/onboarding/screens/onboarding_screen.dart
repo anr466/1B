@@ -5,6 +5,7 @@ import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
+import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/main.dart';
 import 'package:trading_app/navigation/route_names.dart';
@@ -50,7 +51,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final storage = ref.read(storageServiceProvider);
     await storage.setOnboardingDone(true);
     if (!mounted) return;
-    context.go(RouteNames.login);
+    final auth = ref.read(authProvider);
+    if (auth.isAuthenticated) {
+      context.pop();
+    } else {
+      context.go(RouteNames.login);
+    }
   }
 
   Future<void> _next() async {
@@ -81,23 +87,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 alignment: AlignmentDirectional.topStart,
                 child: Padding(
                   padding: const EdgeInsets.all(SpacingTokens.base),
-                  child: TextButton(
-                    key: const Key('onboarding_skip_button'),
+                  child: AppButton(
+                    label: 'تخطي',
+                    variant: AppButtonVariant.text,
+                    isFullWidth: false,
                     onPressed: _completeOnboarding,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: SpacingTokens.sm,
-                        vertical: SpacingTokens.xs,
-                      ),
-                      minimumSize: const Size(48, 44),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      'تخطي',
-                      style: TypographyTokens.bodySmall(
-                        cs.onSurface.withValues(alpha: 0.72),
-                      ).copyWith(fontWeight: FontWeight.w600),
-                    ),
                   ),
                 ),
               ),
@@ -166,14 +160,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   final isActive = i == _currentPage;
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    margin: const EdgeInsets.symmetric(horizontal: SpacingTokens.xs),
                     width: isActive ? 24 : 8,
                     height: 8,
                     decoration: BoxDecoration(
                       color: isActive
                           ? cs.primary
                           : cs.outline.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(SpacingTokens.xs),
                     ),
                   );
                 }),

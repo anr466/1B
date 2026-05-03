@@ -83,6 +83,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _initializeBiometricLogin({bool allowAutoPrompt = true}) async {
+    if (_isBiometricLoginInProgress) return;
     final storage = ref.read(storageServiceProvider);
     final bio = ref.read(biometricServiceProvider);
 
@@ -159,12 +160,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         await storage.clearRememberedCredentials();
       }
 
-      // Always save biometric credentials for biometric login
-      // This is separate from "remember me" - user can use biometric without remembering credentials
+      // Save biometric credentials only when biometric is explicitly enabled in settings
       if (!mounted) return;
-      await ref
-          .read(authServiceProvider)
-          .saveCredentialsForBiometric(email, password);
+      if (storage.biometricEnabled) {
+        await ref
+            .read(authServiceProvider)
+            .saveCredentialsForBiometric(email, password);
+      }
 
       if (!mounted) return;
       context.go(RouteNames.dashboard);
@@ -254,6 +256,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (!mounted) return;
     final auth = ref.read(authProvider);
     if (auth.isAuthenticated) {
+      // Re-save credentials in case they changed
+      final storage = ref.read(storageServiceProvider);
+      if (storage.rememberMeEnabled) {
+        await storage.saveRememberedCredentials(savedUser, savedPass);
+      }
+      if (storage.biometricEnabled) {
+        await ref
+            .read(authServiceProvider)
+            .saveCredentialsForBiometric(savedUser, savedPass);
+      }
       // Mark biometric as trusted after successful authentication
       ref.read(biometricTrustProvider.notifier).markTrusted();
       setState(() => _isBiometricLoginInProgress = false);
@@ -357,51 +369,41 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                   const SizedBox(height: SpacingTokens.sm),
 
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => setState(() => _rememberMe = !_rememberMe),
-                      borderRadius: BorderRadius.circular(
-                        SpacingTokens.radiusMd,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: SpacingTokens.xs,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: SpacingTokens.xs,
+                    ),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: _rememberMe,
+                          onChanged: (value) {
+                            setState(() => _rememberMe = value ?? false);
+                          },
                         ),
-                        child: Row(
-                          children: [
-                            Checkbox(
-                              value: _rememberMe,
-                              onChanged: (value) {
-                                setState(() => _rememberMe = value ?? false);
-                              },
+                        const SizedBox(width: SpacingTokens.xs),
+                        Expanded(
+                          child: Text(
+                            'تذكرني / حفظ بيانات الدخول',
+                            style: TypographyTokens.bodySmall(
+                              cs.onSurface.withValues(alpha: 0.82),
                             ),
-                            const SizedBox(width: SpacingTokens.xs),
-                            Expanded(
-                              child: Text(
-                                'تذكرني / حفظ بيانات الدخول',
-                                style: TypographyTokens.bodySmall(
-                                  cs.onSurface.withValues(alpha: 0.82),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
 
                   // ─── Forgot Password ─────────────────
                   Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: AppButton(
+                      label: 'نسيت كلمة المرور؟',
+                      variant: AppButtonVariant.text,
+                      isFullWidth: false,
                       onPressed: () => context.push(RouteNames.forgotPassword),
-                      child: Text(
-                        'نسيت كلمة المرور؟',
-                        style: TypographyTokens.bodySmall(cs.primary),
                       ),
                     ),
-                  ),
 
                   const SizedBox(height: SpacingTokens.lg),
 
@@ -425,36 +427,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                       return Column(
                         children: [
-                          SizedBox(
-                            width: double.infinity,
+                          AppButton(
+                            label: _isBiometricLoginInProgress
+                                ? 'جاري التحقق بالبصمة...'
+                                : 'الدخول بالبصمة',
+                            variant: AppButtonVariant.text,
+                            icon: Icons.fingerprint,
+                            isFullWidth: true,
                             height: 46,
-                            child: TextButton.icon(
-                              onPressed: isAnyAuthLoading
-                                  ? null
-                                  : () => _biometricLogin(),
-                              icon: Icon(
-                                Icons.fingerprint,
-                                color: cs.primary,
-                                size: 24,
-                              ),
-                              label: Text(
-                                _isBiometricLoginInProgress
-                                    ? 'جاري التحقق بالبصمة...'
-                                    : 'الدخول بالبصمة',
-                                style: TypographyTokens.body(cs.primary),
-                              ),
-                              style: TextButton.styleFrom(
-                                backgroundColor: cs.primary.withValues(
-                                  alpha: 0.06,
-                                ),
-                                foregroundColor: cs.primary,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    SpacingTokens.radiusMd,
-                                  ),
-                                ),
-                              ),
-                            ),
+                            onPressed: isAnyAuthLoading
+                                ? null
+                                : () => _biometricLogin(),
                           ),
                         ],
                       );
@@ -473,22 +456,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           cs.onSurface.withValues(alpha: 0.65),
                         ),
                       ),
-                      TextButton(
+                      AppButton(
+                        label: 'تسجيل حساب جديد',
+                        variant: AppButtonVariant.outline,
+                        isFullWidth: false,
                         onPressed: () => context.push(RouteNames.register),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: SpacingTokens.sm,
-                            vertical: SpacingTokens.xs,
-                          ),
-                          minimumSize: const Size(48, 40),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: Text(
-                          'إنشاء حساب',
-                          style: TypographyTokens.bodySmall(
-                            cs.primary,
-                          ).copyWith(fontWeight: FontWeight.w700),
-                        ),
                       ),
                     ],
                   ),

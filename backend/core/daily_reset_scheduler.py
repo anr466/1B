@@ -49,6 +49,7 @@ class DailyResetScheduler:
                 SELECT id, username, user_type
                 FROM users
                 WHERE is_active = TRUE
+                LIMIT 1000
             """)
 
             if not users:

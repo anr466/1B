@@ -3,6 +3,7 @@
 """
 
 from flask import Blueprint, request, jsonify
+from backend.api.auth_middleware import require_auth
 import logging
 import os
 
@@ -37,6 +38,7 @@ main_logger = logging.getLogger("__main__")
 
 
 @client_logs_bp.route("/client-logs", methods=["POST"])
+@require_auth
 def receive_client_logs():
     """
     استقبال سجلات من التطبيق وحفظها في سجل الخادم
@@ -95,6 +97,7 @@ def receive_client_logs():
 
 
 @client_logs_bp.route("/client-logs/batch", methods=["POST"])
+@require_auth
 def receive_client_logs_batch():
     """
     استقبال دفعة من السجلات

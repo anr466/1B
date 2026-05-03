@@ -676,6 +676,144 @@ def register_admin_users_routes(bp, shared):
             logger.error(f"خطأ في toggle trading للمستخدم {user_id}: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
 
+    @bp.route("/users/<int:user_id>/force-close", methods=["POST"])
+    @require_admin
+    def force_close_user_positions(user_id):
+        """إغلاق جميع الصفقات المفتوحة لمستخدم معين"""
+        try:
+            db = db_manager
+            with db.get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT id, user_id, symbol, entry_price, quantity, position_type, is_demo
+                    FROM active_positions
+                    WHERE user_id = %s AND is_active = TRUE
+                    """,
+                    (user_id,),
+                )
+                positions = cursor.fetchall()
+
+            if not positions:
+                return jsonify(
+                    {"success": True, "message": "لا توجد صفقات مفتوحة", "count": 0}
+                )
+
+            admin_user_id = getattr(g, "current_user_id", "unknown")
+            admin_username = getattr(g, "current_username", "unknown")
+
+            closed = 0
+            errors = []
+
+            for pos in positions:
+                pid = pos["id"] if hasattr(pos, "keys") else pos[0]
+                symbol = pos["symbol"] if hasattr(pos, "keys") else pos[2]
+                raw_entry = pos["entry_price"] if hasattr(pos, "keys") else pos[3]
+                raw_qty = pos["quantity"] if hasattr(pos, "keys") else pos[4]
+                raw_type = pos["position_type"] if hasattr(pos, "keys") else pos[5]
+                raw_demo = pos["is_demo"] if hasattr(pos, "keys") else pos[6]
+
+                entry_price = float(raw_entry or 0)
+                quantity = float(raw_qty or 0)
+                if entry_price <= 0 or quantity <= 0:
+                    errors.append({"position_id": pid, "error": "invalid_data"})
+                    continue
+
+                exit_price = 0.0
+                try:
+                    from backend.utils.data_provider import DataProvider
+
+                    market_price = DataProvider().get_current_price(symbol)
+                    if market_price and float(market_price) > 0:
+                        exit_price = float(market_price)
+                except Exception:
+                    pass
+
+                if exit_price <= 0:
+                    exit_price = entry_price
+
+                position_type = str(raw_type or "long").lower()
+                is_long = position_type in ("long", "buy")
+                pnl_raw = (
+                    ((exit_price - entry_price) * quantity)
+                    if is_long
+                    else ((entry_price - exit_price) * quantity)
+                )
+
+                is_demo = int(raw_demo or 0)
+                DEMO_COMMISSION_RATE = 0.001
+                exit_commission = (
+                    round(exit_price * quantity * DEMO_COMMISSION_RATE, 8)
+                    if bool(is_demo)
+                    else 0.0
+                )
+                pnl = pnl_raw - exit_commission
+
+                close_ok = db.close_position(
+                    position_id=pid,
+                    exit_price=exit_price,
+                    exit_reason="ADMIN_FORCE_CLOSE",
+                    pnl=pnl,
+                    exit_commission=exit_commission,
+                    exit_order_id=f"ADMIN_FORCE_CLOSE_{admin_user_id}",
+                )
+
+                if close_ok:
+                    try:
+                        with db.get_connection() as balance_conn:
+                            bal_row = balance_conn.execute(
+                                "SELECT available_balance FROM portfolio WHERE user_id = %s AND is_demo = %s LIMIT 1",
+                                (user_id, bool(is_demo)),
+                            ).fetchone()
+                        if bal_row is not None:
+                            available_before = float(bal_row[0] or 0)
+                            new_available = available_before + pnl
+                            db.update_user_balance(
+                                user_id, new_available, bool(is_demo)
+                            )
+                    except Exception as bal_err:
+                        logger.warning(
+                            f"⚠️ force-close balance sync failed for pos #{pid}: {bal_err}"
+                        )
+
+                    closed += 1
+                else:
+                    errors.append(
+                        {"position_id": pid, "error": "close_position_failed"}
+                    )
+
+            logger.info(
+                f"🔒 Admin {admin_username} (id={admin_user_id}) force-closed {closed}"
+                f" positions for user {user_id}"
+            )
+
+            if audit_logger:
+                audit_logger.log(
+                    action="force_close_user_positions",
+                    user_id=user_id,
+                    details={
+                        "closed_count": closed,
+                        "total": len(positions),
+                        "errors": errors if errors else None,
+                        "admin_id": admin_user_id,
+                    },
+                )
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"تم إغلاق {closed} صفقة",
+                    "data": {
+                        "closed_count": closed,
+                        "total": len(positions),
+                        "errors": errors if errors else None,
+                    },
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"خطأ في force close للمستخدم {user_id}: {e}")
+            return jsonify({"success": False, "message": str(e)}), 500
+
     @bp.route("/users/<int:user_id>/delete", methods=["DELETE"])
     @require_admin
     def delete_user(user_id):

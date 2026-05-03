@@ -107,6 +107,7 @@ def check_binance_api():
 
 
 @health_bp.route("/admin/system/health", methods=["GET"])
+@require_admin
 def get_system_health():
     """
     الحصول على حالة جميع الأنظمة
@@ -154,6 +155,7 @@ def get_system_health():
 
 
 @health_bp.route("/admin/system/critical-errors", methods=["GET"])
+@require_admin
 def get_critical_errors():
     """
     الحصول على الأخطاء الحرجة فقط
@@ -237,6 +239,7 @@ def resolve_error(error_id):
 
 
 @health_bp.route("/admin/system/restart", methods=["POST"])
+@require_admin
 def restart_system():
     """
     ⛔ DEPRECATED: استخدم POST /api/admin/trading/start (State Machine)

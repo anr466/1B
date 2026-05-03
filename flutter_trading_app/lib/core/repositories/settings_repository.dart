@@ -147,6 +147,11 @@ class SettingsRepository {
     return response.data;
   }
 
+  Future<Map<String, dynamic>> deleteBinanceKey(int userId) async {
+    final response = await _api.delete(ApiEndpoints.deleteBinanceKey(userId));
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> getDailyStatus(
     int userId, {
     String? mode,
