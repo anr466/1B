@@ -1,4 +1,4 @@
-# 🏗️ Trading AI Bot — Full Architecture
+# 🏗️ Trading AI Bot — Architecture
 
 > Load this file when working on screens, providers, navigation, data flow, or backend API design.
 
@@ -7,17 +7,16 @@
 ## 1. App Philosophy & Roles
 
 ### User (مستخدم)
-- Full self-management: register, login, manage profile, manage API keys, control trading on/off
-- Set all risk parameters: stop loss %, take profit %, trade amount, position size, max positions, risk level, daily loss limit
-- View portfolio, trades, analytics, notifications
-- One portfolio only (real trading)
+- **Full self-management**: register, login, manage profile, manage API keys, control trading on/off
+- **Set all risk parameters**: stop loss %, take profit %, trade amount, position size, max positions, risk level, daily loss limit
+- **View**: portfolio, trades, analytics, notifications
+- **One portfolio only** (real trading)
 
 ### Admin (مدير)
 - **System control only** — does NOT manage individual user accounts
-- Controls: trading engine start/stop/emergency-stop, ML learning system, background scheduler
-- Views: system stats, user list (read-only), system logs, ML metrics
-- Has TWO independent portfolios: Demo + Real, each with independent balance and trading toggle
-- Can switch between demo/real modes — screens reflect the active portfolio's data
+- **Controls**: trading engine start/stop/emergency-stop, ML learning, background scheduler, system logs
+- **Has TWO independent portfolios**: Demo + Real, each with independent balance and trading toggle
+- **Can switch** between demo/real modes from PortfolioScreen/TradingSettingsScreen
 - **Cannot**: block users, reset passwords, force-close other users' positions, toggle other users' trading
 
 ### Key Principle
@@ -25,342 +24,480 @@
 
 ---
 
-## 2. Backend Architecture (Flask + PostgreSQL)
+## 2. User Journey (Complete Flow)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    start_server.py                       │
-│  Registers Blueprints → auth_bp, admin_unified_bp,      │
-│  mobile_endpoints_bp, token_refresh_bp, smart_exit_bp,  │
-│  ml_learning_bp, fcm_bp, background_bp, system_health_bp│
-├─────────────────────────────────────────────────────────┤
-│                  Auth Layer                              │
-│  auth_middleware.py → require_auth, require_admin        │
-│  ❌ require_auth: validates JWT, sets g.user_id          │
-│  ❌ require_auth_atomic: validates JWT + checks URL      │
-│     user_id matches g.current_user_id (for writes)       │
-│  ❌ require_admin: extends require_auth + checks admin   │
-├─────────────────────────────────────────────────────────┤
-│              Database Layer                              │
-│  database_manager.py → PostgresConnectionWrapper         │
-│  PostgresCursorWrapper → safe execute/fetchone/fetchall  │
-│  ⚠️ INSERT OR REPLACE → translated to ON CONFLICT       │
-│  ⚠️ POSTGRES_UPSERT_CONFLICTS dict maps table→columns   │
-├─────────────────────────────────────────────────────────┤
-│               Core Tables (postgres_schema.sql)           │
-│  users, active_positions, portfolio, user_settings,      │
-│  successful_coins, trading_signals, notifications,       │
-│  user_binance_keys, system_status, security_audit_log,   │
-│  system_errors, activity_logs, strategy_learning,        │
-│  admin_notification_settings, user_notification_settings │
-│  ➕ 003_missing_tables.sql: trade_learning_log,          │
-│     signal_learning, learning_validation_log,            │
-│     system_alerts, ml_patterns, user_onboarding,         │
-│     password_reset_requests                              │
-├─────────────────────────────────────────────────────────┤
-│             DB Mixins (scattered through db_*.py)         │
-│  DbPortfolioMixin: get_portfolio, get_open_trades,       │
-│    _ensure_demo_account (ADMIN-ONLY guard at line 24)    │
-│  DbTradingMixin: add_position_on_conn, close_position    │
-│  DbUsersMixin: create_user, get_user_by_id               │
-├─────────────────────────────────────────────────────────┤
-│            Key API Patterns                              │
-│  ✅ Auth: /auth/login (checks is_active → 403 if disabled)│
-│  ✅ Auth: /auth/logout (requires auth, revokes token)    │
-│  ✅ Auth: /auth/validate-session (catches ExpiredSig)    │
-│  ✅ Admin: /admin/system/stats (system-wide, not per-user)│
-│  ✅ Admin: /admin/positions/<id>/close (admin manual close)│
-│  ⚠️ user_lookup_service.py: single source for user lookup│
-│     (returns is_active + all fields)                     │
-│  ⚠️ Registration: email_verified SEPARATE from phone now │
-│  ⚠️ Password: enforced 8+ chars in all registration paths│
-│  ⚠️ SQL: parameterized queries preferred (NOT f-strings) │
-│  ⚠️ JSON keys: standardized to "message" (not "error")   │
-│  ⚠️ DB URL: NEVER returned in API responses              │
-│  ⚠️ SELECT *: replaced with explicit columns              │
-│  ⚠️ Unbounded queries: now have LIMIT                     │
-│  ⚠️ write connections: use get_write_connection()        │
-├─────────────────────────────────────────────────────────┤
-│           Exceptions NOT silenced anymore                 │
-│  ✅ secure_actions_endpoints.py: pending verif fail logs  │
-│  ✅ mobile_endpoints.py: silent except→pass replaced      │
-│  ✅ admin_unified_api.py: pgrep failure logs error        │
-│  ✅ ON CONFLICT targets: now explicit (user_id)           │
-│  ✅ UPSERT_CONFLICTS: table names corrected               │
-└─────────────────────────────────────────────────────────┘
+1. Splash → Brand animation (2.6s)
+     ├── First run → Onboarding (3 pages) → Login
+     ├── Token valid + no biometric → Dashboard directly
+     ├── Token valid + biometric enabled → Login screen (auto-prompt fingerprint)
+     └── No valid token → Login
+
+2. Login
+     ├── "Remember Me" checkbox → saves encrypted credentials
+     ├── Biometric auto-prompt → fingerprint/face login
+     ├── Traditional email+password login
+     ├── Forgot password → OTP → Reset
+     └── Register → OTP verification → Login
+
+3. Dashboard (Tab 0) — 5 bottom tabs
+     ├── Hero balance card
+     ├── Daily PnL bar
+     ├── Open positions strip (if any)
+     ├── Performance section (win rate, profit factor)
+     ├── Stats grid (total trades, PnL, drawdown)
+     ├── Chart section (equity curve)
+     └── Recent trades list
+
+4. Portfolio (Tab 1)
+     ├── Balance overview (total, available, invested)
+     ├── Demo/Real switcher (admin only)
+     ├── Portfolio breakdown (asset allocation)
+     ├── Open positions distribution
+     └── Growth chart
+
+5. Trades (Tab 2)
+     ├── Trades list (paginated)
+     ├── Summary chart (win/loss pie)
+     └── Tap trade → TradeDetailScreen
+
+6. Analytics (Tab 3)
+     ├── Equity curve
+     ├── Monthly PnL breakdown
+     └── Performance metrics
+
+7. Profile (Tab 4) — Self-service account management
+     ├── User info card (name, email, admin badge)
+     ├── Edit profile dialog (name, phone)
+     ├── TradingToggle (biometric-secured ON/OFF)
+     ├── Settings group:
+     │     ├── Trading Settings → stop loss, take profit, position size, risk
+     │     ├── Binance Keys → save, verify, encrypt API keys
+     │     ├── Security → change password, change email, biometric toggle
+     │     ├── Notifications → enable/disable, customize report time
+     │     ├── Skin Picker → theme selection
+     │     └── Onboarding → re-view tutorial
+     ├── Delete Account (password + DELETE text confirmation)
+     └── Logout
+
+8. Admin Dashboard (admin-only, pushed from Tab 4)
+     ├── System status card (running/stopped, uptime)
+     ├── Stats grid (users, trades, profit, win rate)
+     ├── Quick actions:
+     │     ├── Trading Control → engine start/stop/emergency
+     │     ├── System Logs → audit/error/activity logs
+     │     ├── Logs Dashboard → overview + charts
+     │     ├── Background Control → scheduler management
+     │     └── ML Dashboard → model training/status
+     └── No user management (users self-manage)
 ```
 
-## 3. Core Trading Engine Architecture
+---
 
-### 3.1 Main Loop (`_run_user_cycle` in group_b_system.py)
-
-```
-_analysis_loop (infinite loop every 60s)
-  └── _run_user_cycle()
-        ├── 1. Portfolio & risk check
-        │     ├── Load balance from portfolio table
-        │     ├── Enforce max drawdown (5% default)
-        │     └── Update peak balance tracking
-        ├── 2. Position Monitoring (ALL positions)
-        │     ├── Fetch current prices from Binance
-        │     └── MonitoringEngine.monitor_positions()
-        │           ├── CLOSE → self._close_position() ← EXECUTES BINANCE SELL
-        │           │     - Real account: Binance order → real price/commission
-        │           │     - Demo account: simulate_fill() → DB only
-        │           ├── PARTIAL_CLOSE → self._close_position(close_pct)
-        │           └── UPDATE → _update_position_in_db()
-        ├── 3. New Entry Scanning
-        │     └── TradingOrchestrator.run_cycle()
-        │           └── _scan_and_enter()
-        │                 ├── CoinStateAnalyzer → regime/trend
-        │                 ├── 5 Strategy Modules (ensemble scoring)
-        │                 ├── TradingBrain (ML confirmation)
-        │                 ├── MTFConfirmation (multi-timeframe)
-        │                 ├── DualModeRouter → Spot LONG / Margin SHORT
-        │                 └── _open_position() ← EXECUTES BINANCE BUY
-        └── 4. Cleanup (orphaned signals >24h)
-```
-
-### 3.2 Entry Flow (Detailed)
+## 3. Flutter Route Tree (GoRouter)
 
 ```
-TradingOrchestrator._scan_and_enter()
-  ├── For each symbol:
-  │     ├── StateAnalyzer.analyze() → CoinState (trend, regime, volatility)
-  │     ├── For each StrategyModule (Trend, Range, Volatility, Scalping):
-  │     │     ├── module.evaluate(df, context) → signal
-  │     │     ├── module.get_entry_price() / get_stop_loss() / get_take_profit()
-  │     │     └── CognitiveDecisionMatrix.evaluate() → score + decision
-  │     ├── Ensemble bonus: +3 per agreeing module
-  │     ├── TradingBrain.think() → REJECT or confirm + score
-  │     ├── MTFConfirmationEngine.confirm_entry() → confirmed + score
-  │     ├── PortfolioRiskManager.get_position_size() → size in USDT
-  │     ├── DualModeRouter.route_signal(signal, regime)
-  │     │     ├── LONG + spot_enabled → Spot executor
-  │     │     ├── SHORT + margin_enabled → Margin executor
-  │     │     └── otherwise → REJECTED
-  │     └── _open_position(symbol, signal)
-  │           ├── Demo: _simulate_demo_fill() → DB insert
-  │           └── Real: binance_manager.execute_buy_order() → Binance API → DB insert
-```
-
-### 3.3 Exit Flow (Detailed)
-
-```
-PositionManager._close_position(pos, exit_price, reason, close_pct)
-  ├── Demo Account:
-  │     ├── _simulate_demo_fill() → slip_page + commission
-  │     ├── Slippage protection (floor/ceiling)
-  │     └── Atomic DB: close_position_on_conn() + update balance
-  ├── Real Account:
-  │     ├── binance_manager.execute_sell_order() → BINANCE MARKET ORDER
-  │     ├── Uses real fill price + real commission from Binance response
-  │     ├── If Binance fails → position stays OPEN in DB (no false close)
-  │     └── Atomic DB: close_position_on_conn() + update balance
-  └── Post-close: ML recording + TradingBrain learning + risk state update
-```
-
-### 3.4 Dual-Mode Execution (Demo vs Real)
-
-```
-                              ┌─ is_demo_trading? ─┐
-                              │                     │
-                         DEMO ▼                 REAL ▼
-              ┌──────────────────┐    ┌──────────────────┐
-              │ Signals: Real     │    │ Signals: Real     │
-              │ from Binance      │    │ from Binance      │
-              ├──────────────────┤    ├──────────────────┤
-              │ Entry: Simulated  │    │ Entry: Binance    │
-              │ fill + DB only    │    │ MARKET BUY order  │
-              ├──────────────────┤    ├──────────────────┤
-              │ Exit: Simulated   │    │ Exit: Binance     │
-              │ fill + DB only    │    │ MARKET SELL order │
-              ├──────────────────┤    ├──────────────────┤
-              │ Balance: Virtual  │    │ Balance: Real     │
-              │ $10,000 initial   │    │ from Binance API  │
-              └──────────────────┘    └──────────────────┘
-```
-
-### 3.5 Strategy Architecture
-
-```
-BaseStrategy (V8) — unified strategy interface (group_b_system)
-  ├── prepare_data(df) → indicators
-  ├── check_entry(df, context) → entry signal
-  └── check_exit(df, position) → exit signal
-
-TradingOrchestrator — 5-system ensemble (orchestrator)
-  ├── TrendModule → trend-following signals
-  ├── RangeModule → mean-reversion signals
-  ├── VolatilityModule → breakout signals
-  ├── ScalpingModule → short-term signals
-  └── CognitiveDecisionMatrix → score + ENTER/ENTER_REDUCED/HOLD/EXIT
-
-⚠️ These two strategy systems coexist:
-  - BaseStrategy: used by PositionManager._manage_position() for exits
-  - StrategyModules: used by TradingOrchestrator._scan_and_enter() for entries
-  - The orchestrator path also uses MonitoringEngine for exits (via main loop)
-```
-
-### 3.6 Key Component Hierarchy
-
-```
-GroupBSystem (God Object, 1059 lines)
-  ├── PositionManagerMixin → _open_position, _close_position, _manage_position
-  ├── ScannerMixin → _scan_for_entries, _get_tradeable_symbols  
-  ├── RiskManagerMixin → _check_risk_gates, _calculate_position_size
-  └── Owns:
-        ├── TradingOrchestrator
-        │     ├── CoinStateAnalyzer → trend/regime analysis
-        │     ├── StrategyRouter → selects active strategy
-        │     ├── EntryExecutor (EMA 8/21/55 + RSI + ADX + ATR)
-        │     ├── MonitoringEngine → SL/TP/trail/time/partial checks
-        │     ├── ExitEngine → PnL calculation
-        │     ├── ExitManager → position evaluation
-        │     ├── PortfolioRiskManager → Kelly sizing, tier classification
-        │     ├── MTFConfirmationEngine → multi-timeframe confirmation
-        │     ├── CognitiveDecisionMatrix → cognitive scoring
-        │     ├── DualModeRouter → Spot LONG vs Margin SHORT
-        │     └── 4 StrategyModules (Trend, Range, Volatility, Scalping)
-        ├── DualModeRouter → regime-based routing
-        ├── DynamicCoinSelector → coin selection
-        ├── TradingBrain → ML-based phase-aware decisions
-        ├── AdaptiveOptimizer → position size multiplier
-        ├── DataProvider → Binance market data
-        └── BinanceManager → order execution + circuit breaker
-```
-
-### 3.7 DemoTrainingEngine (Unused)
-
-- `demo_training_engine.py`: standalone simulation class
-- `initial_balance=10000.0`, commission=0.1%, slippage=0.05%
-- **Currently NOT used** in the main trading loop
-- Actual demo trading is handled by `_simulate_demo_fill()` in PositionManager
-- Considered a reference/backup module
-
-### 3.8 Exit engines comparison
-
-| Feature | MonitoringEngine (main loop) | ExitManager (unused) | PositionManager._manage_position |
-|---------|------------------------------|----------------------|----------------------------------|
-| SL check | ✅ | ✅ | ✅ (historical + current) |
-| Trail SL | ✅ | ✅ | via BaseStrategy |
-| Breakeven | ✅ | ✅ | via BaseStrategy |
-| Time exits | ✅ (8h stagnant, 6h early-cut) | ✅ | via BaseStrategy |
-| Partial close | ✅ (TP1 1.5R 40%, TP2 2.5R 35%) | ✅ | via BaseStrategy |
-| Binance execution | ✅ (via _close_position) | ❌ (DB only) | ✅ (via _close_position) |
-| Used in loop | ✅ | ❌ | ❌ (defined, not called) |
-
-## 4. Flutter App Architecture (GoRouter + Riverpod)
-
-```
-app.dart
-├── splash_screen.dart → checks onboardingDone → checks auth
-├── onboarding_screen.dart → 3 pages, then goes to login
-├── login_screen.dart → biometric auto-prompt if enabled
-├── register_screen.dart → OTP verification flow
+/ (redirect → /splash)
+├── /splash → SplashScreen
+├── /onboarding → OnboardingScreen
+├── /login → LoginScreen
+├── /register → RegisterScreen
+├── /otp-verification → OtpVerificationScreen
+├── /forgot-password → ForgotPasswordScreen
+├── /reset-password → ResetPasswordScreen
 │
-├── MainShell (ShellRoute → Scaffold + BottomNav 5 tabs)
-│   ├── Tab 0: /dashboard → DashboardScreen
-│   ├── Tab 1: /portfolio → PortfolioScreen
-│   ├── Tab 2: /trades → TradesScreen
-│   ├── Tab 3: /analytics → AnalyticsScreen
-│   ├── Tab 4: /profile → ProfileScreen (admin sees shield icon)
-│   └── Tab 4 (admin): push /admin-dashboard (NOT go—stays in stack)
+├── ShellRoute → MainShell (BottomNavigationBar 5 tabs)
+│     ├── /dashboard → DashboardScreen
+│     ├── /portfolio → PortfolioScreen
+│     ├── /trades → TradesScreen
+│     ├── /analytics → AnalyticsScreen
+│     └── /profile → ProfileScreen (tab 4 pushes admin if isAdmin)
 │
-├── Non-shell routes (pushed on top):
-│   ├── /trade-detail → TradeDetailScreen
-│   ├── /trading-settings → TradingSettingsScreen
-│   ├── /binance-keys → BinanceKeysScreen
-│   ├── /notifications → NotificationsScreen
-│   ├── /onboarding → OnboardingScreen (auth user → pop; unauth → login)
-│   │
-│   └── Admin routes:
-│       ├── /admin-dashboard → AdminDashboardScreen (VIEW-ONLY: system-wide stats)
-│       ├── /admin/trading-control → TradingControlScreen (SYSTEM-CONTROL: engine start/stop/emergency)
-│       ├── /admin/users → UserManagementScreen (VIEW-ONLY: user list, no edit/delete/block)
-│       ├── /admin/user-detail → AdminUserDetailScreen (VIEW-ONLY: user trade history)
-│       ├── /admin/ml-dashboard → AdminMLDashboardScreen (SYSTEM-CONTROL: ML learning management)
-│       ├── /admin/background-control → AdminBackgroundControlScreen (SYSTEM-CONTROL: background scheduler)
-│       ├── /admin/logs-dashboard → AdminLogsDashboardScreen (VIEW-ONLY: system logs overview)
-│       ├── /admin/system-logs → SystemLogsScreen (VIEW-ONLY: audit/error logs)
-│       └── /admin/error-details → ErrorDetailsScreen (VIEW-ONLY: error drill-down)
+├── Push routes (outside ShellRoute):
+│     ├── /trades/detail → TradeDetailScreen
+│     ├── /settings/trading → TradingSettingsScreen
+│     ├── /settings/binance-keys → BinanceKeysScreen
+│     ├── /settings/security → SecuritySettingsScreen
+│     ├── /settings/skin → SkinPickerScreen
+│     ├── /settings/notifications → NotificationSettingsScreen
+│     ├── /notifications → NotificationsScreen
+│     │
+│     └── Admin routes (push from tab 4 when isAdmin):
+│           ├── /admin/dashboard → AdminDashboardScreen
+│           ├── /admin/trading-control → TradingControlScreen
+│           ├── /admin/logs → SystemLogsScreen
+│           ├── /admin/logs/dashboard → AdminLogsDashboardScreen
+│           ├── /admin/logs/error → ErrorDetailsScreen
+│           ├── /admin/ml → AdminMLDashboardScreen
+│           └── /admin/background → AdminBackgroundControlScreen
 ```
 
-## 5. Unified Provider Architecture (Single Source of Truth)
+### Navigation Rules
+- **Tab switching inside shell**: `context.go()` — replaces current tab
+- **Push to detail/settings**: `context.push()` — stays on top of shell
+- **Admin dashboard from tab 4**: `context.push()` — returns to tab 4 on back
+- **After logout**: `context.go(RouteNames.login)` — clears stack
+- **Auth guard**: GoRouter redirect checks auth state, pushes to /login if unauthenticated
+
+---
+
+## 4. Backend Architecture (Flask under FastAPI)
+
+```
+start_server.py (FastAPI app)
+  └── app.mount("/api", WSGIMiddleware(flask_app))
+
+Flask Blueprints:
+├── auth_bp (/auth) → login, register, OTP, forgot/reset password, validate
+├── mobile_bp (/user) → portfolio, stats, trades, settings, binance-keys, active-positions
+├── admin_unified_bp (/admin) → dashboard, system/stats, trading/start/stop, logs, errors, ML, background
+├── token_refresh_bp (/auth) → refresh, logout
+├── trading_control_bp (/admin/trading) → engine start/stop/status
+├── system_bp (/system) → status, health
+├── secure_actions_bp (/user/secure) → verified account actions
+├── smart_exit_bp → smart exit settings
+├── ml_learning_bp → ML training endpoints
+├── fcm_bp (/notifications) → push notification tokens
+├── login_otp_bp (/auth/login) → OTP-based login
+└── background_bp (/admin/background) → background scheduler
+```
+
+### Auth Layer
+| Guard | Middleware | Purpose |
+|-------|-----------|---------|
+| `require_auth` | `auth_middleware.py` | Validates JWT, sets `g.user_id` |
+| `require_admin` | `admin_auth.py` | Extends require_auth + checks `user_type = 'admin'` |
+
+### API URL Pattern
+```
+Flutter baseUrl: "http://72.60.190.188:3002/api"
+Example: /api/auth/login → Flask auth_bp
+Example: /api/user/portfolio/3 → Flask mobile_bp
+Example: /api/admin/dashboard → Flask admin_unified_bp
+```
+
+---
+
+## 5. Core Trading Engine Architecture
+
+### 5.1 Docker Services
+
+| Service | Container | Role |
+|---------|-----------|------|
+| **API** | `trading-ai-api` | Flask+FastAPI, user/admin endpoints, spawns GroupBSystem |
+| **Executor** | `trading-ai-executor` | Processes signals_queue entries, monitors (skips when GroupBSystem RUNNING) |
+| **Scanner** | `trading-ai-scanner` | Fetches 50 symbols from Binance, generates signal candidates |
+| **Postgres** | `trading-ai-postgres` | All data storage (48 tables) |
+| **Nginx** | `trading-ai-nginx` | Reverse proxy port 80 → API:3002 |
+
+### 5.2 Main Trading Loop
+
+```
+GroupBSystem._run_user_cycle() (every 60s via API-spawned process)
+├── 1. Portfolio & Risk
+│     ├── Load balance from portfolio table
+│     ├── Enforce max drawdown (5%)
+│     └── Update peak balance
+├── 2. Position Monitoring (ALL active positions)
+│     └── MonitoringEngine.monitor_positions()
+│           ├── CLOSE → _close_position() → Binance sell (real) / simulate (demo)
+│           ├── PARTIAL_CLOSE → _close_position(close_pct)
+│           │     - TP1: 1.5R profit → close 40%
+│           │     - TP2: 2.5R profit → close 35%
+│           └── UPDATE → trailing SL, breakeven, highest_price
+├── 3. Entry Scanning
+│     └── TradingOrchestrator._scan_and_enter()
+│           ├── For each symbol (50 max):
+│           │     ├── CoinStateAnalyzer → regime/trend/volatility
+│           │     ├── StrategyModules (Trend/Range/Volatility/Scalping) × DecisionMatrix
+│           │     ├── TradingBrain (ML confirm/reject)
+│           │     ├── MTFConfirmation (multi-timeframe)
+│           │     ├── DualModeRouter → Spot LONG / Margin SHORT
+│           │     └── PortfolioRiskManager → Kelly position sizing
+│           └── _open_position() → Binance buy (real) / simulate (demo)
+└── 4. Cleanup (orphaned signals >24h)
+```
+
+### 5.3 Exit Flow (`_close_position`)
+
+```
+position_manager.py:688 → _close_position(pos, exit_price, reason, close_pct)
+├── Demo Account:
+│     ├── _simulate_demo_fill() → slippage + commission
+│     ├── Slippage protection (floor/ceiling based on trail/SL)
+│     └── Atomic DB: close_position_on_conn() + update balance
+├── Real Account:
+│     ├── binance_manager.execute_sell_order() → BINANCE MARKET SELL
+│     ├── _execute_real_order_with_retry() → 3 attempts, 1.5s apart
+│     ├── Uses real fill price + real commission from Binance
+│     ├── If Binance fails → position stays OPEN (returns None)
+│     └── Atomic DB: close_position_on_conn() + update balance
+└── Post-close: ML recording + TradingBrain learning + risk state update
+```
+
+### 5.4 Dual-Mode (Demo vs Real)
+
+```
+              ┌─ is_demo_trading? ─┐
+              │                     │
+         DEMO ▼                 REAL ▼
+┌──────────────────┐    ┌──────────────────┐
+│ Signals: Real     │    │ Signals: Real     │
+│ from Binance      │    │ from Binance      │
+├──────────────────┤    ├──────────────────┤
+│ Entry: Simulated  │    │ Entry: Binance    │
+│ fill + DB only    │    │ MARKET BUY order  │
+├──────────────────┤    ├──────────────────┤
+│ Exit: Simulated   │    │ Exit: Binance     │
+│ fill + DB only    │    │ MARKET SELL order │
+├──────────────────┤    ├──────────────────┤
+│ Balance: Virtual  │    │ Balance: Real     │
+│ $10,000 initial   │    │ from Binance API  │
+└──────────────────┘    └──────────────────┘
+```
+
+### 5.5 Executor Guard (Race Condition Prevention)
+
+```
+ExecutorWorker.run() (every 5s)
+├── Check: system_status.trading_state = 'RUNNING'?
+│     ├── YES → GroupBSystem active → skip monitor_open_positions()
+│     └── NO → monitor_open_positions() via SmartExitEngine
+└── Always: process_pending_signals() from signals_queue
+```
+
+### 5.6 Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User accounts (id, email, username, password_hash, user_type) |
+| `portfolio` | User portfolio (user_id, is_demo, total_balance, available_balance, initial_balance) |
+| `user_settings` | Trading settings (trading_enabled, max_positions, risk_level, stop_loss_pct, etc.) |
+| `active_positions` | Open/closed positions (symbol, entry_price, quantity, stop_loss, take_profit, profit_loss) |
+| `user_binance_keys` | Encrypted Binance API keys (api_key, api_secret encrypted, is_active) |
+| `trading_signals` | Generated trading signals |
+| `signals_queue` | Pending signals for executor (status: PENDING/FILLED/REJECTED) |
+| `system_status` | Engine state (trading_state: RUNNING/STOPPED/ERROR) |
+| `system_errors` | Error log (error_type, error_message, severity, resolved) |
+| `security_audit_log` | Security events (action, user_id, ip_address, timestamp) |
+| `user_notification_settings` | Per-user notification preferences |
+| `notifications` | Notification queue for push delivery |
+
+---
+
+## 6. Flutter Provider Architecture
 
 ```
 accountTradingProvider (StateNotifier, polls every 15s)
-│  Fetches: portfolio + stats + active positions in ONE call
+│  Single source: portfolio + stats + active positions
 │
-├── portfolioProvider (derived — ZERO network calls)
+├── portfolioProvider (derived — zero network calls)
 │     → PortfolioScreen, DashboardScreen, AdminDashboardScreen
-│
-├── statsProvider (derived — ZERO network calls)
+├── statsProvider (derived — zero network calls)
 │     → DashboardScreen, AnalyticsScreen
-│     ⚠️ This is PER-USER stats — NOT system-wide
-│
-├── activePositionsProvider (derived — ZERO network calls)
+├── activePositionsProvider (derived — zero network calls)
 │     → DashboardScreen
 │
-├── systemStatsProvider (FutureProvider — admin system-wide stats)
-│     → AdminDashboardScreen ONLY
-│
-├── recentTradesProvider (FutureProvider — independent fetch)
+├── recentTradesProvider (FutureProvider — independent)
 │     → DashboardScreen
-│
-├── tradesListProvider (FutureProvider — paginated search)
+├── tradesListProvider (FutureProvider — paginated)
 │     → TradesScreen
-│
 ├── analyticsTradesProvider (FutureProvider)
-│     → AnalyticsScreen (equity curve data)
+│     → AnalyticsScreen
 │
-├── settingsDataProvider (FutureProvider.autoDispose → settings_provider.dart)
+├── settingsDataProvider (FutureProvider.autoDispose)
 │     → TradingSettingsScreen, ProfileScreen
-│     ⚠️ Invalidated after trading toggle (via TradingToggleService)
+│     ⚠️ Invalidated after trading toggle
 │
-├── tradingToggleServiceProvider (Service)
-│     → toggleSelf() → updates settings, invalidates accountTradingProvider + settingsDataProvider
-│     → toggleUser() → admin toggles another user's trading
+├── authProvider (StateNotifier)
+│     → All screens (auth state, user data, isAdmin)
+├── adminPortfolioModeProvider (StateProvider<String>)
+│     → demo/real mode for admin portfolio switching
+├── systemStatsProvider (FutureProvider)
+│     → AdminDashboardScreen
+├── systemStatusProvider (FutureProvider, polls every 10s)
+│     → AdminDashboardScreen, TradingControlScreen
 │
-└── adminUsersProvider, systemStatusProvider, dailyStatusProvider...
+├── notificationsProvider (StateNotifier)
+│     → NotificationsScreen
+│
+└── tradingToggleServiceProvider (Service)
+      → toggleSelf() → updates settings, invalidates providers
 ```
 
-## 6. Trading Toggle Architecture (CRITICAL — 3 Distinct Concepts)
+### Provider Invalidation Rules
+| Action | Invalidate |
+|--------|-----------|
+| Trading toggle ON/OFF | `accountTradingProvider`, `settingsDataProvider` |
+| Admin mode switch (demo↔real) | `portfolioProvider`, `statsProvider`, `activePositionsProvider`, `accountTradingProvider` |
+| Dashboard pull-to-refresh | `recentTradesProvider`, `activePositionsProvider`, `portfolioProvider`, `statsProvider` |
+| Portfolio pull-to-refresh | `portfolioProvider` only |
+| Admin close trade | `recentTradesProvider`, `activePositionsProvider`, `tradesListProvider` |
+| Login/Logout | `authProvider`, all user-specific providers |
 
-| # | Concept | Location | Purpose |
-|---|---------|----------|---------|
-| 1 | **TradingToggleButton** | `design/widgets/trading_toggle_button.dart` | Unified widget for self + admin toggle |
-| 2 | **TradingToggleService** | `core/services/trading_toggle_service.dart` | toggleSelf() + toggleUser() logic |
-| 3 | **TradingStatusStrip** | `design/widgets/trading_status_strip.dart` | Visual status strip + Switch (used in ProfileScreen) |
-| 4 | **TradingControlScreen toggle** | `features/admin/screens/trading_control_screen.dart` | SYSTEM ENGINE start/stop (NOT user tradingEnabled) |
-| 5 | **LoadingState.enabled** | `core/providers/unified_async_state.dart:36` | ⚠️ UI readiness flag (NOT trading toggle!) |
+---
 
-⚠️ **BUG FIXED**: ProfileScreen now reads `tradingEnabled` from `settingsDataProvider`, not from `LoadingState.enabled`. The old code passed `tradingState.enabled` (which returns `true` whenever the provider loaded data) as the toggle value — the switch showed "on" regardless of actual trading state.
+## 7. Shared Design Components
 
-### Admin Demo/Real Portfolio Architecture
-- `adminPortfolioModeProvider` (StateProvider<String>) — 'demo' or 'real', initialized to 'demo'
-- `_resolveMode()` in portfolio_provider.dart — reads mode for admin, passes `is_demo` to ALL API calls
-- Demo/Real chips in PortfolioScreen and TradingSettingsScreen switch mode directly with confirmation dialog
-- After mode switch: invalidate `accountTradingProvider`, call `updateTradingMode` API
-- Trading toggle is per-portfolio: `tradingToggleService.toggleSelf()` passes the active mode
-- Each portfolio has INDEPENDENT balance, trades, and trading toggle state
+| Widget | File | Replaces |
+|--------|------|----------|
+| `AppCard` | `design/widgets/app_card.dart` | `Container(borderRadius)` |
+| `AppButton` | `design/widgets/app_button.dart` | `TextButton`, `ElevatedButton` |
+| `StatusBadge` | `design/widgets/status_badge.dart` | Raw `Container` badges |
+| `DemoRealBanner` | `design/widgets/demo_real_banner.dart` | 9 duplicate `_buildDemoRealBanner` methods |
+| `TradingStatusStrip` | `design/widgets/trading_status_strip.dart` | Trading toggle on profile |
+| `TradingToggleButton` | `design/widgets/trading_toggle_button.dart` | User trading toggle |
+| `AppScreenHeader` | `design/widgets/app_screen_header.dart` | Raw AppBar/header |
+| `AppSettingTile` | `design/widgets/app_setting_tile.dart` | Raw ListTile |
+| `LoadingShimmer` | `design/widgets/loading_shimmer.dart` | Raw CircularProgressIndicator |
+| `ErrorState` | `design/widgets/error_state.dart` | Raw error text |
+| `EmptyState` | `design/widgets/empty_state.dart` | Raw empty text |
+| `MoneyText` | `design/widgets/money_text.dart` | Raw `\${amount}` formatting |
+| `PnLIndicator` | `design/widgets/pnl_indicator.dart` | Profit/loss colored display |
 
-## 7. Key Navigation Rules
-## 8. Data Conflicts Between Screens (Known)
-## 9. Provider Invalidation Rules
-## 10. Working Directory Map
-## 11. Common Anti-Patterns to Avoid
+---
 
-- ❌ Creating new providers that duplicate API calls already made by `accountTradingProvider`
-- ❌ `cursor.execute(...).fetchone()` without separating (wrappers handle it, but raw code doesn't)
-- ❌ Using `context.go()` for admin routes from within the ShellRoute
-- ❌ `SELECT *` in queries — always use explicit columns
-- ❌ `except: pass` — always log errors
-- ❌ Hardcoding `user_id` or using `or 1` fallback in auth context
-- ❌ Using `tradingState.enabled` (LoadingState readiness) as `tradingEnabled` value
-- ❌ Not invalidating `tradesListProvider` after closing a trade from admin screen
-- ❌ Returning DB connection strings in API responses
-- ❌ Bare `ON CONFLICT DO NOTHING` without explicit conflict target in PostgreSQL
-- ❌ Admin controlling individual user settings (block, reset password, toggle their trading)
-- ❌ Admin-gating features that users should self-manage (risk sliders, API keys)
-- ❌ Mixing demo and real portfolio data — always pass is_demo filter
+## 8. Working Directory Map
+
+```
+/Users/anr/Desktop/trading_ai_bot-1/
+├── ARCHITECTURE.md              ← This file
+├── DESIGN.md                    ← Design system spec (colors, typography, spacing, components)
+├── AGENTS.md                    ← Behavioral rules
+├── start_server.py              ← Docker entrypoint (FastAPI + Flask)
+├── docker-compose.yml           ← Docker service definitions
+├── bin/
+│   ├── executor_worker.py       ← Signal processing + position reconciliation
+│   └── scanner_worker.py        ← Market scanning + signal generation
+├── backend/
+│   ├── api/                     ← Flask Blueprints
+│   │   ├── auth_endpoints.py    ← Login, logout, register, validate
+│   │   ├── auth_middleware.py    ← require_auth, require_admin
+│   │   ├── auth_registration_routes.py  ← Registration flow
+│   │   ├── mobile_endpoints.py  ← Portfolio, trades, stats, profile
+│   │   ├── mobile_settings_routes.py    ← Settings, binance keys
+│   │   ├── admin_unified_api.py ← ALL admin endpoints
+│   │   ├── background_control.py ← Engine start/stop
+│   │   └── ...
+│   ├── core/
+│   │   ├── group_b_system.py    ← Main trading loop (God Object)
+│   │   ├── trading_orchestrator.py ← 5-system ensemble + entry
+│   │   ├── position_manager.py  ← _open_position, _close_position
+│   │   ├── dual_mode_router.py  ← Spot LONG vs Margin SHORT
+│   │   ├── monitoring_engine.py ← SL/TP/trail/time/partial checks
+│   │   ├── exit_engine.py       ← PnL calculation
+│   │   ├── exit_manager.py      ← Position evaluation (unused in loop)
+│   │   ├── coin_state_analyzer.py ← Trend/regime analysis
+│   │   ├── portfolio_risk_manager.py ← Kelly sizing
+│   │   ├── mtf_confirmation.py  ← Multi-timeframe confirmation
+│   │   ├── cognitive_decision_matrix.py ← Cognitive scoring
+│   │   ├── demo_training_engine.py ← Standalone simulator (unused)
+│   │   └── modules/             ← Trend, Range, Volatility, Scalping
+│   ├── ml/                      ← ML engine
+│   ├── utils/                   ← BinanceManager, DataProvider, trading_context
+│   └── infrastructure/          ← DB access
+├── database/
+│   ├── database_manager.py      ← PostgresConnectionWrapper, pool, migrations
+│   ├── db_portfolio_mixin.py    ← Portfolio CRUD, Binance keys
+│   ├── db_users_mixin.py        ← User CRUD, settings
+│   ├── db_trading_mixin.py      ← Position CRUD
+│   └── migrations/              ← SQL files (NEVER modify existing)
+├── flutter_trading_app/
+│   ├── lib/
+│   │   ├── main.dart
+│   │   ├── app.dart
+│   │   ├── core/
+│   │   │   ├── constants/       ← api_endpoints, app_constants, ux_messages
+│   │   │   ├── models/          ← TradeModel, PortfolioModel, UserModel
+│   │   │   ├── providers/       ← Riverpod providers (single source of truth)
+│   │   │   ├── repositories/    ← API call wrappers
+│   │   │   └── services/        ← Auth, biometric, storage, trading_toggle
+│   │   ├── design/
+│   │   │   ├── widgets/         ← Shared components (25 widgets)
+│   │   │   ├── tokens/          ← Colors, typography, spacing
+│   │   │   ├── skins/           ← Theme definitions
+│   │   │   └── icons/           ← Brand icons
+│   │   ├── features/
+│   │   │   ├── auth/screens/    ← Splash, login, register, OTP, forgot, reset
+│   │   │   ├── dashboard/screens/
+│   │   │   ├── portfolio/screens/
+│   │   │   ├── trades/screens/
+│   │   │   ├── analytics/screens/
+│   │   │   ├── profile/screens/
+│   │   │   ├── settings/screens/ ← Trading, binance keys, security, skin
+│   │   │   ├── notifications/screens/
+│   │   │   ├── onboarding/screens/
+│   │   │   └── admin/screens/    ← Dashboard, trading control, logs, ML, background
+│   │   └── navigation/           ← GoRouter, MainShell, route_names
+│   └── build/app/outputs/flutter-apk/app-debug.apk  ← Built APK
+└── config/
+    └── unified_settings.py       ← NEVER modify
+```
+
+---
+
+## 9. Critical Guardrails
+
+### Security
+- ❌ NEVER return DB URL in API responses
+- ❌ NEVER source Binance keys from env vars (must come from `user_binance_keys` table)
+- ❌ NEVER skip auth guards on admin routes
+- ✅ Encrypt all API secrets before storing
+- ✅ Validate JWT on every authenticated request
+- ✅ Check `is_active` flag before allowing login
+
+### Trading Engine
+- ❌ NEVER execute Binance orders for demo accounts
+- ❌ NEVER close a position in DB without confirming Binance execution (real accounts)
+- ❌ NEVER let both executor AND GroupBSystem monitor the same positions
+- ✅ Use `_close_position()` not `_close_position_in_db()` for exits
+- ✅ Update portfolio balance atomically with position close (same transaction)
+- ✅ Check `trading_enabled` before opening new positions
+
+### Flutter
+- ❌ NEVER use `Scaffold` inside ShellRoute children
+- ❌ NEVER use raw `Color(0xFF...)` outside token files (except splash/brand)
+- ❌ NEVER use raw `TextStyle()` — use `TypographyTokens`
+- ❌ NEVER use `TextButton`/`ElevatedButton` — use `AppButton`
+- ❌ NEVER use `Container(borderRadius)` — use `AppCard`
+- ❌ NEVER create duplicate data providers
+- ✅ Push admin routes, don't go() — stays in tab stack
+- ✅ Invalidate affected providers after state changes
+
+### Database
+- ❌ NEVER use `SELECT *` — explicit columns
+- ❌ NEVER modify existing migration files — create new ones
+- ❌ NEVER use f-strings in SQL — parameterized queries
+- ✅ Use `get_write_connection()` for writes
+- ✅ Use `ON CONFLICT` with explicit targets for PostgreSQL
+- ✅ Monitor idle connections (auto-timeout at 5min)
+
+---
+
+## 10. Deployment
+
+### VPS
+```
+Host: root@72.60.190.188
+Project: /root/trading_ai_bot-1/
+GitHub: https://github.com/anr466/1B
+
+Deploy: rsync files → docker compose restart
+Start trading: POST /api/admin/trading/start (JWT required)
+Status: GET /api/admin/system/stats
+```
+
+### Commands
+```bash
+# Deploy code
+rsync -avz ./backend/core/group_b_system.py root@72.60.190.188:/root/trading_ai_bot-1/backend/core/
+
+# Restart services
+ssh root@72.60.190.188 "cd /root/trading_ai_bot-1 && docker compose restart api executor scanner"
+
+# Build Flutter APK
+cd flutter_trading_app && flutter build apk --debug
+
+# Install on device
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+```
