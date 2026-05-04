@@ -67,52 +67,42 @@ class AdminDashboardScreen extends ConsumerWidget {
                   child: ListView(
                     padding: const EdgeInsets.all(SpacingTokens.base),
                     children: [
-                      // ─── System Status ─────────────────────
+                      // ═══════════════════════════════════════
+                      // ⚡ المحرك
+                      // ═══════════════════════════════════════
                       statusAsync.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 1, itemHeight: 80),
-                        error: (e, _) {
-                          debugPrint('[AdminDashboard] status error: $e');
-                          return _buildErrorCard(
-                            cs,
-                            'تعذر تحميل البيانات',
-                            () => ref.invalidate(tradingCycleLiveProvider),
-                          );
-                        },
+                        error: (e, _) => _buildErrorCard(
+                          cs, 'تعذر تحميل حالة النظام',
+                          () => ref.invalidate(tradingCycleLiveProvider),
+                        ),
                         data: (s) => _buildStatusCard(context, cs, s),
                       ),
-                      const SizedBox(height: SpacingTokens.lg),
+                      const SizedBox(height: SpacingTokens.base),
 
-                      // ─── Quick Stats ──────────────────────
-                      const AppSectionLabel(text: 'إحصائيات سريعة'),
-                      const SizedBox(height: SpacingTokens.sm),
+                      // ═══════════════════════════════════════
+                      // 📊 إحصائيات
+                      // ═══════════════════════════════════════
                       statsAsync.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 3, itemHeight: 100),
-                        error: (e, _) {
-                          debugPrint('[AdminDashboard] stats error: $e');
-                          return _buildErrorCard(
-                            cs,
-                            'تعذر تحميل البيانات',
-                            () => ref.invalidate(systemStatsProvider),
-                          );
-                        },
+                        error: (e, _) => _buildErrorCard(
+                          cs, 'تعذر تحميل الإحصائيات',
+                          () => ref.invalidate(systemStatsProvider),
+                        ),
                         data: (stats) => _buildStatsGrid(context, cs, stats),
                       ),
-                      const SizedBox(height: SpacingTokens.lg),
-
-                      // ─── Trading & Users ───────────────────
-                      const AppSectionLabel(text: 'إدارة النظام'),
-                      const SizedBox(height: SpacingTokens.sm),
-                      _actionItem(context, cs, BrandIcons.shield, 'التحكم بالنظام', RouteNames.tradingControl),
-                      _actionItem(context, cs, BrandIcons.history, 'سجلات النظام', RouteNames.systemLogs),
-                      _actionItem(context, cs, BrandIcons.chart, 'لوحة السجلات', RouteNames.adminLogsDashboard),
-
                       const SizedBox(height: SpacingTokens.base),
-                      const AppSectionLabel(text: 'إعدادات متقدمة'),
-                      const SizedBox(height: SpacingTokens.sm),
-                      _actionItem(context, cs, BrandIcons.settings, 'التحكم بالخلفية', RouteNames.adminBackgroundControl),
-                      _actionItem(context, cs, BrandIcons.memory, 'لوحة التعلم الآلي', RouteNames.adminMlDashboard),
+
+                      // ═══════════════════════════════════════
+                      // 🎛️ إجراءات
+                      // ═══════════════════════════════════════
+                      _actionItem(context, cs, BrandIcons.shield, 'التحكم بالمحرك — تشغيل / إيقاف / طوارئ', RouteNames.tradingControl),
+                      _actionItem(context, cs, BrandIcons.history, 'سجلات النظام — الأخطاء والتدقيق', RouteNames.systemLogs),
+                      _actionItem(context, cs, BrandIcons.chart, 'لوحة السجلات — نشاط وتدقيق', RouteNames.adminLogsDashboard),
+                      _actionItem(context, cs, BrandIcons.settings, 'خدمات الخلفية — المجدول والمهام', RouteNames.adminBackgroundControl),
+                      _actionItem(context, cs, BrandIcons.memory, 'التعلم الآلي — النماذج والتدريب', RouteNames.adminMlDashboard),
 
                       const SizedBox(height: SpacingTokens.xl),
                     ],
@@ -256,6 +246,10 @@ class AdminDashboardScreen extends ConsumerWidget {
     String label,
     String route,
   ) {
+    final parts = label.split(' — ');
+    final title = parts[0];
+    final subtitle = parts.length > 1 ? parts[1] : null;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
       child: AppCard(
@@ -266,14 +260,26 @@ class AdminDashboardScreen extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            BrandIcon(icon, size: 20, color: cs.primary),
+            BrandIcon(icon, size: 22, color: cs.primary),
             const SizedBox(width: SpacingTokens.md),
             Expanded(
-              child: Text(label, style: TypographyTokens.body(cs.onSurface)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TypographyTokens.body(cs.onSurface)),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      style: TypographyTokens.caption(
+                        cs.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ),
+                ],
+              ),
             ),
             Icon(
               Icons.chevron_left_rounded,
-              color: cs.onSurface.withValues(alpha: 0.3),
+              color: cs.onSurface.withValues(alpha: 0.25),
               size: 20,
             ),
           ],
