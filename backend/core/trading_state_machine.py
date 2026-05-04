@@ -52,14 +52,16 @@ VALID_STATES = [STOPPED, STARTING, RUNNING, STOPPING, HALTING, ERROR]
 # خوارزمية العزل: ACTIVE → HALTING → OFF
 # المستخدم يضغط إيقاف → يتحول لـ HALTING → يُغلق المحرك الصفقات → يتحول لـ
 # STOPPED
+# NOTE: STOPPING is kept as a legacy safety net for reconciliation only.
+# Active transitions use HALTING (graceful) or direct emergency STOPPED.
 VALID_TRANSITIONS = {
     STOPPED: [STARTING],
     STARTING: [RUNNING, ERROR, STOPPED],
     RUNNING: [HALTING, ERROR],  # بدلاً من STOPPING - للسماح بتصفية الصفقات
     # يمكن العودة للتشغيل أو الإيقاف الكامل
     HALTING: [RUNNING, STOPPED, ERROR],
-    STOPPING: [STOPPED, ERROR],
-    ERROR: [STOPPED, STARTING],
+    STOPPING: [STOPPED, ERROR],  # Legacy — only used by reconcile, not by active transitions
+    ERROR: [STOPPED, STARTING],  # reset_error → STOPPED, then start → STARTING
 }
 
 # State labels for UI
@@ -92,6 +94,8 @@ class TradingStateMachine:
             "running_to_error": 0,
             "starting_timeout": 0,
             "stopping_to_stopped": 0,
+            "halting_to_stopped": 0,
+            "halting_to_error": 0,
             "stopped_orphan_killed": 0,
             "stopped_to_running": 0,
             "last_event_at": None,
@@ -275,7 +279,28 @@ class TradingStateMachine:
                     )
                     return self.get_state()
 
-                # Can only start from STOPPED or ERROR
+                # Can start from STOPPED, ERROR, or resume from HALTING
+                if current_state == HALTING:
+                    # Resume from HALTING: reopen for new trades while keeping
+                    # existing positions managed
+                    logger.info(
+                        f"ℹ️ Resuming from HALTING — transitioning to RUNNING"
+                    )
+                    self._transition(
+                        conn,
+                        RUNNING,
+                        message="تم استئناف التداول — فتح صفقات جديدة",
+                    )
+                    conn.commit()
+                    self._log_transition(
+                        HALTING,
+                        RUNNING,
+                        initiated_by,
+                        None,
+                        "Resume from HALTING — new trades allowed",
+                    )
+                    return self.get_state()
+
                 if current_state not in (STOPPED, ERROR):
                     logger.warning(f"⚠️ Cannot start from state {current_state}")
                     return self.get_state()
@@ -680,6 +705,19 @@ class TradingStateMachine:
                     "reconcile",
                     None,
                     f"All trades closed - auto transition to STOPPED",
+                )
+            elif not process_alive and not heartbeat_fresh:
+                # العملية ميتة ولا نبضات — لا أحد يدير الصفقات المفتوحة
+                corrected = ERROR
+                corrected_msg = f"عملية التداول توقفت أثناء التصفية ({open_positions} صفقة مفتوحة)"
+                self._do_reconcile_update(corrected, corrected_msg)
+                self._record_reconcile_event("halting_to_error")
+                self._log_transition(
+                    HALTING,
+                    ERROR,
+                    "reconcile",
+                    None,
+                    f"Process died during halting with {open_positions} open positions",
                 )
             else:
                 # لا تزال هناك صفقات مفتوحة - استمر في التصفية
