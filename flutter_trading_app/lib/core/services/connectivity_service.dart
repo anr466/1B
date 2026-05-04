@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trading_app/design/tokens/spacing_tokens.dart';
+import 'package:trading_app/design/tokens/typography_tokens.dart';
 
 final connectivityServiceProvider = Provider<ConnectivityService>((ref) {
   return ConnectivityService();
@@ -85,26 +87,26 @@ class OfflineIndicator extends ConsumerWidget {
 class _OfflineBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Container(
         width: double.infinity,
-        color: Colors.orange.shade800,
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-        child: const SafeArea(
+        color: cs.error,
+        padding: const EdgeInsets.symmetric(
+          vertical: SpacingTokens.sm,
+          horizontal: SpacingTokens.base,
+        ),
+        child: SafeArea(
           bottom: false,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.wifi_off, color: Colors.white, size: 18),
-              SizedBox(width: 8),
+              Icon(Icons.wifi_off, color: cs.onError, size: SpacingTokens.iconSm),
+              const SizedBox(width: SpacingTokens.sm),
               Text(
                 'لا يوجد اتصال بالإنترنت',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TypographyTokens.label(cs.onError),
               ),
             ],
           ),

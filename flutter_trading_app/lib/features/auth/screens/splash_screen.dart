@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
+import 'package:trading_app/design/tokens/spacing_tokens.dart';
+import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/main.dart';
 import 'package:trading_app/navigation/route_names.dart';
 
-/// Deep black background — matching brand hero section
-const _deepBlack = Color(0xFF060810);
+/// Deep black background — matching brand hero section (aligned with surface in DESIGN.md)
+const _deepBlack = Color(0xFF080C14);
 
 /// Titanium gradient colors & stops (matching final_brand.html)
 const _titaniumColors = [
@@ -232,19 +234,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                       children: [
                         // === THE MARK: 1B titanium gradient + precision cut ===
                         const _SplashBrandMark(fontSize: 160),
-                        const SizedBox(height: 40),
+                        const SizedBox(height: SpacingTokens.xxl),
 
                         // === TRADING wordmark ===
                         Opacity(
                           opacity: _wordOpacity.value,
                           child: Text(
                             'T  R  A  D  I  N  G',
-                            style: TextStyle(
-                              color: const Color(
-                                0xFFC8C8C8,
-                              ).withValues(alpha: 0.5),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                            style: TypographyTokens.label(
+                              const Color(0xFFC8C8C8).withValues(alpha: TypographyTokens.opSecondary),
+                            ).copyWith(
                               letterSpacing: _wordSpacing.value,
                             ),
                           ),
@@ -291,6 +290,8 @@ class _SplashBrandMark extends StatelessWidget {
             fontWeight: FontWeight.w900,
             height: 1.0,
             letterSpacing: fontSize * -0.06,
+            // White is required for ShaderMask blend mode —
+            // the gradient replaces this color entirely
             color: Colors.white,
           ),
         ),
