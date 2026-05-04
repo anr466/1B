@@ -38,7 +38,7 @@ class AppCard extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final isDark = cs.brightness == Brightness.dark;
-    final radius = borderRadius ?? SpacingTokens.radiusXl;
+    final radius = borderRadius ?? SpacingTokens.radiusMd;
 
     final borderAlpha = switch (level) {
       0 => 0.0,
