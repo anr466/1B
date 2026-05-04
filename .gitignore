@@ -1,0 +1,260 @@
+# ==========================================
+# TRADING AI BOT - COMPREHENSIVE .gitignore
+# ==========================================
+
+# 🔒 CRITICAL SECURITY - NEVER COMMIT THESE!
+# ==========================================
+# Firebase Service Account Keys
+config/security/firebase-service-account.json
+tradingai-bot-firebase-adminsdk-*.json
+
+# Environment Variables (Binance API Keys, DB passwords, etc.)
+.env
+.env.*
+!.env.example
+
+# Binance API Keys (backup locations)
+config/binance_keys.json
+binance_credentials*
+api_keys*
+
+# Database Files (contain trading data & user accounts)
+*.db
+*.sqlite
+*.sqlite3
+database/*.db*
+trading.db*
+
+# Encryption Keys
+config/security/encryption_key*
+secret_key*
+encryption/*
+
+# 📁 PYTHON & BACKEND
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+# Python venv lib (but NOT Flutter source lib)
+/lib/
+backend/lib/
+!flutter_trading_app/lib/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.conda/
+pyvenv.cfg
+
+# PyTorch/ML Models (large files)
+*.pth
+*.pkl
+*.h5
+*.model
+models/trained/*
+.cache/
+
+# 📱 FLUTTER & MOBILE APPS
+# ==========================================
+# Flutter/Dart build outputs
+flutter_trading_app/.dart_tool/
+flutter_trading_app/.flutter-plugins
+flutter_trading_app/.flutter-plugins-dependencies
+flutter_trading_app/.packages
+flutter_trading_app/build/
+flutter_trading_app/.pub-cache/
+flutter_trading_app/.pub/
+
+# Flutter Android
+flutter_trading_app/android/app/build/
+flutter_trading_app/android/build/
+flutter_trading_app/android/.gradle/
+flutter_trading_app/android/captures/
+flutter_trading_app/android/local.properties
+flutter_trading_app/android/app/release/
+flutter_trading_app/android/key.properties
+flutter_trading_app/android/*.keystore
+flutter_trading_app/android/*.jks
+
+# Flutter iOS
+flutter_trading_app/ios/Flutter/flutter_export_environment.sh
+flutter_trading_app/ios/Flutter/Generated.xcconfig
+flutter_trading_app/ios/Flutter/App.framework/
+flutter_trading_app/ios/Pods/
+flutter_trading_app/ios/.symlinks/
+flutter_trading_app/ios/Runner.xcworkspace/xcuserdata/
+flutter_trading_app/ios/ServiceDefinitions.json
+
+# APK/IPA files
+*.apk
+*.aab
+*.aar
+*.ipa
+
+# 📱 REACT NATIVE (if any)
+# ==========================================
+# Node modules
+**/node_modules/
+
+# NPM/Yarn logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Metro bundler
+**/.metro-health-check*
+**/metro.config.js.bak
+
+# 💾 DATABASES & STORAGE
+# ==========================================
+# SQLite files
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Backup files
+backups/*.sql
+backups/*.db
+*.backup
+
+# Temporary data storage
+data/temp/
+data/cache/
+tmp/
+temp/
+
+# 📊 LOGS & MONITORING
+# ==========================================
+logs/
+*.log
+*.log.*
+audit_*.log
+trading_*.log
+system_*.log
+
+# System state files
+tmp/system_state.json
+tmp/system.lock
+.pids/
+
+# 🔧 DEVELOPMENT & TOOLS
+# ==========================================
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+coverage/
+htmlcov/
+.nyc_output/
+
+# Documentation builds
+docs/_build/
+site/
+
+# 💻 OPERATING SYSTEM
+# ==========================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+*~
+
+# 🗃️ ARCHIVES & BACKUPS
+# ==========================================
+_archive/
+archive/
+old_backups/
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Backup folders
+*_backup_*/
+
+# Legacy/dead code (we want to keep _archive/ in repo but not individual backups)
+_archive/old_backups/
+_archive/dead_code/temp/
+
+# 🎯 PROJECT SPECIFIC
+# ==========================================
+# Machine Learning cache
+.cache/
+ml_models/*.pkl
+learning_cache/
+
+# Trading data exports
+exports/
+reports/*.csv
+reports/*.xlsx
+
+# Configuration overrides
+config/local_*
+local_config*
+
+# Process locks
+*.pid
+*.lock
+system.lock
+.windsurf/plans/
+tests/reports/device_captures/
+tmp_user_settings_sync_result.txt
+flutter_trading_app/.metadata
+backend/ml/saved_models/*.incompatible_*.bak
+
+# 🗑️ MISC CLEANUP
+# ==========================================
+# Temporary analysis files
+FLUTTER_ANALYSIS.md
+screenshot*.png
+tmp/
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.playwright-mcp/
+.mcp/
+
+# Build artifacts
+web/
+ecosystem.config.js
+
+# Old SSH helper (use SSH config instead)
+add_ssh_key.sh

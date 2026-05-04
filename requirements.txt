@@ -1,0 +1,85 @@
+# ==================== Trading AI Bot - Backend Requirements ====================
+# آخر تحديث: 2026-03-21
+# Python 3.13.7 - متوافق مع هذا المحرر
+# ⚠️ تحذير: لا تحذف هذا الملف - إنه ضروري لتشغيل النظام
+# 
+# لتثبيت جميع المكتبات:
+#   pip install -r requirements.txt
+#
+# ملاحظة: يُفضل استخدام requirements-prod.txt أو requirements-dev.txt
+# هذا الملف للتوافق العام فقط
+# ==============================================================================
+
+# ==================== FastAPI & Web Framework ====================
+fastapi==0.121.0
+uvicorn==0.38.0
+starlette==0.49.3
+Flask==3.1.2
+flask-cors==4.0.0
+python-multipart==0.0.20
+
+# ==================== Database ====================
+# sqlite3  # Built-in with Python (no need to install)
+psycopg2-binary==2.9.10
+
+# ==================== Authentication & Security ====================
+PyJWT==2.11.0
+bcrypt==5.0.0
+cryptography==46.0.3
+python-dotenv==1.2.1
+pydantic==2.12.4
+pydantic_core==2.41.5
+email-validator==2.3.0
+dnspython==2.8.0
+
+# ==================== API & HTTP ====================
+requests==2.32.5
+httpx==0.28.1
+aiohttp==3.13.3
+
+# ==================== Binance Trading ====================
+python-binance==1.0.32
+
+# ==================== Data Processing & Analysis ====================
+pandas==2.3.3
+numpy==2.2.6
+scipy==1.16.3
+scikit-learn==1.8.0
+
+# ==================== Machine Learning ====================
+xgboost==3.2.0
+joblib==1.5.3
+
+# ==================== Rate Limiting & Performance ====================
+slowapi==0.1.9
+Flask-Limiter==4.1.1
+limits==4.2
+cachetools==6.2.6
+
+# ==================== Logging & Monitoring ====================
+psutil==7.2.2
+
+# ==================== Task Scheduling ====================
+# schedule و APScheduler و celery تم حذفها (غير مثبتة في البيئة الحالية)
+
+# ==================== Notifications ====================
+# python-telegram-bot تم حذفها (غير مثبتة في البيئة الحالية)
+firebase_admin==7.1.0
+
+# ==================== Testing ====================
+pytest==9.0.2
+
+# ==================== Development Tools ====================
+black==25.9.0
+flake8==7.3.0
+
+# ==================== Utilities ====================
+python-dateutil==2.9.0.post0
+pytz==2025.2
+click==8.3.1
+tqdm==4.67.3
+PyYAML==6.0.3
+
+# ==================== Backtesting ====================
+backtesting==0.6.5
+pandas-ta==0.4.71b0

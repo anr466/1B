@@ -1,0 +1,132 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-ai-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-trading_ai_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-trading_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-password}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 3002
+    volumes:
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./tmp:/app/tmp
+      - ./backend:/app/backend
+      - ./bin:/app/bin
+      - ./database:/app/database
+      - ./scripts:/app/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
+    expose:
+      - "3002"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3002/health || curl -fsS http://127.0.0.1:3002/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-ai-scanner
+    restart: unless-stopped
+    command: ["python", "bin/scanner_worker.py"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-trading_ai_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-trading_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-password}
+    volumes:
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./tmp:/app/tmp
+      - ./backend:/app/backend
+      - ./bin:/app/bin
+      - ./database:/app/database
+      - ./scripts:/app/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  executor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-ai-executor
+    restart: unless-stopped
+    command: ["python", "bin/executor_worker.py"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgresql}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-trading_ai_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-trading_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-password}
+    volumes:
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./tmp:/app/tmp
+      - ./backend:/app/backend
+      - ./bin:/app/bin
+      - ./database:/app/database
+      - ./scripts:/app/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: trading-ai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trading_ai_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-trading_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/postgres_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trading_user} -d ${POSTGRES_DB:-trading_ai_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: trading-ai-nginx
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres_data:
