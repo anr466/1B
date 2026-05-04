@@ -79,14 +79,14 @@ class MetricCard extends StatelessWidget {
                   label.toUpperCase(),
                   style: TypographyTokens.overline(
                     cs.onSurface.withValues(alpha: 0.5),
-                  ).copyWith(letterSpacing: 1.5, fontSize: 10),
+                  ).copyWith(letterSpacing: 1.5),
                 ),
               ),
               if (change != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: SpacingTokens.sm,
+                    vertical: SpacingTokens.xxs,
                   ),
                   decoration: BoxDecoration(
                     color: effectiveAccent.withValues(alpha: 0.12),
@@ -167,14 +167,14 @@ class HeroMetricCard extends StatelessWidget {
                   label.toUpperCase(),
                   style: TypographyTokens.overline(
                     cs.onSurface.withValues(alpha: 0.5),
-                  ).copyWith(letterSpacing: 1.5, fontSize: 10),
+                  ).copyWith(letterSpacing: 1.5),
                 ),
               ),
               if (badge != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
+                    horizontal: SpacingTokens.sm,
+                    vertical: SpacingTokens.xxs,
                   ),
                   decoration: BoxDecoration(
                     color: (accentColor ?? cs.primary).withValues(alpha: 0.12),

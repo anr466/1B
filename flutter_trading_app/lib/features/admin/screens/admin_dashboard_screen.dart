@@ -102,48 +102,17 @@ class AdminDashboardScreen extends ConsumerWidget {
                       const SizedBox(height: SpacingTokens.lg),
 
                       // ─── Trading & Users ───────────────────
-                      const AppSectionLabel(text: 'إجراءات سريعة'),
+                      const AppSectionLabel(text: 'إدارة النظام'),
                       const SizedBox(height: SpacingTokens.sm),
+                      _actionItem(context, cs, BrandIcons.shield, 'التحكم بالنظام', RouteNames.tradingControl),
+                      _actionItem(context, cs, BrandIcons.history, 'سجلات النظام', RouteNames.systemLogs),
+                      _actionItem(context, cs, BrandIcons.chart, 'لوحة السجلات', RouteNames.adminLogsDashboard),
 
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.chart,
-                        'التحكم بالنظام',
-                        RouteNames.tradingControl,
-                      ),
-
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.history,
-                        'سجلات النظام',
-                        RouteNames.systemLogs,
-                      ),
-
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.settings,
-                        'لوحة السجلات',
-                        RouteNames.adminLogsDashboard,
-                      ),
-
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.chart,
-                        'التحكم بالخلفية',
-                        RouteNames.adminBackgroundControl,
-                      ),
-
-                      _actionItem(
-                        context,
-                        cs,
-                        BrandIcons.memory,
-                        'لوحة ML',
-                        RouteNames.adminMlDashboard,
-                      ),
+                      const SizedBox(height: SpacingTokens.base),
+                      const AppSectionLabel(text: 'إعدادات متقدمة'),
+                      const SizedBox(height: SpacingTokens.sm),
+                      _actionItem(context, cs, BrandIcons.settings, 'التحكم بالخلفية', RouteNames.adminBackgroundControl),
+                      _actionItem(context, cs, BrandIcons.memory, 'لوحة التعلم الآلي', RouteNames.adminMlDashboard),
 
                       const SizedBox(height: SpacingTokens.xl),
                     ],

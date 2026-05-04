@@ -110,84 +110,67 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                           AppCard(
                             level: 0,
                             padding: const EdgeInsets.all(SpacingTokens.lg),
-                            child: Stack(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Positioned(
-                                  left: 8,
-                                  top: 8,
-                                  child: IgnorePointer(
-                                    child: Opacity(
-                                      opacity: 0.08,
-                                      child: BrandLogo.mono(
-                                        size: 140,
-                                        monoColor: cs.onSurface,
+                                Text(
+                                  'ملخص الأداء',
+                                  style: TypographyTokens.h3(cs.onSurface),
+                                ),
+                                const SizedBox(height: SpacingTokens.md),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _metric(
+                                        cs,
+                                        'إجمالي الربح/الخسارة',
+                                        pnl: s.totalPnl,
                                       ),
                                     ),
-                                  ),
+                                    Expanded(
+                                      child: _metric(
+                                        cs,
+                                        'الربح المحقق',
+                                        pnl: s.realizedPnl,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                const SizedBox(height: SpacingTokens.md),
+                                Row(
                                   children: [
-                                    Text(
-                                      'ملخص الأداء',
-                                      style: TypographyTokens.h3(cs.onSurface),
+                                    Expanded(
+                                      child: _metric(
+                                        cs,
+                                        'غير المحقق',
+                                        pnl: s.unrealizedPnl,
+                                      ),
                                     ),
-                                    const SizedBox(height: SpacingTokens.md),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _metric(
-                                            cs,
-                                            'إجمالي الربح/الخسارة',
-                                            pnl: s.totalPnl,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: _metric(
-                                            cs,
-                                            'الربح المحقق',
-                                            pnl: s.realizedPnl,
-                                          ),
-                                        ),
-                                      ],
+                                    Expanded(
+                                      child: _metric(
+                                        cs,
+                                        'متوسط الربح',
+                                        amount: s.averagePnl,
+                                      ),
                                     ),
-                                    const SizedBox(height: SpacingTokens.md),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _metric(
-                                            cs,
-                                            'غير المحقق',
-                                            pnl: s.unrealizedPnl,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: _metric(
-                                            cs,
-                                            'متوسط الربح',
-                                            amount: s.averagePnl,
-                                          ),
-                                        ),
-                                      ],
+                                  ],
+                                ),
+                                const SizedBox(height: SpacingTokens.md),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _metric(
+                                        cs,
+                                        'أفضل صفقة',
+                                        amount: s.bestTrade,
+                                      ),
                                     ),
-                                    const SizedBox(height: SpacingTokens.md),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _metric(
-                                            cs,
-                                            'أفضل صفقة',
-                                            amount: s.bestTrade,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: _metric(
-                                            cs,
-                                            'أسوأ صفقة',
-                                            amount: s.worstTrade,
-                                          ),
-                                        ),
-                                      ],
+                                    Expanded(
+                                      child: _metric(
+                                        cs,
+                                        'أسوأ صفقة',
+                                        amount: s.worstTrade,
+                                      ),
                                     ),
                                   ],
                                 ),

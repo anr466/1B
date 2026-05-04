@@ -247,14 +247,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ],
                           ),
                         ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.edit_outlined,
-                            color: cs.primary,
-                            size: 20,
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: cs.primary.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(SpacingTokens.radiusFull),
                           ),
-                          tooltip: 'تعديل',
-                          onPressed: () => _showEditProfileDialog(context),
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.edit_outlined,
+                              color: cs.primary,
+                              size: 18,
+                            ),
+                            tooltip: 'تعديل',
+                            padding: EdgeInsets.zero,
+                            onPressed: () => _showEditProfileDialog(context),
+                          ),
                         ),
                       ],
                     ),
