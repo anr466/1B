@@ -559,21 +559,22 @@ class BackgroundTradingManager:
         try:
             # ✅ التحقق من حالة النظام العامة قبل تنفيذ أي تداول
             system_state = self._get_system_trading_state()
+            monitoring_only = False
             if system_state != "RUNNING":
-                if system_state == "STOPPED":
+                if system_state in ("HALTING", "STOPPING"):
+                    logger.info(f"⚠️ النظام في حالة {system_state} — مراقبة فقط (ممنوع فتح صفقات جديدة)")
+                    monitoring_only = True
+                elif system_state == "STOPPED":
                     logger.debug("⚠️ النظام متوقف - لا يتم التداول")
-                elif system_state == "STOPPING":
-                    logger.debug("⚠️ النظام يتوقف - لا يتم فتح صفقات جديدة")
-                elif system_state == "HALTING":
-                    logger.debug("⚠️ النظام يصفق - لا يتم فتح صفقات جديدة")
                 elif system_state == "ERROR":
                     logger.warning("⚠️ النظام في حالة خطأ - لا يتم التداول")
                 elif system_state == "STARTING":
                     logger.debug("⚠️ النظام يبدأ - انتظار...")
                 else:
                     logger.debug(f"⚠️ النظام في حالة {system_state} - لا يتم التداول")
-                self._update_group_b_activity(self._group_b_cycles, 0)
-                return
+                if not monitoring_only:
+                    self._update_group_b_activity(self._group_b_cycles, 0)
+                    return
 
             # ✅ دائماً زيادة عداد الدورات (يعكس عدد مرات المسح الفعلية)
             self._group_b_cycles += 1
@@ -589,9 +590,18 @@ class BackgroundTradingManager:
             logger.info(f"🔄 Group B: بدء التداول لـ {len(active_users)} مستخدم")
 
             # تنظيف cache المستخدمين الذين لم يعودوا نشطين
+            # ⚠️ لا تحذف سياق المستخدم إذا كان لديه صفقات مفتوحة للمراقبة
             active_ids = {u["context_key"] for u in active_users}
-            stale_ids = [uid for uid in self._user_systems if uid not in active_ids]
-            for uid in stale_ids:
+            for uid, system in list(self._user_systems.items()):
+                if uid in active_ids:
+                    continue
+                try:
+                    open_pos = system._get_open_positions()
+                    if open_pos:
+                        logger.info(f"👁️ سياق {uid} لديه {len(open_pos)} صفقة مفتوحة — لن أحذفه")
+                        continue
+                except Exception:
+                    pass
                 del self._user_systems[uid]
                 self._user_context_fingerprints.pop(uid, None)
 
@@ -623,11 +633,13 @@ class BackgroundTradingManager:
 
                     # ========== منطق التداول ==========
                     if trading_enabled:
+                        group_b.monitoring_only = monitoring_only
                         group_b.run_monitoring_only()
                         logger.debug(
                             f"✅ User {user_id} ({username}) mode={requested_mode}: دورة تداول كاملة"
                         )
                     elif has_open_positions:
+                        group_b.monitoring_only = True
                         group_b.run_monitoring_only()
                         logger.debug(
                             f"👁️ User {user_id} ({username}) mode={requested_mode}: مراقبة صفقات مفتوحة فقط"

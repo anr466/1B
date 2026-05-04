@@ -884,6 +884,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
             # 0. إعادة تحميل إعدادات المستخدم وحالة التداول من DB
             self.user_settings = self._load_user_settings()
             self.can_trade = self.user_settings.get("trading_enabled", False)
+            self.monitoring_only = False
             self.is_demo_trading = self._determine_trading_mode()
 
             # 1. تحديث المحفظة
@@ -975,6 +976,7 @@ class GroupBSystem(PositionManagerMixin, ScannerMixin, RiskManagerMixin):
 
             can_open_new = (
                 self.can_trade
+                and not self.monitoring_only
                 and position_size_pct > 0
                 and user_max_positions > 0
                 and available_balance > 0

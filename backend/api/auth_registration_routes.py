@@ -652,9 +652,8 @@ def register_registration_routes(bp, shared):
 
                 if (
                     TOKEN_SYSTEM_AVAILABLE
-                    and user_id
                     and generate_tokens
-                    and is_verified
+                    and email_verified
                 ):
                     tokens = generate_tokens(user_id, username, "user")
 
@@ -669,7 +668,7 @@ def register_registration_routes(bp, shared):
                                 "email": email,
                                 "phone_number": phone_number,
                                 "user_type": "user",
-                                "email_verified": bool(is_verified),
+                                "email_verified": bool(email_verified),
                                 "phone_verified": bool(is_phone_verified),
                             },
                             "message": "تم إنشاء الحساب بنجاح",
