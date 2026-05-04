@@ -100,8 +100,6 @@ class AdminDashboardScreen extends ConsumerWidget {
                       // ═══════════════════════════════════════
                       _actionItem(context, cs, BrandIcons.shield, 'التحكم بالمحرك — تشغيل / إيقاف / طوارئ', RouteNames.tradingControl),
                       _actionItem(context, cs, BrandIcons.history, 'سجلات النظام — الأخطاء والتدقيق', RouteNames.systemLogs),
-                      _actionItem(context, cs, BrandIcons.chart, 'لوحة السجلات — نشاط وتدقيق', RouteNames.adminLogsDashboard),
-                      _actionItem(context, cs, BrandIcons.settings, 'خدمات الخلفية — المجدول والمهام', RouteNames.adminBackgroundControl),
                       _actionItem(context, cs, BrandIcons.memory, 'التعلم الآلي — النماذج والتدريب', RouteNames.adminMlDashboard),
 
                       const SizedBox(height: SpacingTokens.xl),

@@ -65,7 +65,7 @@ class _MainShellState extends ConsumerState<MainShell> {
             height: barHeight,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(5, (i) {
+              children: List.generate(4, (i) {
                 final isActive = _currentIndex == i;
                 return _buildTab(
                   index: i,
@@ -141,18 +141,11 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   BrandIconData _getIconData(int index, bool isAdmin) {
     switch (index) {
-      case 0:
-        return BrandIcons.home;
-      case 1:
-        return BrandIcons.wallet;
-      case 2:
-        return BrandIcons.history;
-      case 3:
-        return BrandIcons.chart;
-      case 4:
-        return isAdmin ? BrandIcons.shield : BrandIcons.user;
-      default:
-        return BrandIcons.home;
+      case 0: return BrandIcons.home;
+      case 1: return BrandIcons.wallet;
+      case 2: return BrandIcons.history;
+      case 3: return isAdmin ? BrandIcons.shield : BrandIcons.user;
+      default: return BrandIcons.home;
     }
   }
 
@@ -160,8 +153,8 @@ class _MainShellState extends ConsumerState<MainShell> {
     if (index == _currentIndex) return;
     final auth = ref.read(authProvider);
     
-    // Redirect Admin to Admin Dashboard instead of Profile on Tab 4
-    if (index == 4 && auth.isAdmin) {
+    // Redirect Admin to Admin Dashboard on Tab 3
+    if (index == 3 && auth.isAdmin) {
       // Use push() so MainShell stays in the nav stack;
       // admin screens can then pop() back to the app.
       context.push(RouteNames.adminDashboard);
