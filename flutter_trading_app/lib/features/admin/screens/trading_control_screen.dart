@@ -98,6 +98,18 @@ class TradingControlScreen extends ConsumerWidget {
 
                       const SizedBox(height: SpacingTokens.lg),
 
+                      const AppSectionLabel(text: 'حالة Binance'),
+                      const SizedBox(height: SpacingTokens.sm),
+                      _binanceStatusCard(ref, cs),
+
+                      const SizedBox(height: SpacingTokens.lg),
+
+                      const AppSectionLabel(text: 'قواطع الحماية'),
+                      const SizedBox(height: SpacingTokens.sm),
+                      _circuitBreakerCard(ref, cs),
+
+                      const SizedBox(height: SpacingTokens.lg),
+
                       const AppSectionLabel(text: 'الحساب التجريبي'),
                       const SizedBox(height: SpacingTokens.sm),
                       _demoResetSection(context, ref, cs, isActionBusy),
@@ -111,6 +123,108 @@ class TradingControlScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _binanceStatusCard(WidgetRef ref, ColorScheme cs) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: ref.read(adminRepositoryProvider).getBinanceStatus(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingShimmer(itemCount: 1, itemHeight: 60);
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return AppCard(
+            padding: const EdgeInsets.all(SpacingTokens.md),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off, color: cs.error, size: 20),
+                const SizedBox(width: SpacingTokens.sm),
+                Text('تعذر جلب حالة Binance',
+                  style: TypographyTokens.bodySmall(cs.error)),
+              ],
+            ),
+          );
+        }
+        final data = snapshot.data!;
+        final connected = data['connected'] == true;
+        return AppCard(
+          padding: const EdgeInsets.all(SpacingTokens.md),
+          child: Row(
+            children: [
+              Container(
+                width: 10, height: 10,
+                decoration: BoxDecoration(
+                  color: connected ? cs.primary : cs.error,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.sm),
+              Text(connected ? 'متصل بـ Binance' : 'غير متصل',
+                style: TypographyTokens.body(cs.onSurface)),
+              const Spacer(),
+              if (!connected)
+                AppButton(
+                  label: 'إعادة الاتصال',
+                  variant: AppButtonVariant.text,
+                  onPressed: () => ref.read(adminRepositoryProvider).retryBinanceConnection(),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _circuitBreakerCard(WidgetRef ref, ColorScheme cs) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: ref.read(adminRepositoryProvider).getCircuitBreakers(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingShimmer(itemCount: 1, itemHeight: 60);
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return AppCard(
+            padding: const EdgeInsets.all(SpacingTokens.md),
+            child: Text('لا توجد بيانات قواطع الحماية',
+              style: TypographyTokens.bodySmall(cs.onSurface.withValues(alpha: 0.5))),
+          );
+        }
+        final data = snapshot.data!;
+        final failures = data['failures'] ?? data['failure_count'] ?? 0;
+        final threshold = data['threshold'] ?? 5;
+        final isOpen = failures >= threshold;
+        return AppCard(
+          padding: const EdgeInsets.all(SpacingTokens.md),
+          child: Row(
+            children: [
+              Icon(
+                isOpen ? Icons.warning_rounded : Icons.check_circle_outline,
+                color: isOpen ? cs.error : cs.primary,
+                size: 20,
+              ),
+              const SizedBox(width: SpacingTokens.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(isOpen ? 'قاطع الحماية مفتوح' : 'قاطع الحماية مغلق',
+                      style: TypographyTokens.body(cs.onSurface)),
+                    Text('الأخطاء: $failures / $threshold',
+                      style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.5))),
+                  ],
+                ),
+              ),
+              if (isOpen)
+                AppButton(
+                  label: 'إعادة ضبط',
+                  variant: AppButtonVariant.text,
+                  onPressed: () => ref.read(adminRepositoryProvider).resetCircuitBreakers(),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
