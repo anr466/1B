@@ -57,3 +57,41 @@ Full visual identity, colors, typography, spacing, component patterns, and do's/
 - **Adding a badge?** → Use `StatusBadge`.
 - **Choosing colors?** → Use `ColorScheme` and `SemanticColors` — never `Color(0xFF...)`.
 - **Choosing text style?** → Use `TypographyTokens.xxx(color)`.
+
+## 9. Feature Audit Rules — No Hidden Functions
+
+### Golden Rule
+**Every function MUST be: Visible + Discoverable + Understandable + Interactive + Testable**
+Any function without these 5 properties is INCOMPLETE and must be fixed.
+
+### Rule 1 — No Hidden Functions
+No function may exist in the codebase without a clear UI element exposing it.
+- Button, Icon, Status Indicator, Notification, Screen, Card, Dialog, Toggle, Visual State
+- If a backend endpoint exists but no Flutter screen calls it → **Missing Visual Binding**
+
+### Rule 2 — Every Feature Must Be Discoverable
+The user must be able to: See it → Understand it → Interact with it → Know its state → Know its result
+
+### Rule 3 — Feature Audit First
+Before writing any new code, audit ALL: Screens, Functions, API calls, User states, Permissions, Notifications, Error states, Success states
+
+### Rule 4 — Business Logic Mapping
+Understand each function completely: Triggers, Conditions, Expected results, Failure modes, Success paths, System relationships
+
+### Rule 5 — User Flow Validation
+Map complete user flows. Any break or ambiguity in the flow is a design problem.
+
+### Rule 6 — State Visibility
+Every system state must be visible: Loading, Success, Failed, Pending, Approved, Rejected, Connected, Disconnected. No hidden states.
+
+### Rule 7 — Clean Rebuild Only
+When rebuilding: improve structure, clean logic, simplify UX, optimize performance, remove complexity, unify design. Do NOT copy old problems.
+
+### Rule 8 — Architecture Awareness
+Understand the full stack: Frontend, Backend, API, Database, State Management, Auth, Permissions, Security, Notifications, Error Handling before making decisions.
+
+### Rule 9 — Verification Before Delivery
+Test every function from 3 angles: **Functional** (does it work?), **Visual** (is it visible?), **UX** (is it clear?).
+
+### Rule 10 — Professional Rebuild Mindset
+Reverse Engineering + Feature Audit + Clean Rebuild. Focus on: quality, clarity, extensibility, stability, maintainability, UX.
