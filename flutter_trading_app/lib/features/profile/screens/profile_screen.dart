@@ -275,9 +275,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   TradingStatusStrip(
                     enabled: tradingState.enabled,
                     isLoading: tradingState.isLoading,
-                    onChanged: tradingState.enabled == null
-                        ? null
-                        : _toggleTrading,
+                    onChanged: _toggleTrading,
                   ),
 
                   const SizedBox(height: SpacingTokens.lg),

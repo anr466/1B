@@ -276,13 +276,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       case 'system':
         AppSnackbar.show(
           context,
-          message: notification.message ?? 'إشعار نظام',
+          message: notification.message,
           type: SnackType.info,
         );
       case 'error':
         AppSnackbar.show(
           context,
-          message: notification.message ?? 'إشعار خطأ',
+          message: notification.message,
           type: SnackType.error,
         );
       default:

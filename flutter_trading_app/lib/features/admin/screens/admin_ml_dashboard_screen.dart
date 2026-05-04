@@ -12,7 +12,6 @@ import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
-import 'package:trading_app/design/tokens/semantic_colors.dart';
 
 Future<Map<String, dynamic>> _safeGet(Future<Map<String, dynamic>> Function() fn) async {
   try { return await fn(); } catch (_) { return {}; }

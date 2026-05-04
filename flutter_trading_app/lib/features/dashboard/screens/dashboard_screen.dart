@@ -14,6 +14,7 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/utils/responsive_utils.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
+import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/metric_card.dart';
@@ -106,6 +107,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     const SizedBox(height: SpacingTokens.md),
 
                     // ─── Stats Grid ──────────────────────────
+                    const AppSectionLabel(text: 'ملخص المحفظة'),
                     _buildStatsGrid(context, ref),
                     const SizedBox(height: SpacingTokens.md),
 

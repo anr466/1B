@@ -643,16 +643,15 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
 class _PortfolioBalanceValue extends StatelessWidget {
   final double amount;
-  final double? fontSize;
 
-  const _PortfolioBalanceValue({required this.amount, this.fontSize});
+  const _PortfolioBalanceValue({required this.amount});
 
   @override
   Widget build(BuildContext context) {
     return MoneyText(
       amount: amount,
       isSensitive: true,
-      fontSize: fontSize ?? 14,
+      fontSize: 14,
     );
   }
 }
