@@ -149,12 +149,15 @@ class HeroMetricCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(SpacingTokens.lg),
       decoration: BoxDecoration(
-        color: isDark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(SpacingTokens.radiusXl),
-        border: Border.all(
-          color: cs.outline.withValues(alpha: isDark ? 0.10 : 0.08),
-          width: 1,
+        gradient: LinearGradient(
+          colors: [
+            cs.surfaceContainerLowest,
+            cs.surfaceContainerLow,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(SpacingTokens.radiusXl),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
