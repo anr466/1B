@@ -76,7 +76,7 @@ class MetricCard extends StatelessWidget {
               ],
               Expanded(
                 child: Text(
-                  label.toUpperCase(),
+                  label,
                   style: TypographyTokens.overline(
                     cs.onSurface.withValues(alpha: 0.5),
                   ).copyWith(letterSpacing: 1.5),
@@ -164,7 +164,7 @@ class HeroMetricCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  label.toUpperCase(),
+                  label,
                   style: TypographyTokens.overline(
                     cs.onSurface.withValues(alpha: 0.5),
                   ).copyWith(letterSpacing: 1.5),

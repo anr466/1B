@@ -68,7 +68,7 @@ class ChartCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                title.toUpperCase(),
+                title,
                 style: TypographyTokens.overline(
                   cs.onSurface.withValues(alpha: 0.5),
                 ).copyWith(letterSpacing: 1.5, fontSize: 10),

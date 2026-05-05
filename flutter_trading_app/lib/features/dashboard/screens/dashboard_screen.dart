@@ -164,7 +164,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   'تداول',
                   style: TypographyTokens.caption(
                     cs.onSurface.withValues(alpha: 0.50),
-                  ).copyWith(letterSpacing: 2.0, fontSize: 10),
+                  ).copyWith(letterSpacing: 1.0),
                 ),
               ],
             ),
@@ -420,7 +420,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             'الصفقات المفتوحة (${positions.length})'.toUpperCase(),
             style: TypographyTokens.overline(
               cs.onSurface.withValues(alpha: 0.5),
-            ).copyWith(letterSpacing: 1.5, fontSize: 10),
+            ).copyWith(letterSpacing: 1.0),
           ),
         ),
         SizedBox(

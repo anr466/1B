@@ -68,7 +68,7 @@ class ProgressDots extends StatelessWidget {
         if (label != null) ...[
           const SizedBox(height: SpacingTokens.xs),
           Text(
-            label!.toUpperCase(),
+            label ?? 'Step',
             style: TypographyTokens.overline(
               cs.onSurface.withValues(alpha: 0.5),
             ).copyWith(letterSpacing: 1.5, fontSize: 10),
