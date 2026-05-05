@@ -10,6 +10,7 @@ import 'package:trading_app/design/skins/cyber_neon/cyber_neon_skin.dart';
 import 'package:trading_app/design/skins/obsidian_titanium/obsidian_titanium_skin.dart';
 import 'package:trading_app/design/skins/minimalist_ui/minimalist_ui_skin.dart';
 import 'package:trading_app/design/skins/soft_pastel/soft_pastel_skin.dart';
+import 'package:trading_app/design/skins/premium_dark/premium_dark_skin.dart';
 import 'package:trading_app/design/tokens/color_tokens.dart';
 
 /// Skin Manager — تسجيل واسترجاع الـ skins
@@ -18,6 +19,7 @@ class SkinManager {
   SkinManager._();
 
   static final Map<String, SkinInterface> _skins = {
+    'premium_dark': const PremiumDarkSkin(),
     'obsidian_titanium': const ObsidianTitaniumSkin(),
     'minimalist_ui': const MinimalistUISkin(),
     'soft_pastel': const SoftPastelSkin(),
@@ -32,16 +34,16 @@ class SkinManager {
   static List<SkinInterface> get allSkins => _skins.values.toList();
 
   static SkinInterface getSkin(String name) {
-    return _skins[name] ?? const ObsidianTitaniumSkin();
+    return _skins[name] ?? const PremiumDarkSkin();
   }
 
-  static SkinInterface get defaultSkin => const ObsidianTitaniumSkin();
+  static SkinInterface get defaultSkin => const PremiumDarkSkin();
 }
 
 // ─── Riverpod Providers (design-only state) ─────────
 
 /// اسم الـ skin المختار (يُحفظ في SharedPreferences)
-final skinNameProvider = StateProvider<String>((ref) => 'obsidian_titanium');
+final skinNameProvider = StateProvider<String>((ref) => 'premium_dark');
 
 /// الـ skin object بناءً على الاسم
 final skinProvider = Provider<SkinInterface>((ref) {
