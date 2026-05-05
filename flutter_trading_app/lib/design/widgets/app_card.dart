@@ -40,10 +40,10 @@ class AppCard extends StatelessWidget {
     final radius = borderRadius ?? SpacingTokens.radiusLg;
 
     final bgColor = switch (level) {
-      0 => backgroundColor ?? cs.surfaceContainerLow,
-      1 => backgroundColor ?? cs.surfaceContainer,
-      2 => backgroundColor ?? cs.surfaceContainerHigh,
-      _ => backgroundColor ?? cs.surfaceContainerLow,
+      0 => backgroundColor ?? cs.surfaceContainerLowest,
+      1 => backgroundColor ?? cs.surfaceContainerLow,
+      2 => backgroundColor ?? cs.surfaceContainer,
+      _ => backgroundColor ?? cs.surfaceContainerLowest,
     };
 
     // Only level 2 has visible border (subtle)
