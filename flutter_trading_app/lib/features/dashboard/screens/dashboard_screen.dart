@@ -138,11 +138,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return settings.maybeWhen(
       data: (s) {
         final needsKeys = !isAdmin && !s.hasBinanceKeys;
-        final needsSettings = s.positionSizePct <= 0 || s.maxPositions <= 0;
         final needsTrading = !s.tradingEnabled;
 
         // All good — no checklist needed
-        if (!needsKeys && !needsSettings && !needsTrading) {
+        if (!needsKeys && !needsTrading) {
           return const SizedBox.shrink();
         }
 
@@ -159,16 +158,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ]),
               const SizedBox(height: SpacingTokens.sm),
               if (needsKeys)
-                _checkItem(cs, Icons.key, 'أضف مفاتيح Binance', !needsKeys, () => context.push(RouteNames.binanceKeys)),
-              if (needsSettings)
-                _checkItem(cs, Icons.tune, 'اضبط إعدادات التداول', !needsSettings, () => context.push(RouteNames.tradingSettings)),
+                _checkItem(cs, Icons.key, 'أضف مفاتيح Binance', false, () => context.push(RouteNames.binanceKeys)),
               if (needsTrading)
-                _checkItem(cs, Icons.power_settings_new, 'فعّل التداول', !needsTrading, null),
-              const SizedBox(height: SpacingTokens.xs),
-              Text(
-                'بعد إكمال الخطوات، سيبحث المحرك تلقائياً عن فرص التداول',
-                style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.45)),
-              ),
+                _checkItem(cs, Icons.power_settings_new, 'فعّل التداول', false, null),
+              if (needsKeys && needsTrading) ...[
+                const SizedBox(height: SpacingTokens.xs),
+                Text(
+                  'المحرك يحدد حجم الصفقة وإدارة المخاطرة تلقائياً',
+                  style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.45)),
+                ),
+              ],
+              if (!needsKeys && !needsTrading) ...[
+                const SizedBox(height: SpacingTokens.xs),
+                Row(children: [
+                  Icon(Icons.check_circle, color: cs.primary, size: 16),
+                  const SizedBox(width: SpacingTokens.xs),
+                  Text('التداول نشط — بانتظار إشارات السوق',
+                    style: TypographyTokens.caption(cs.primary)),
+                ]),
+              ],
             ],
           ),
         );
