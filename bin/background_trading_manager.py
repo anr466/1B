@@ -606,9 +606,20 @@ class BackgroundTradingManager:
                 self._user_context_fingerprints.pop(uid, None)
 
             # حماية من تسرب الذاكرة — حد أقصى 20 نظام في الذاكرة
+            # ⚠️ لا تحذف أنظمة لديها صفقات مفتوحة
             if len(self._user_systems) > 20:
-                excess = list(self._user_systems.keys())[: len(self._user_systems) - 20]
+                excess = [
+                    uid for uid in self._user_systems.keys()
+                    if uid not in active_ids
+                ]
                 for uid in excess:
+                    if len(self._user_systems) <= 20:
+                        break
+                    try:
+                        if self._user_systems[uid]._get_open_positions():
+                            continue
+                    except Exception:
+                        pass
                     del self._user_systems[uid]
                     self._user_context_fingerprints.pop(uid, None)
 
