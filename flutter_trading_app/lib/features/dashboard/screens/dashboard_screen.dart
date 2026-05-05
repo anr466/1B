@@ -7,6 +7,7 @@ import 'package:trading_app/core/providers/admin_provider.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/privacy_provider.dart';
+import 'package:trading_app/core/providers/settings_provider.dart';
 import 'package:trading_app/core/providers/trades_provider.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
@@ -86,6 +87,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     _buildHeader(context, ref, auth),
                     const SizedBox(height: SpacingTokens.md),
 
+                    // ─── Trading Readiness Checklist ────────
+                    _buildReadinessChecklist(cs, ref),
+                    const SizedBox(height: SpacingTokens.md),
+
                     // ─── Hero Balance Card ───────────────────
                     _buildHeroBalanceCard(context, ref),
                     const SizedBox(height: SpacingTokens.md),
@@ -119,6 +124,82 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ),
         ),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  TRADING READINESS CHECKLIST
+  // ──────────────────────────────────────────────────────────────
+  Widget _buildReadinessChecklist(ColorScheme cs, WidgetRef ref) {
+    final auth = ref.read(authProvider);
+    final isAdmin = auth.isAdmin;
+    final settings = ref.watch(settingsDataProvider);
+
+    return settings.maybeWhen(
+      data: (s) {
+        final needsKeys = !isAdmin && !s.hasBinanceKeys;
+        final needsSettings = s.positionSizePct <= 0 || s.maxPositions <= 0;
+        final needsTrading = !s.tradingEnabled;
+
+        // All good — no checklist needed
+        if (!needsKeys && !needsSettings && !needsTrading) {
+          return const SizedBox.shrink();
+        }
+
+        return AppCard(
+          backgroundColor: cs.tertiary.withValues(alpha: 0.08),
+          padding: const EdgeInsets.all(SpacingTokens.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(Icons.tips_and_updates, color: cs.tertiary, size: 20),
+                const SizedBox(width: SpacingTokens.sm),
+                Text('لبدء التداول:', style: TypographyTokens.label(cs.onSurface)),
+              ]),
+              const SizedBox(height: SpacingTokens.sm),
+              if (needsKeys)
+                _checkItem(cs, Icons.key, 'أضف مفاتيح Binance', !needsKeys, () => context.push(RouteNames.binanceKeys)),
+              if (needsSettings)
+                _checkItem(cs, Icons.tune, 'اضبط إعدادات التداول', !needsSettings, () => context.push(RouteNames.tradingSettings)),
+              if (needsTrading)
+                _checkItem(cs, Icons.power_settings_new, 'فعّل التداول', !needsTrading, null),
+              const SizedBox(height: SpacingTokens.xs),
+              Text(
+                'بعد إكمال الخطوات، سيبحث المحرك تلقائياً عن فرص التداول',
+                style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.45)),
+              ),
+            ],
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _checkItem(ColorScheme cs, IconData icon, String text, bool done, VoidCallback? onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: SpacingTokens.xs),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(SpacingTokens.radiusSm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: SpacingTokens.xxs),
+          child: Row(children: [
+            Icon(done ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: 18,
+              color: done ? cs.primary.withValues(alpha: 0.5) : cs.tertiary,
+            ),
+            const SizedBox(width: SpacingTokens.sm),
+            Text(text, style: TypographyTokens.bodySmall(
+              done ? cs.onSurface.withValues(alpha: 0.6) : cs.onSurface,
+            )),
+            const Spacer(),
+            if (onTap != null && !done)
+              Icon(Icons.chevron_left, size: 16, color: cs.tertiary),
+          ]),
+        ),
+      ),
     );
   }
 
