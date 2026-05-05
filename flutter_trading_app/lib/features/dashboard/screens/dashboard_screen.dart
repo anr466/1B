@@ -147,36 +147,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
         return AppCard(
           backgroundColor: cs.tertiary.withValues(alpha: 0.08),
-          padding: const EdgeInsets.all(SpacingTokens.md),
+          padding: const EdgeInsets.all(SpacingTokens.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                Icon(Icons.tips_and_updates, color: cs.tertiary, size: 20),
-                const SizedBox(width: SpacingTokens.sm),
-                Text('لبدء التداول:', style: TypographyTokens.label(cs.onSurface)),
-              ]),
-              const SizedBox(height: SpacingTokens.sm),
-              if (needsKeys)
-                _checkItem(cs, Icons.key, 'أضف مفاتيح Binance', false, () => context.push(RouteNames.binanceKeys)),
-              if (needsTrading)
-                _checkItem(cs, Icons.power_settings_new, 'فعّل التداول', false, null),
-              if (needsKeys && needsTrading) ...[
-                const SizedBox(height: SpacingTokens.xs),
-                Text(
-                  'المحرك يحدد حجم الصفقة وإدارة المخاطرة تلقائياً',
-                  style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.45)),
+                Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: cs.tertiary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(SpacingTokens.radiusSm),
+                  ),
+                  child: Icon(Icons.rocket_launch, color: cs.tertiary, size: 18),
                 ),
-              ],
-              if (!needsKeys && !needsTrading) ...[
-                const SizedBox(height: SpacingTokens.xs),
-                Row(children: [
-                  Icon(Icons.check_circle, color: cs.primary, size: 16),
-                  const SizedBox(width: SpacingTokens.xs),
-                  Text('التداول نشط — بانتظار إشارات السوق',
-                    style: TypographyTokens.caption(cs.primary)),
-                ]),
-              ],
+                const SizedBox(width: SpacingTokens.sm),
+                Expanded(
+                  child: Text('لبدء التداول — خطوتين فقط',
+                    style: TypographyTokens.body(cs.onSurface).copyWith(fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              const SizedBox(height: SpacingTokens.md),
+              if (needsKeys)
+                _checkItem(cs, '1', Icons.key, 'أضف مفاتيح Binance API', 'مطلوب للاتصال بحسابك', () => context.push(RouteNames.binanceKeys)),
+              if (needsTrading)
+                _checkItem(cs, needsKeys ? '2' : '1', Icons.power_settings_new, 'فعّل التداول', 'من الملف الشخصي — اضغط هنا', () => context.go(RouteNames.profile)),
+              if (!needsKeys && !needsTrading)
+                _checkItem(cs, '✓', Icons.check_circle, 'التداول نشط', 'بانتظار إشارات السوق — المحرك يفحص تلقائياً', null),
             ],
           ),
         );
@@ -185,27 +181,47 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _checkItem(ColorScheme cs, IconData icon, String text, bool done, VoidCallback? onTap) {
+  Widget _checkItem(ColorScheme cs, String step, IconData icon, String title, String subtitle, VoidCallback? onTap) {
+    final done = step == '✓';
     return Padding(
-      padding: const EdgeInsets.only(bottom: SpacingTokens.xs),
+      padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(SpacingTokens.radiusSm),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: SpacingTokens.xxs),
-          child: Row(children: [
-            Icon(done ? Icons.check_circle : Icons.radio_button_unchecked,
-              size: 18,
-              color: done ? cs.primary.withValues(alpha: 0.5) : cs.tertiary,
-            ),
-            const SizedBox(width: SpacingTokens.sm),
-            Text(text, style: TypographyTokens.bodySmall(
-              done ? cs.onSurface.withValues(alpha: 0.6) : cs.onSurface,
-            )),
-            const Spacer(),
-            if (onTap != null && !done)
-              Icon(Icons.chevron_left, size: 16, color: cs.tertiary),
-          ]),
+        child: Container(
+          padding: const EdgeInsets.all(SpacingTokens.md),
+          decoration: BoxDecoration(
+            color: done ? cs.primary.withValues(alpha: 0.06) : cs.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: done ? cs.primary.withValues(alpha: 0.15) : cs.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(SpacingTokens.radiusSm),
+                ),
+                child: Center(
+                  child: done
+                    ? Icon(icon, size: 18, color: cs.primary)
+                    : Text(step, style: TypographyTokens.body(cs.tertiary).copyWith(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(width: SpacingTokens.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TypographyTokens.body(cs.onSurface)),
+                    Text(subtitle, style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.45))),
+                  ],
+                ),
+              ),
+              if (onTap != null && !done)
+                Icon(Icons.chevron_left, size: 20, color: cs.tertiary),
+            ],
+          ),
         ),
       ),
     );
