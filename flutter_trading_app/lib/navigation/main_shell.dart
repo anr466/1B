@@ -152,15 +152,9 @@ class _MainShellState extends ConsumerState<MainShell> {
   void _onTabTap(int index) {
     if (index == _currentIndex) return;
     final auth = ref.read(authProvider);
-    
-    // Redirect Admin to Admin Dashboard on Tab 3
-    if (index == 3 && auth.isAdmin) {
-      // Use push() so MainShell stays in the nav stack;
-      // admin screens can then pop() back to the app.
-      context.push(RouteNames.adminDashboard);
-      return;
-    }
-    
+     
+    // All users go to Profile on Tab 3
+    // Admin can access Admin Dashboard from Profile screen
     setState(() => _currentIndex = index);
     context.go(_userRoutes[index]);
   }

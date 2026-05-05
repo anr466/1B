@@ -271,6 +271,42 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                   const SizedBox(height: SpacingTokens.lg),
 
+                  // ─── Admin: Dashboard Access ──────────
+                  if (auth.isAdmin)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: SpacingTokens.sm),
+                      child: AppCard(
+                        onTap: () => context.push(RouteNames.adminDashboard),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: SpacingTokens.base,
+                          vertical: SpacingTokens.md,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40, height: 40,
+                              decoration: BoxDecoration(
+                                color: cs.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(SpacingTokens.radiusMd),
+                              ),
+                              child: Icon(Icons.admin_panel_settings, color: cs.primary, size: 22),
+                            ),
+                            const SizedBox(width: SpacingTokens.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('لوحة الإدارة', style: TypographyTokens.body(cs.onSurface)),
+                                  Text('التحكم بالنظام والمحرك', style: TypographyTokens.caption(cs.onSurface.withValues(alpha: 0.5))),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_left_rounded, color: cs.onSurface.withValues(alpha: 0.25), size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   // ─── Trading Toggle ────────────────────
                   TradingStatusStrip(
                     enabled: tradingState.enabled,
