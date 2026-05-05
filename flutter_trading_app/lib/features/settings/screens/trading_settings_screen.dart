@@ -246,68 +246,6 @@ class _TradingSettingsScreenState extends ConsumerState<TradingSettingsScreen> {
                     return ListView(
                       padding: const EdgeInsets.all(SpacingTokens.base),
                       children: [
-                        if (auth.isAdmin) ...[
-                          _PortfolioModeSwitcher(
-                            currentMode: s.activePortfolio,
-                            hasBinanceKeys: s.hasBinanceKeys,
-                            hasConfiguredDbKeys: s.hasConfiguredDbKeys,
-                            keysRequiredForCurrentMode:
-                                s.keysRequiredForCurrentMode,
-                            isLoading: _isSwitchingMode,
-                            onModeSelected: (mode) => _changeTradingMode(mode),
-                          ),
-                          const SizedBox(height: SpacingTokens.md),
-                        ],
-                        // ──────────────────────────────────────────────────────────────
-                        // تفعيل التداول الشخصي - خاص بحساب المستخدم
-                        // ملاحظة: هذا يختلف عن تشغيل النظام (خاص بالأدمن)
-                        // ──────────────────────────────────────────────────────────
-                        AppCard(
-                          padding: const EdgeInsets.all(SpacingTokens.md),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'تفعيل التداول التلقائي',
-                                          style: TypographyTokens.body(
-                                            cs.onSurface,
-                                          ),
-                                        ),
-                                        const SizedBox(
-                                          height: SpacingTokens.xxs,
-                                        ),
-                                        Text(
-                                          s.tradingEnabled
-                                              ? 'يفتح صفقات جديدة تلقائياً'
-                                              : 'لن يفتح صفقات جديدة',
-                                          style: TypographyTokens.caption(
-                                            cs.onSurface.withValues(alpha: 0.5),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Switch.adaptive(
-                                    value: s.tradingEnabled,
-                                    onChanged:
-                                        (!settingsAsync.isLoading &&
-                                            !settingsAsync.hasError)
-                                        ? _onTradingToggle
-                                        : null,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: SpacingTokens.md),
                         // حالة المخاطرة اليومية
                         _DailyRiskCard(
                           dailyStatus: ref.watch(dailyStatusProvider),

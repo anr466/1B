@@ -278,15 +278,20 @@ class _SecuritySettingsScreenState
 
     final (savedUser, savedPass) = await storage.getBiometricCredentials();
     if (value && (savedUser == null || savedPass == null)) {
-      if (!mounted) return;
-      AppSnackbar.show(
-        context,
-        message:
-            'بيانات الدخول غير محفوظة. سجّل دخولك بحسابك ثم حاول مرة أخرى.',
-        type: SnackType.warning,
-        duration: const Duration(seconds: 4),
-      );
-      return;
+      // محاولة حفظ بيانات الدخول الحالية تلقائياً من "تذكرني"
+      final (rememberUser, rememberPass) = await storage.getRememberedCredentials();
+      if (rememberUser != null && rememberPass != null) {
+        await storage.saveBiometricCredentials(rememberUser, rememberPass);
+      } else {
+        if (!mounted) return;
+        AppSnackbar.show(
+          context,
+          message: 'بيانات الدخول غير محفوظة. فعّل خيار "تذكرني" في شاشة الدخول أولاً.',
+          type: SnackType.info,
+          duration: const Duration(seconds: 4),
+        );
+        return;
+      }
     }
 
     try {
