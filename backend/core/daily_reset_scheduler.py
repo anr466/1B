@@ -146,13 +146,9 @@ class DailyResetScheduler:
             )
 
     def _notify_admin_reset(self, reset_count: int, total_users: int):
-        """
-        إرسال إشعار للأدمن بنجاح إعادة التعيين
+        if reset_count == 0:
+            return  # لا حاجة للإشعار إذا لم يكن هناك مستخدمين للتحديث
 
-        Args:
-            reset_count: عدد المستخدمين الذين تم إعادة تعيينهم
-            total_users: إجمالي المستخدمين
-        """
         try:
             # جلب الأدمن
             admin = self.db.execute_query("""
