@@ -150,10 +150,7 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   void _onTabTap(int index) {
     if (index == _currentIndex) return;
-    final auth = ref.read(authProvider);
-     
-    // All users go to Profile on Tab 3
-    // Admin can access Admin Dashboard from Profile screen
+    
     setState(() => _currentIndex = index);
     context.go(_userRoutes[index]);
   }
