@@ -20,11 +20,10 @@ class _MainShellState extends ConsumerState<MainShell> {
   int _currentIndex = 0;
 
   static const _userRoutes = [
-    RouteNames.dashboard,
-    RouteNames.portfolio,
-    RouteNames.trades,
-    RouteNames.analytics,
-    RouteNames.profile,
+    RouteNames.dashboard,   // Tab 0
+    RouteNames.portfolio,   // Tab 1
+    RouteNames.trades,      // Tab 2
+    RouteNames.profile,     // Tab 3
   ];
 
   @override

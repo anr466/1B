@@ -111,7 +111,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
     final hideBalance = ref.watch(balanceVisibilityProvider);
     final portfolioMode = isAdmin
         ? ref.watch(adminPortfolioModeProvider)
-        : 'demo';
+        : 'real';
     final pagePadding = ResponsiveUtils.pageHorizontalPadding(context);
     final maxWidth = ResponsiveUtils.maxContentWidth(context);
 
