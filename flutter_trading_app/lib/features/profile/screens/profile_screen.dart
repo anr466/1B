@@ -5,6 +5,7 @@ import 'package:trading_app/core/constants/app_constants.dart';
 import 'package:trading_app/core/providers/auth_provider.dart';
 import 'package:trading_app/core/providers/portfolio_provider.dart';
 import 'package:trading_app/core/providers/service_providers.dart';
+import 'package:trading_app/core/providers/settings_provider.dart';
 import 'package:trading_app/core/services/trading_toggle_service.dart';
 import 'package:trading_app/design/icons/brand_icons.dart';
 import 'package:trading_app/design/icons/brand_logo.dart';
@@ -162,10 +163,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
-    final tradingState = ref.watch(accountTradingProvider);
+    final settingsAsync = ref.watch(settingsDataProvider);
     final user = auth.user;
     final pagePadding = ResponsiveUtils.pageHorizontalPadding(context);
     final maxWidth = ResponsiveUtils.maxContentWidth(context);
+
+    // Correct: get tradingEnabled from settings, not from accountTrading loading state
+    final tradingEnabled = settingsAsync.whenData((s) => s.tradingEnabled).value ?? false;
+    final tradingLoading = settingsAsync.isLoading;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -264,11 +269,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                   // ─── Trading Toggle ────────────────────
                   TradingStatusStrip(
-                    enabled: tradingState.enabled,
-                    isLoading: tradingState.isLoading,
-                    onChanged: tradingState.enabled == null
-                        ? null
-                        : _toggleTrading,
+                    enabled: tradingEnabled,
+                    isLoading: tradingLoading,
+                    onChanged: tradingLoading ? null : _toggleTrading,
                   ),
 
                   const SizedBox(height: SpacingTokens.lg),
