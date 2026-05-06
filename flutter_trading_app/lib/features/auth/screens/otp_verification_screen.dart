@@ -309,7 +309,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                 ),
                 onChanged: (v) => newPass = v,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: SpacingTokens.md),
               TextField(
                 obscureText: true,
                 decoration: const InputDecoration(

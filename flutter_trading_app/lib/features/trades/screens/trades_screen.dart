@@ -250,10 +250,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen> {
           (state.hasMore && _searchQuery.isEmpty ? 1 : 0),
       itemBuilder: (_, i) {
         if (i >= filteredTrades.length) {
-          return const Padding(
-            padding: EdgeInsets.all(SpacingTokens.base),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
+          return const LoadingShimmer(itemCount: 5, itemHeight: 80);
         }
 
         final trade = filteredTrades[i];

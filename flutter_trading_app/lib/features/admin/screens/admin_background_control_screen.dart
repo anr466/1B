@@ -14,6 +14,7 @@ import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 
 Future<Map<String, dynamic>> _safeStatus(AdminRepository repo) async {
   try { return await repo.getBackgroundStatus(); } catch (_) { return {}; }
@@ -71,29 +72,9 @@ class AdminBackgroundControlScreen extends ConsumerWidget {
                         LoadingShimmer(itemCount: 4, itemHeight: 80),
                       ],
                     ),
-                    error: (e, _) => ListView(
-                      padding: const EdgeInsets.all(SpacingTokens.base),
-                      children: [
-                        AppCard(
-                          backgroundColor: cs.error.withValues(alpha: 0.08),
-                          padding: const EdgeInsets.all(SpacingTokens.lg),
-                          child: Column(
-                            children: [
-                              Icon(Icons.error_outline, color: cs.error, size: 48),
-                              const SizedBox(height: SpacingTokens.md),
-                              Text(e.toString(), style: TypographyTokens.body(cs.error), textAlign: TextAlign.center),
-                              const SizedBox(height: SpacingTokens.md),
-                              AppButton(
-                                label: 'إعادة',
-                                variant: AppButtonVariant.text,
-                                isFullWidth: false,
-                                icon: Icons.refresh,
-                                onPressed: () => ref.invalidate(_backgroundStatusProvider),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    error: (e, _) => ErrorState(
+                      message: e.toString(),
+                      onRetry: () => ref.invalidate(_backgroundStatusProvider),
                     ),
                     data: (all) {
                       final status = ParsingService.asMap(all['status']);

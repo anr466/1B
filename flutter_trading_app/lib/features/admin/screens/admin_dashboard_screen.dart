@@ -10,6 +10,7 @@ import 'package:trading_app/design/tokens/spacing_tokens.dart';
 import 'package:trading_app/design/tokens/typography_tokens.dart';
 import 'package:trading_app/design/widgets/app_card.dart';
 import 'package:trading_app/design/widgets/app_screen_header.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
@@ -73,10 +74,9 @@ class AdminDashboardScreen extends ConsumerWidget {
                             const LoadingShimmer(itemCount: 1, itemHeight: 80),
                         error: (e, _) {
                           debugPrint('[AdminDashboard] status error: $e');
-                          return _buildErrorCard(
-                            cs,
-                            'تعذر تحميل البيانات',
-                            () => ref.invalidate(tradingCycleLiveProvider),
+                          return ErrorState(
+                            message: 'تعذر تحميل البيانات',
+                            onRetry: () => ref.invalidate(tradingCycleLiveProvider),
                           );
                         },
                         data: (s) => _buildStatusCard(context, cs, s),
@@ -91,10 +91,9 @@ class AdminDashboardScreen extends ConsumerWidget {
                             const LoadingShimmer(itemCount: 3, itemHeight: 100),
                         error: (e, _) {
                           debugPrint('[AdminDashboard] stats error: $e');
-                          return _buildErrorCard(
-                            cs,
-                            'تعذر تحميل البيانات',
-                            () => ref.invalidate(systemStatsProvider),
+                          return ErrorState(
+                            message: 'تعذر تحميل البيانات',
+                            onRetry: () => ref.invalidate(systemStatsProvider),
                           );
                         },
                         data: (stats) => _buildStatsGrid(context, cs, stats),
@@ -313,25 +312,4 @@ class AdminDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorCard(ColorScheme cs, String message, VoidCallback onRetry) {
-    return AppCard(
-      backgroundColor: cs.error.withValues(alpha: 0.08),
-      padding: const EdgeInsets.all(SpacingTokens.md),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: cs.error, size: 24),
-          const SizedBox(width: SpacingTokens.md),
-          Expanded(
-            child: Text(message, style: TypographyTokens.bodySmall(cs.error)),
-          ),
-          AppButton(
-            label: 'إعادة',
-            variant: AppButtonVariant.text,
-            isFullWidth: false,
-            onPressed: onRetry,
-          ),
-        ],
-      ),
-    );
   }
-}

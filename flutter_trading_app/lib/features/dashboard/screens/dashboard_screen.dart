@@ -157,7 +157,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const BrandLogo.mini(size: 14),
-                const SizedBox(width: 4),
+                const SizedBox(width: SpacingTokens.xs),
                 Text(
                   'تداول',
                   style: TypographyTokens.caption(
@@ -253,16 +253,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     return portfolio.when(
       loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 140),
-      error: (e, _) => AppCard(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(SpacingTokens.lg),
-            child: Text(
-              'خطأ في تحميل المحفظة',
-              style: TypographyTokens.bodySmall(cs.error),
-            ),
-          ),
-        ),
+      error: (e, _) => ErrorState(
+        message: 'خطأ في تحميل المحفظة',
+        onRetry: () => ref.invalidate(portfolioProvider),
       ),
       data: (p) {
         final modeLabel = portfolioMode == 'real' ? 'حقيقي' : 'تجريبي';
@@ -347,7 +340,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               ),
               if (pct.isNotEmpty) ...[
-                const SizedBox(width: 4),
+                const SizedBox(width: SpacingTokens.xs),
                 Text(
                   pct,
                   style: TypographyTokens.bodySmall(
@@ -454,11 +447,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         children: [
           // Status Ring
           stats.when(
-            loading: () => const SizedBox(
-              width: 100,
-              height: 100,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
+            loading: () => const LoadingShimmer(itemCount: 1, itemHeight: 100),
             error: (_, __) => ErrorState(
               message: 'تعذر تحميل البيانات',
               onRetry: () => ref.invalidate(statsProvider),
@@ -657,7 +646,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: SpacingTokens.md),
             Expanded(
               child: portfolio.when(
                 loading: () =>
@@ -676,7 +665,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: SpacingTokens.md),
         // الصف الثاني: ربح محقق + ربح غير محقق
         Row(
           children: [
@@ -697,7 +686,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: SpacingTokens.md),
             Expanded(
               child: portfolio.when(
                 loading: () =>
@@ -915,7 +904,7 @@ class _MiniPositionTile extends StatelessWidget {
                 cs.onSurface,
               ).copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: SpacingTokens.xxs),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -924,7 +913,7 @@ class _MiniPositionTile extends StatelessWidget {
                   height: 5,
                   decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: SpacingTokens.xs),
                 Text(
                   '$sign${pct.abs().toStringAsFixed(2)}%',
                   style: TypographyTokens.caption(
@@ -972,7 +961,7 @@ class _QuickStatRow extends StatelessWidget {
               ).copyWith(fontWeight: FontWeight.w700),
             ),
             if (subValue.isNotEmpty) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: SpacingTokens.xs),
               Text(
                 subValue,
                 style: TypographyTokens.caption(
@@ -1038,7 +1027,7 @@ class _HybridTradeTile extends StatelessWidget {
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
+                            horizontal: SpacingTokens.sm,
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
@@ -1054,7 +1043,7 @@ class _HybridTradeTile extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: SpacingTokens.xxs),
                     Row(
                       children: [
                         Expanded(

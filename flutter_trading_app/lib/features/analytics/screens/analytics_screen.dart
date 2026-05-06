@@ -435,10 +435,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     ),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
+                    padding: const EdgeInsets.all(SpacingTokens.sm),
                     child: LineChart(
                       LineChartData(
                         minX: 0,

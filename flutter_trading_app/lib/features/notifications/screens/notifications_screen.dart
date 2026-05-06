@@ -123,10 +123,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       itemCount: state.notifications.length + (state.hasMore ? 1 : 0),
       itemBuilder: (_, i) {
         if (i >= state.notifications.length) {
-          return const Padding(
-            padding: EdgeInsets.all(SpacingTokens.base),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
+          return const LoadingShimmer(itemCount: 3, itemHeight: 80);
         }
 
         final n = state.notifications[i];

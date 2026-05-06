@@ -84,14 +84,9 @@ class TradingControlScreen extends ConsumerWidget {
                       mlStatus.when(
                         loading: () =>
                             const LoadingShimmer(itemCount: 1, itemHeight: 80),
-                        error: (_, __) => AppCard(
-                          padding: const EdgeInsets.all(SpacingTokens.md),
-                          child: Text(
-                            'غير متاح',
-                            style: TypographyTokens.bodySmall(
-                              cs.onSurface.withValues(alpha: 0.5),
-                            ),
-                          ),
+                        error: (_, __) => ErrorState(
+                          message: 'غير متاح',
+                          onRetry: () => ref.invalidate(mlStatusProvider),
                         ),
                         data: (ml) => _mlSection(cs, ml),
                       ),

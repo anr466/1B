@@ -13,6 +13,7 @@ import 'package:trading_app/design/widgets/status_badge.dart';
 import 'package:trading_app/design/widgets/app_button.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 
 Future<Map<String, dynamic>> _safeGet(Future<Map<String, dynamic>> Function() fn) async {
   try { return await fn(); } catch (_) { return {}; }
@@ -63,9 +64,10 @@ class AdminMLDashboardScreen extends ConsumerWidget {
                   },
                   child: mlAsync.when(
                     loading: () => _buildLoadingSection(cs),
-                    error: (e, _) => _buildErrorSection(cs, e.toString(), () {
-                      ref.invalidate(_mlDataProvider);
-                    }),
+                    error: (e, _) => ErrorState(
+                      message: e.toString(),
+                      onRetry: () => ref.invalidate(_mlDataProvider),
+                    ),
                     data: (all) => ListView(
                       padding: const EdgeInsets.all(SpacingTokens.base),
                       children: [
@@ -98,33 +100,6 @@ class AdminMLDashboardScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(SpacingTokens.base),
       children: const [
         LoadingShimmer(itemCount: 6, itemHeight: 100),
-      ],
-    );
-  }
-
-  Widget _buildErrorSection(ColorScheme cs, String message, VoidCallback onRetry) {
-    return ListView(
-      padding: const EdgeInsets.all(SpacingTokens.base),
-      children: [
-        AppCard(
-          backgroundColor: cs.error.withValues(alpha: 0.08),
-          padding: const EdgeInsets.all(SpacingTokens.lg),
-          child: Column(
-            children: [
-              Icon(Icons.error_outline, color: cs.error, size: 48),
-              const SizedBox(height: SpacingTokens.md),
-              Text(message, style: TypographyTokens.body(cs.error), textAlign: TextAlign.center),
-              const SizedBox(height: SpacingTokens.md),
-              AppButton(
-                label: 'إعادة المحاولة',
-                variant: AppButtonVariant.text,
-                isFullWidth: false,
-                icon: Icons.refresh,
-                onPressed: onRetry,
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }

@@ -13,6 +13,7 @@ import 'package:trading_app/design/widgets/app_section_label.dart';
 import 'package:trading_app/design/widgets/app_snackbar.dart';
 import 'package:trading_app/design/widgets/loading_shimmer.dart';
 import 'package:trading_app/design/widgets/demo_real_banner.dart';
+import 'package:trading_app/design/widgets/error_state.dart';
 import 'package:trading_app/navigation/route_names.dart';
 import 'package:trading_app/design/tokens/semantic_colors.dart';
 
@@ -144,22 +145,9 @@ class _ActivityLogsTab extends ConsumerWidget {
         padding: const EdgeInsets.all(SpacingTokens.base),
         children: const [LoadingShimmer(itemCount: 6, itemHeight: 60)],
       ),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: cs.error, size: 48),
-            const SizedBox(height: SpacingTokens.md),
-            Text(e.toString(), style: TypographyTokens.body(cs.error)),
-            const SizedBox(height: SpacingTokens.md),
-            AppButton(
-              label: 'إعادة',
-              variant: AppButtonVariant.text,
-              isFullWidth: false,
-              onPressed: () => ref.invalidate(_activityLogsProvider),
-            ),
-          ],
-        ),
+      error: (e, _) => ErrorState(
+        message: e.toString(),
+        onRetry: () => ref.invalidate(_activityLogsProvider),
       ),
       data: (data) => RefreshIndicator(
         color: cs.primary,
@@ -226,22 +214,9 @@ class _AuditLogsTab extends ConsumerWidget {
         padding: const EdgeInsets.all(SpacingTokens.base),
         children: const [LoadingShimmer(itemCount: 6, itemHeight: 60)],
       ),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.shield_outlined, color: cs.error, size: 48),
-            const SizedBox(height: SpacingTokens.md),
-            Text(e.toString(), style: TypographyTokens.body(cs.error)),
-            const SizedBox(height: SpacingTokens.md),
-            AppButton(
-              label: 'إعادة',
-              variant: AppButtonVariant.text,
-              isFullWidth: false,
-              onPressed: () => ref.invalidate(_auditLogsProvider),
-            ),
-          ],
-        ),
+      error: (e, _) => ErrorState(
+        message: e.toString(),
+        onRetry: () => ref.invalidate(_auditLogsProvider),
       ),
       data: (data) => RefreshIndicator(
         color: cs.primary,
@@ -299,22 +274,9 @@ class _SystemErrorsTab extends ConsumerWidget {
         padding: const EdgeInsets.all(SpacingTokens.base),
         children: const [LoadingShimmer(itemCount: 6, itemHeight: 60)],
       ),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.bug_report_outlined, color: cs.error, size: 48),
-            const SizedBox(height: SpacingTokens.md),
-            Text(e.toString(), style: TypographyTokens.body(cs.error)),
-            const SizedBox(height: SpacingTokens.md),
-            AppButton(
-              label: 'إعادة',
-              variant: AppButtonVariant.text,
-              isFullWidth: false,
-              onPressed: () => ref.invalidate(_systemErrorsProvider),
-            ),
-          ],
-        ),
+      error: (e, _) => ErrorState(
+        message: e.toString(),
+        onRetry: () => ref.invalidate(_systemErrorsProvider),
       ),
       data: (data) => RefreshIndicator(
         color: cs.primary,
@@ -384,7 +346,7 @@ class _SystemErrorsTab extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(value, style: TypographyTokens.caption(color)),
-          const SizedBox(width: 4),
+          const SizedBox(width: SpacingTokens.xs),
           Text(label, style: TypographyTokens.caption(color.withValues(alpha: 0.6))),
         ],
       ),
@@ -412,22 +374,9 @@ class _LogsManagementTabState extends ConsumerState<_LogsManagementTab> {
         padding: const EdgeInsets.all(SpacingTokens.base),
         children: const [LoadingShimmer(itemCount: 4, itemHeight: 80)],
       ),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: cs.error, size: 48),
-            const SizedBox(height: SpacingTokens.md),
-            Text(e.toString(), style: TypographyTokens.body(cs.error)),
-            const SizedBox(height: SpacingTokens.md),
-            AppButton(
-              label: 'إعادة',
-              variant: AppButtonVariant.text,
-              isFullWidth: false,
-              onPressed: () => ref.invalidate(_logsStatsProvider),
-            ),
-          ],
-        ),
+      error: (e, _) => ErrorState(
+        message: e.toString(),
+        onRetry: () => ref.invalidate(_logsStatsProvider),
       ),
       data: (data) {
         final stats = data.stats;

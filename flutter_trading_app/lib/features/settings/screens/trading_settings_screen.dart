@@ -656,7 +656,7 @@ class _ModeButton extends StatelessWidget {
                     fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                   ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: SpacingTokens.xxs),
             Text(
               subtitle,
               style: TypographyTokens.caption(

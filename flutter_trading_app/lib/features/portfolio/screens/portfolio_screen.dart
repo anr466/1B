@@ -572,7 +572,7 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
                 size: 12,
                 color: cs.primary.withValues(alpha: 0.7),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: SpacingTokens.xs),
               Text(
                 'أدمن',
                 style: TypographyTokens.caption(
